@@ -8,22 +8,22 @@ from __future__ import annotations
 
 
 class LumpedThermalNode:
-    """One thermal mass: C_th * dT/dt = Q_in(t) - G_th*(T - T_ambient). SS1.
-
-    Unit test target (docs/isaacsim_checklist.md 3.1): with constant Q_in,
-    step() repeatedly should match the closed form
-        T(t) = T_ambient + (Q_run/G_th) * (1 - exp(-t/tau))
-    within a small tolerance.
-    """
+    """One thermal mass: C_th * dT/dt = Q_in(t) - G_th*(T - T_ambient). SS1."""
 
     def __init__(self, thermal_capacitance: float, thermal_conductance: float,
                  ambient_temp_k: float, initial_temp_k: float | None = None):
-        raise NotImplementedError("TODO: implement SS1")
+        self.thermal_capacitance = thermal_capacitance
+        self.thermal_conductance = thermal_conductance
+        self.ambient_temp_k = ambient_temp_k
+        self._t = ambient_temp_k if initial_temp_k is None else initial_temp_k
 
     def step(self, dt_s: float, heat_input_w: float) -> float:
         """Advance one Euler step, return the updated temperature in K. SS1."""
-        raise NotImplementedError("TODO: implement the discretized update, SS1")
+        d_t = (heat_input_w - self.thermal_conductance * (self._t - self.ambient_temp_k)) \
+            / self.thermal_capacitance * dt_s
+        self._t += d_t
+        return self._t
 
     @property
     def temperature_k(self) -> float:
-        raise NotImplementedError("TODO: implement SS1")
+        return self._t

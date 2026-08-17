@@ -6,21 +6,21 @@ Work top to bottom. Don't start a phase's Isaac-Sim-dependent work until the pha
 
 ## Phase 1 — Physics only (no Isaac Sim)
 
-- [ ] `thermal_physics/emission.py` — `planck_radiance`, `band_radiance`, `surface_leaving_radiance`
-- [ ] `thermal_physics/atmosphere.py` — `transmittance`, `path_radiance`, `apply_atmosphere`
-- [ ] `thermal_physics/optics.py` — `focal_plane_irradiance`
-- [ ] `thermal_physics/detector.py` — `linear_detector_signal` first; `bolometer_*` functions once that's solid
-- [ ] `thermal_physics/blur.py` — `diffraction_mtf`, `detector_mtf`, `apply_system_blur`
-- [ ] `thermal_physics/noise.py` — `netd_noise_sigma`, `add_temporal_noise`, `add_fixed_pattern_noise`
-- [ ] `thermal_physics/quantize.py`, `agc.py`, `colormap.py`
-- [ ] `thermal_physics/pipeline.py` — wire all of the above into `render_frame()`
+- [x] `thermal_physics/emission.py` — `planck_radiance`, `band_radiance`, `surface_leaving_radiance`
+- [x] `thermal_physics/atmosphere.py` — `transmittance`, `path_radiance`, `apply_atmosphere`
+- [x] `thermal_physics/optics.py` — `focal_plane_irradiance`
+- [x] `thermal_physics/detector.py` — `linear_detector_signal` first; `bolometer_*` functions once that's solid
+- [x] `thermal_physics/blur.py` — `diffraction_mtf`, `detector_mtf`, `apply_system_blur`
+- [x] `thermal_physics/noise.py` — `netd_noise_sigma`, `add_temporal_noise`, `add_fixed_pattern_noise`
+- [x] `thermal_physics/quantize.py`, `agc.py`, `colormap.py`
+- [x] `thermal_physics/pipeline.py` — wire all of the above into `render_frame()`
 
 ```bash
 pytest tests/test_emission.py tests/test_atmosphere.py tests/test_optics.py \
        tests/test_detector.py tests/test_noise.py tests/test_pipeline.py -v
 ```
 
-**Done when:** every test above passes (not skips), and `render_frame()` on a synthetic temperature gradient produces a believable image. Nothing here should import `omni` or `isaacsim`.
+**Done:** 33/33 tests pass, `render_frame()` produces a believable image (`scripts/demo_render.py` -> `captures/demo_frame.png`), and `thermal_physics/` imports nothing from `omni`/`isaacsim`. Two test files (`test_blur.py`, `test_colormap.py`) were added beyond the original checklist -- those modules had stub files but no assigned checks.
 
 ## Phase 2 — Coarse Isaac Sim prototype
 

@@ -6,7 +6,9 @@ Every pixel maps back to a real surface point with its own temperature, emissivi
 
 ## Status
 
-**Scaffolding only.** Every function in `thermal_physics/` and every SPG shader in `spg/` is a stub — signatures, type hints, and docstrings are in place; bodies raise `NotImplementedError` (or are marked `TODO`) and every test is `pytest.skip`ped. The structure, tests, and docs are ready to build against. See `ROADMAP.md` for build order.
+**Phase 1 complete** (`thermal_physics/`, pure Python, no Isaac Sim): every function implemented, 33/33 tests passing, zero skips. `python scripts/demo_render.py` renders a synthetic scene end to end — see `captures/demo_frame.png`.
+
+**Phases 2-7 (everything Isaac-Sim-shaped) are still stubs.** They need a real Isaac Sim install and an RTX GPU to write against and test honestly, which the environment this was built in doesn't have — signatures/docstrings/TODOs are in place, same as before. See `ROADMAP.md` for build order and what's left.
 
 ## Project layout
 
