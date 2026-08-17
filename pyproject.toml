@@ -1,0 +1,22 @@
+[project]
+name = "thermal-camera-sim"
+version = "0.1.0"
+description = "Point-wise, physically-based thermal (IR) camera simulator for Isaac Sim"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

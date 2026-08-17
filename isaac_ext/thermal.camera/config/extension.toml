@@ -1,0 +1,11 @@
+[package]
+version = "0.1.0"
+title = "Thermal Camera Sensor"
+description = "Point-wise physically-based thermal/IR camera sensor extension."
+category = "Simulation"
+
+[dependencies]
+"omni.replicator.core" = {}
+
+[[python.module]]
+name = "thermal.camera"

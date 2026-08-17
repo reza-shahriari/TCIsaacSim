@@ -1,0 +1,15 @@
+#usda 1.0
+(
+    defaultPrim = "ThermalKernel"
+)
+
+def Shader "ThermalKernel"
+{
+    uniform token info:implementationSource = "sourceAsset"
+    uniform asset info:spg:sourceAsset = @./ThermalKernel.cu@
+    uniform token info:spg:sourceAsset:subIdentifier = "thermal_ir"
+
+    float inputs:netdSigma = 0.01
+    opaque inputs:Signal
+    opaque outputs:ThermalIR
+}

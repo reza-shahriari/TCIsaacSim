@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Isaac Sim / Omniverse local caches
+kit_cache/
+*.usda~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Captured/generated output -- regenerable, not source
+/captures/
