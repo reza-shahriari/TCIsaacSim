@@ -70,6 +70,3 @@ We welcome contributions to help make this the best thermal camera simulator for
 3. **Set Up Your Environment:** For pure Python tasks, a virtual environment (`pip install -e ".[dev]"`) is sufficient. For Isaac Sim tasks, you must use Isaac Sim's Python interpreter.
 4. **Follow Guidelines:** See our full [Contribution Guide](contribute.md) for details on branching, testing, and committing. **Never** commit large binary assets (USDs, heavy images) to the repository.
 
-## License
-
-MIT (`LICENSE`) — included as a permissive default; change it if you want something else.
