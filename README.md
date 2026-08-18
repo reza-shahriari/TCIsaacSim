@@ -34,6 +34,8 @@ spg/                            Sensor Processing Graph shader (.cu / .cu.lua / 
 
 scripts/                        standalone entry points (headless launch, frame capture)
 
+v0/                             previous working prototype (version 0) and related older scripts/media
+
 .claude/skills/thermal-camera-sim/SKILL.md   project-specific skill for coding agents working in this repo
 ```
 
@@ -58,6 +60,15 @@ Work through `ROADMAP.md` phase by phase — it maps each phase in `docs/isaacsi
 - ROS2 Foxy is unsupported with current Isaac Sim — use Humble.
 - The SPG Lua API is `cuda.TextureObject` / `cuda.SurfaceObject` and launch-config keys `block` / `grid` — a couple of plausible-looking alternatives (`cuda.texture`, `blockDim`/`gridDim`) do not match the current docs and will fail at runtime.
 - `PtSelfIllumination` (the recommended AOV for isolating emission) is confirmed by one direct maintainer reply, not an independent reference doc — check it against your actual install before depending on it.
+
+## How to Contribute
+
+We welcome contributions to help make this the best thermal camera simulator for Isaac Sim! Here is a quick tutorial on how to get started:
+
+1. **Read the Docs:** Before writing code, please read the design documents in the `docs/` folder, especially the `isaacsim_implementation_plan.md`.
+2. **Follow the Roadmap:** Check `ROADMAP.md` to see what phase is currently active. Pick a task from the checklist.
+3. **Set Up Your Environment:** For pure Python tasks, a virtual environment (`pip install -e ".[dev]"`) is sufficient. For Isaac Sim tasks, you must use Isaac Sim's Python interpreter.
+4. **Follow Guidelines:** See our full [Contribution Guide](contribute.md) for details on branching, testing, and committing. **Never** commit large binary assets (USDs, heavy images) to the repository.
 
 ## License
 

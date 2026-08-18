@@ -1,0 +1,13 @@
+
+mdl 1.6;
+import ::df::*;
+import ::state::*;
+import ::math::*;
+
+export material visible_diffuse(
+    uniform color diffuse_color = color(0.4, 0.4, 0.4)
+) = material(
+    surface: material_surface(
+        scattering: df::diffuse_reflection_bsdf(tint: diffuse_color)
+    )
+);

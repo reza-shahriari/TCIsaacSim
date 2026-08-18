@@ -1,0 +1,56 @@
+mdl 1.6;
+
+import ::df::*;
+import ::state::*;
+import ::math::*;
+import ::tex::*;
+
+// ============================================================================
+// Thermal Material for IR Camera Simulation
+// 
+// Strategy: Encode the surface temperature as a NORMALIZED emission intensity.
+// The emission channel value = (base_temp_k - 200) / 600, mapping [200K, 800K]
+// into [0.0, 1.0]. This way the HDR annotator returns a float value that 
+// Python can decode back to Kelvin and apply proper Planck/Beer-Lambert math.
+//
+// The RGB channel uses a separate diffuse BSDF for visible-light rendering.
+// ============================================================================
+
+export material dynamic_thermal(
+    uniform float base_temp_k = 300.0,
+    uniform float emissivity = 0.95,
+    uniform color diffuse_color = color(0.4, 0.4, 0.45),
+    uniform texture_2d emissivity_texture = texture_2d()
+)
+= let {
+    // Lookup per-texel emissivity if texture is provided
+    float tex_emissivity = tex::texture_isvalid(emissivity_texture) 
+        ? tex::lookup_float(emissivity_texture, float2(state::texture_coordinate(0).x, state::texture_coordinate(0).y))
+        : emissivity;
+
+    // Encode temperature as a normalized value [0, 1] in the emission channel.
+    // Range: 200K to 800K (covers cryogenic to hot engine temps)
+    float temp_norm = math::clamp((base_temp_k - 200.0) / 600.0, 0.0, 1.0);
+    
+    // Encode emissivity in the green channel, temp in red and blue
+    // This lets Python decode both temperature AND emissivity from the HDR buffer
+    color thermal_encoding = color(temp_norm, tex_emissivity, temp_norm);
+    
+    // Scale emission intensity so it's visible in the HDR buffer but doesn't wash out
+    // Using a moderate intensity so it's above noise floor but not clipped
+    float emission_intensity = 5.0;
+
+} in material(
+    surface: material_surface(
+        // RGB visible channel: standard diffuse material that responds to scene lights
+        scattering: df::diffuse_reflection_bsdf(
+            tint: diffuse_color
+        ),
+        // IR channel: encoded temperature data readable from HDR/emission annotators
+        emission: material_emission(
+            emission: df::diffuse_edf(),
+            intensity: thermal_encoding * emission_intensity,
+            mode: intensity_radiant_exitance
+        )
+    )
+);
