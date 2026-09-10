@@ -51,21 +51,22 @@ Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Req
 | Command | Does |
 |---|---|
 | `make install` | Editable install + dev dependencies |
-| `make test` | Unit tests only (fast, no GPU) |
+| `make test` | Unit + golden tests (fast, no GPU) |
 | `make test-all` | Adds integration tests (requires Isaac Sim) |
 | `make lint` / `make fmt` | ruff check / ruff format |
 | `make typecheck` | mypy on `src/irsim` |
 | `make check` | lint + typecheck + test |
 | `make luts` | Regenerate band LUTs from configs and spectral data |
+| `make golden-update` | Regenerate golden reference arrays deliberately (ADR 0004) |
 
 ## Layout
 
 ```
 src/irsim/          engine-free physics core (pure Python + NumPy)
 src/irsim_isaac/    Isaac Sim glue — the only place engine imports are allowed
-tests/unit/         fast, no GPU, no Isaac Sim
+tests/unit/         fast, no GPU, no Isaac Sim (default gate, with tests/golden)
 tests/integration/  requires Isaac Sim (@pytest.mark.isaac)
-tests/golden/       regression fixtures
+tests/golden/       regression fixtures: .npy + JSON sidecar with config hash (ADR 0004)
 configs/            sensor / material / atmosphere YAML
 data/               spectral responses, n/k tables, generated LUTs, weather
 docs/               physics-model.md and ADRs

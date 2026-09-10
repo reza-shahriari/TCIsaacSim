@@ -8,6 +8,20 @@ import numpy as np
 import pytest
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ``--update-golden`` here (the root conftest) so it exists whichever
+    directory pytest is pointed at. The helper that consumes it lives in
+    tests/golden/conftest.py."""
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Regenerate golden reference arrays instead of comparing against them "
+        "(make golden-update). Never do this in the same commit as a behaviour change "
+        "without saying so in the commit body.",
+    )
+
+
 @pytest.fixture
 def rng() -> np.random.Generator:
     """Seeded generator. Every test that uses randomness must take this."""

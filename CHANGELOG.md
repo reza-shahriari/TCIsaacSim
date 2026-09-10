@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Golden fixture helper (`tests/golden/conftest.py`, ADR 0004): `.npy` + JSON sidecar with config hash;
+  STALE (inputs changed) reported distinctly from FAILING (values changed); actual array dumped to
+  `outputs/golden/` on failure; float16/float64 refused on disk; `--update-golden` registered so
+  `make golden-update` works. `tests/golden` now runs in `make test`.
 - Project scaffold: physics specification (`docs/physics-model.md`), `CLAUDE.md`, skills, build tooling.
 - `irsim.radiometry.constants` — physical constants with sources.
 - `irsim.radiometry.planck` — spectral radiance (energy and photon forms), fractional exitance,

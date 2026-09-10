@@ -10,7 +10,7 @@ install:
 	$(PYTHON) -m pip install -e ".[dev]"
 
 test:
-	$(PYTHON) -m pytest tests/unit -q --durations=10
+	$(PYTHON) -m pytest tests/unit tests/golden -q --durations=10
 
 test-all:
 	$(PYTHON) -m pytest tests -q -m ""
