@@ -40,6 +40,17 @@ Option 3, in `irsim.config.sensor`:
 - `schema_version` (top level, default 1) is checked, so a future breaking change fails loudly.
 - `types-PyYAML` joins the dev extras so `mypy --strict` accepts the YAML loader (M0.8).
 
+## Band registry and explicit `band.id` (M0.9)
+
+`irsim.config.bands` is the only place that knows the four canonical bands, as data: the §12.1 ranges
+(taken as canonical where §5.2 differs slightly), default regime and default detector model.
+`band.id` in a config is **optional**: absent, it is derived by maximal fractional overlap with the
+nominal ranges (at least 50 % of the configured width, else the config is rejected — a fifth band is a
+registry change, which is the intended friction); present, it must agree with the derivation. Kernels
+never receive a band id: `enabled_illumination_terms(regime)` turns §5.2's "one shading core, two
+illumination paths" into a runtime switch on `regime` (`emissive` → self-emission, `reflective` → solar
+and night sources, `mixed` → all three), replacing the compile-time flag §5.2 mentions (spec issue S17).
+
 ## Consequences
 
 The Boson file loads exactly (every §16.1 value asserted). The derived HFOV for 14 mm / 640 × 12 µm is

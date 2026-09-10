@@ -22,6 +22,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from irsim.config.bands import BandId, band_id_for
 from irsim.radiometry.constants import WAVELENGTH_MAX_UM, WAVELENGTH_MIN_UM
 
 __all__ = [
@@ -64,12 +65,23 @@ class _Frozen(BaseModel):
 
 class BandSpec(_Frozen):
     """§12.2 ``band``. ``spectral_response`` is a path relative to the data root; the loader
-    resolves it (M0.8) and the response file contract lives in ``irsim.radiometry`` (M1.3)."""
+    resolves it and the response file contract lives in ``irsim.radiometry`` (M1.3).
+
+    ``id`` is optional: when absent it is derived from the edges by :func:`band_id_for`; when
+    present it must agree with that derivation (a ``mwir`` label on a 7.5-13.5 um band is a
+    config error, not a preference). Read :attr:`band_id` for the resolved value."""
 
     lambda_min_um: float = Field(gt=0)
     lambda_max_um: float = Field(gt=0)
     spectral_response: str
     regime: Regime
+    id: BandId | None = None
+
+    @property
+    def band_id(self) -> BandId:
+        return (
+            self.id if self.id is not None else band_id_for(self.lambda_min_um, self.lambda_max_um)
+        )
 
     @model_validator(mode="after")
     def _physical(self) -> BandSpec:
@@ -88,6 +100,11 @@ class BandSpec(_Frozen):
             raise ValueError(
                 f"regime 'reflective' with lambda_min {lo} um: reflected sunlight is negligible "
                 f"beyond {REFLECTIVE_MAX_LAMBDA_MIN_UM} um; use 'mixed' or 'emissive' (§12.1)"
+            )
+        derived = band_id_for(lo, hi)  # raises if the edges match no canonical band
+        if self.id is not None and self.id != derived:
+            raise ValueError(
+                f"band.id {self.id!r} contradicts the edges [{lo}, {hi}] um, which are {derived!r}"
             )
         return self
 

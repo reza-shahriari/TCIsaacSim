@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
-| `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry pending |
+| `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms |
 | `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_

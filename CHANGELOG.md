@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.bands`: canonical band ids with §12.1 nominal ranges and per-band defaults,
+  `band_id_for` by maximal overlap (< 50 % rejected), optional `band.id` validated against the edges,
+  and `enabled_illumination_terms(regime)` so kernels never switch on a band name (§5.2, S17).
 - `irsim.config.loader`: `load_sensor_config` (data paths resolved against `data_dir` /
   `$IRSIM_DATA_DIR` / `<repo>/data`, missing files named), `dump_sensor_config`, `config_hash` (canonical
   JSON, files by content hash) and `band_hash` (band block + spectral bytes: the LUT key). Every numeric

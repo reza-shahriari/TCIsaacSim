@@ -162,6 +162,7 @@ def test_hash_changes_for_every_numeric_leaf(leaf: str, data_dir: pathlib.Path) 
     ("dotted", "value"),
     [
         ("sensor.band.regime", "mixed"),
+        ("sensor.band.id", "lwir"),
         ("sensor.optics.housing_temp_mode", "fixed"),
         ("sensor.nuc.mode", "ideal"),
         ("sensor.isp.agc", "linear"),
