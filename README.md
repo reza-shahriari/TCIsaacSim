@@ -20,7 +20,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck + constants landed; Stefan–Boltzmann closes to 1e-6 (ADR 0005); band LUT pending |
+| `radiometry` | 🟡 partial | T1 | Planck + constants; Stefan–Boltzmann to 1e-6 (ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); band LUT pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
-| `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. Temperature-encoding round trip is the first task |
+| `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_
 

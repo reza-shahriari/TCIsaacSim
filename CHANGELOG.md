@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.radiometry.encoding`: float32 temperature encode/decode `c = (T − 200)/800` with the constants
+  defined once in `constants.py` (plus the LUT grid constants); float16 and integer inputs refused; fp16
+  coarse/fine pair codec as the §13.3 fallback. Round trip 0.05 mK; negative controls show 125 mK (raw
+  kelvin) and ≥ 40 mK (encoded) through fp16 (ADR 0006).
 - Stefan–Boltzmann identity test at 1e-6 relative via Simpson quadrature plus the closed-form tail
   (measured 3e-11); `fractional_exitance` gains a small-x Bernoulli branch so it is double-precision
   accurate in the Rayleigh–Jeans tail, and it and `band_radiance_tophat` now reject metre-valued

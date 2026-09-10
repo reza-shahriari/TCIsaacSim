@@ -39,6 +39,19 @@ SIGMA_SB: Final[float] = 5.670374419e-8
 # Wien displacement constant, um K
 WIEN_B: Final[float] = 2897.771955
 
+# --- Temperature encoding and LUT grid --------------------------------------
+# One definition, shared by the config layer, the LUT builder, the Warp/SPG kernels and the
+# Isaac AOV adapter. The G-buffer carries c = (T - T_ENCODE_REF_K) / T_ENCODE_SPAN_K in float32,
+# never raw kelvin through fp16 (docs/physics-model.md §13.3, §3.2 precision trap, CLAUDE.md #2).
+T_ENCODE_REF_K: Final[float] = 200.0
+T_ENCODE_SPAN_K: Final[float] = 800.0
+
+# Band LUT grid (docs/physics-model.md §3.2 b, §13.5): T in [200, 1000] K at 0.05 K, 16001 entries.
+LUT_T_MIN_K: Final[float] = 200.0
+LUT_T_MAX_K: Final[float] = 1000.0
+LUT_DT_K: Final[float] = 0.05
+LUT_N: Final[int] = 16001  # round((LUT_T_MAX_K - LUT_T_MIN_K) / LUT_DT_K) + 1
+
 # --- Numerical guards -------------------------------------------------------
 # exp() overflows for x beyond ~709 in float64. Cold scenes at short wavelengths
 # reach this easily (200 K at 0.8 um gives x ~ 90, but 100 K at 0.4 um gives ~360,
