@@ -1,0 +1,12 @@
+{
+  "atol": null,
+  "config_hash": "f0446a1f4edf7ef58d8287be21a0c67f3ce5ab935b5a7f3e83c07ab86e15dec9",
+  "dtype": "float32",
+  "name": "boson_lwir_lb_slice",
+  "numpy_version": "2.3.1",
+  "rtol": 2e-06,
+  "shape": [
+    161
+  ],
+  "units": "W/m2/sr (rtol 2e-6 = 1 mK at 1000 K)"
+}
