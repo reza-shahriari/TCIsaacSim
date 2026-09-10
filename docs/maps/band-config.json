@@ -1,0 +1,498 @@
+{
+ "area": "band-config",
+ "existing_state": "CODE: `src/irsim/config/__init__.py` is a one-line docstring stub (`\"\"\"See docs/physics-model.md.\"\"\"`). No pydantic models, no YAML loader, no path resolution, no config hash, no band registry, no material/atmosphere/weather schema exist anywhere. `grep -rn 'config|yaml|SensorConfig|BandConfig' src/ tests/ scripts/` hits only the docstring of `scripts/generate_luts.py`. `src/irsim/radiometry/planck.py` exposes `spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT`, `fractional_exitance`, `band_radiance_tophat(lambda_min_um, lambda_max_um, T)` \u2014 nothing takes an R(lambda) array; there is no Band/SpectralResponse type. `src/irsim/radiometry/constants.py` has C1L, C1Q, C2, SIGMA_SB, WIEN_B, Q_E, H_PLANCK, C_LIGHT, K_BOLTZMANN, EXP_ARG_MAX and plausibility bounds WAVELENGTH_MIN_UM=0.1, WAVELENGTH_MAX_UM=1000, TEMPERATURE_MIN_K=1, TEMPERATURE_MAX_K=6000 (no solar constant, no T_REF/T_SPAN encoding constants). `src/irsim/__init__.py` sets `__version__ = '0.1.0'`. All other `src/irsim/*/__init__.py` are the same one-line stub.\n\nCONFIG/DATA: `configs/sensors/flir_boson_640_lwir.yaml` (73 lines) is the only config file; it follows the \u00a712.2 shape with these deviations from the spec block: `spectral_response: spectra/boson_vox.csv` (spec line 832 says `responses/boson_vox.csv`); the four photon fields (`quantum_efficiency`, `well_capacity_e`, `integration_time_ms`, `dark_current_model`, spec lines 858-861 as `null`) are omitted entirely; `distortion.coeffs` are all 0.0 (spec example [-0.28, 0.09, 0, 0, 0]); most values carry `# ESTIMATED`. The referenced `data/spectra/boson_vox.csv` DOES NOT EXIST \u2014 `data/spectra/`, `data/lut/`, `data/nk/`, `data/weather/`, `configs/materials/`, `configs/atmospheres/` each contain only `.gitkeep`. `.gitignore` excludes `data/lut/*.npy` and `data/lut/*.json`.\n\nSCRIPTS/BUILD: `scripts/generate_luts.py` prints its docstring and exits 1 (not implemented). Its docstring fixes the intended LUT contract: load R(lambda) from `data/spectra/`, assert peak-normalised to 1.0, Simpson on a 0.01 um grid, T in [200,1000] K at 0.05 K, write float32 `data/lut/<sensor>_{Lb,Lb_q,dLb_dT}.npy` plus `<sensor>_lut.json` sidecar holding SHA-256 of config and spectral file, cross-check vs `band_radiance_tophat()` to 0.1%. `Makefile` target `luts` runs `python scripts/generate_luts.py --configs configs/sensors --out data/lut` (no `--data` root argument). `pyproject.toml`: runtime deps numpy>=1.24, scipy>=1.11, pydantic>=2.5, pyyaml>=6.0; dev deps pytest, pytest-cov, ruff, mypy, matplotlib (NO `types-PyYAML`); `requires-python >=3.10`, ruff target py310, line-length 100, lint E/F/I/N/UP/B/SIM/NPY with N803/N806 ignored; mypy `strict = true` on `src/irsim` with `ignore_missing_imports` overrides only for `scipy.*` and `matplotlib.*` (so `import yaml` will fail typecheck until a stub or override is added); pytest `addopts = \"-m 'not isaac and not gpu'\"`, markers isaac/gpu/slow.\n\nTESTS: `tests/unit/test_layering.py` (forbids omni, pxr, isaacsim, warp, carb imports under src/irsim via AST walk, rglob so new config files are covered automatically), `tests/unit/test_planck.py` (10 analytic-identity tests; uses `np.trapezoid`, which requires NumPy >= 2.0 despite pyproject allowing 1.24), `tests/conftest.py` (fixtures `rng`, `gbuffer_ramp`, `gbuffer_uniform`). No config test, no golden fixtures, no integration tests.\n\nDOCS: README status table has no `config` row and says 'Bands configured: none yet \u00b7 Cameras modelled: none yet'. CHANGELOG has no config entry. `docs/decisions/` contains only ADR 0001 (template). Single commit `3b653b3 Project Structure Created`.\n\nENVIRONMENT (verified 2026-09-10): active interpreter is Python 3.13.5 (Anaconda) with pydantic 2.10.3 but WITHOUT pyyaml, pytest, ruff, mypy or an installed `irsim`; no `.venv` exists. `make install` has not been run, `make check` is not currently runnable, and I could not confirm the scaffold's own test suite is green.",
+ "key_equations_and_data": [
+  "SENSOR SCHEMA (\u00a712.2, lines 826-898): top-level key `sensor` with blocks `name`, `band`, `optics`, `fpa`, `noise`, `nuc`, `isp`, `outputs`. Every numeric field name carries its unit as a suffix (`_um`, `_mm`, `_ms`, `_s`, `_hz`, `_mk`, `_e`, `_ppm_per_k`, `_mk_per_k`) \u2014 the ir-radiometry skill unit convention; the schema must preserve this.",
+  "band.lambda_min_um, band.lambda_max_um (\u00a712.1 table line 805: NIR 0.75-1.0, SWIR 0.9-1.7, MWIR 3.0-5.0, LWIR 7.5-13.5 um; \u00a75.2 line 285-290 gives slightly different nominal ranges). Constraint lambda_max > lambda_min, both within WAVELENGTH_MIN_UM..WAVELENGTH_MAX_UM.",
+  "band.spectral_response: path to CSV of (lambda_um, R) \u2014 R(lambda) is the normalised spectral response = QE x filter x window (\u00a72 symbol table line 101). Convention decided in ir-radiometry skill lines 133-135: normalised to PEAK 1.0, absolute responsivity lives in the detector model; loader must assert peak == 1.0, lambda strictly increasing, 0.1 <= lambda <= 100 um (skill line 37-38), 0 <= R <= 1.",
+  "band.regime in {emissive, reflective, mixed} (\u00a712.2 line 833; \u00a75.2 lines 281-294 two-regime split: LWIR self-emitted, NIR/SWIR reflected, MWIR both; \u00a712.1 line 810 'Illumination needed' row).",
+  "optics.f_number F (\u00a78.1 line 519-525: E_FPA = pi L_B tau_opt / (4F^2+1) cos^4 theta; NETD scales as F^2; 'make F a first-class config parameter'). Non-negotiable #5: config stores F only; the factor pi/(4F^2+1) is defined once in irsim.optics (\u00a72 line 112 convention warning: 20% error at F/1.0 if +1 dropped).",
+  "optics.focal_length_mm f (\u00a78.3/\u00a78.4; HFOV = 2 atan(width*pitch/(2f)); Boson: 640 x 12 um, f = 14 mm -> 30.7 deg vs \u00a716.1 line 1253 '32 deg HFOV').",
+  "optics.transmittance tau_opt in (0,1] (\u00a78.1; \u00a78.2 line 540 self-emission Phi_self ~ A_d Omega_eff (1 - tau_opt) L_B(T_housing), Omega_eff = pi/(4F^2+1)).",
+  "optics.housing_temp_mode in {fixed, ambient, coupled} (\u00a712.2 line 839; \u00a78.2 line 543 T_housing drift is the origin of shutterless drift; \u00a79.2 line 644 gain(T_FPA), offset(T_FPA) low-order polynomials with T_FPA from a lumped model). NOTE: no `housing_temp_k` or housing thermal parameters exist in the schema for `fixed`/`coupled`.",
+  "optics.cold_shield_efficiency in [0,1] (\u00a79.1 line 613; cooled systems only; 1.0 for uncooled).",
+  "optics.distortion.model in {brown_conrady, kannala_brandt, ftheta} + coeffs list (\u00a78.4 line 586: use the engine's distortion \u2014 Isaac Sim supports OpenCV pinhole/fisheye, f-theta, Kannala-Brandt). Coefficient count/order per model is unspecified.",
+  "optics.vignetting_cos4 bool (\u00a72 line 76 cos^4 theta natural vignetting; \u00a78.1).",
+  "fpa.type in {bolometer, photon} (\u00a79 line 593 'two model paths, one interface'; \u00a712.1 line 808). Discriminated union: bolometer requires thermal_time_constant_ms, tcr_per_k; photon requires quantum_efficiency, well_capacity_e, integration_time_ms, dark_current_model.",
+  "fpa.width, fpa.height, fpa.pitch_um p, fpa.fill_factor in (0,1]: derived A_d = (p*1e-6)^2 * fill_factor [m^2] (\u00a72 symbol table A_d; \u00a78.1 Phi = E_FPA A_d). Boson: 1.296e-10 m^2. Derived Nyquist xi_N = 1/(2p) (\u00a78.3 line 574-577 worked case: 12 um -> 41.7 cyc/mm).",
+  "fpa.frame_rate_hz -> Delta_t = 1/frame_rate (\u00a79.2 line 637 bolometer IIR S_n = S_{n-1} + (S_ideal - S_{n-1})(1 - exp(-Delta_t/tau_th)); 60 Hz with tau_th = 10 ms smears ~0.6 frames, line 634).",
+  "fpa.bit_depth N_bits -> DN_max = 2^N_bits - 1 (\u00a79.1 line 606; \u00a711.3 line 776 '14-16 bit'). Schema allows 8..16.",
+  "fpa.thermal_time_constant_ms tau_th = C_th/G_th, typical 8-12 ms (\u00a79.2 lines 625-632; \u00a716.1 line 1255). fpa.tcr_per_k beta = (1/R) dR/dT ~ -0.02 /K for VOx (\u00a79.2 line 632; \u00a716.1 line 1256).",
+  "fpa.quantum_efficiency eta, fpa.well_capacity_e N_well, fpa.integration_time_ms t_int, fpa.dark_current_model (\u00a79.1 lines 599-611: N_e = eta A_d t_int pi tau_opt/(4F^2+1) integral R(lambda) L_q dlambda + i_dark t_int/q; DN = min(DN_max, floor((N_e+n_e)/N_well * 2^N_bits)); i_dark ~ T^1.5 exp(-E_g/2k_B T)).",
+  "noise.netd_mk_at_300k \u2014 the NETD ANCHOR at a 300 K blackbody (\u00a79.4 lines 676-681 'calibration handle, not a noise generator'; \u00a716.1 line 1250 Boson binned 60/50/40 mK; line 1258 'model NETD as a config value'). NETD = sigma_N,total / (dN_e/dT) with dN_e/dT = eta A_d t_int pi tau_opt/(4F^2+1) (dL_q/dT)_B (\u00a79.4 line 669-672). Non-negotiable #3: this number is a Kelvin-space anchor only; noise itself is generated in radiance/electron space via dL/dT.",
+  "noise.ratios_3d {tvh, vh, h, v, tv, th, t} relative to sigma_TVH, so tvh must equal 1.0 exactly and all >= 0 (\u00a712.2 lines 865-872; \u00a710.2 lines 708-725 sigma_total^2 = sum of squares; starting ratios 1.0 : 0.3 : 0.15 : 0.08 for TVH:VH:H:V).",
+  "noise.fpn_drift_tau_s \u2014 correlation time of the slow random walk on fixed-pattern terms (\u00a710.3 line 731 'seconds to minutes'). noise.bad_pixel_fraction in [0, 0.01] (\u00a710.4 line 737 typical 0.05-0.5%). noise.bad_pixel_cluster_lambda > 0 (\u00a710.4 Poisson cluster process).",
+  "nuc.mode in {shuttered, shutterless, ideal}; nuc.ffc_interval_s; nuc.ffc_freeze_ms (\u00a711.2 line 770 freeze 0.5-1 s); nuc.residual_gain_ppm_per_k, nuc.residual_offset_mk_per_k (\u00a711.2 line 768 drift proportional to (T_FPA - T_FPA^cal)). DN_corr = G (DN - O) two-point (\u00a711.2 line 760-762).",
+  "isp.agc in {linear, plateau_equalization, none}; isp.plateau P (\u00a711.3 line 784); isp.clip_percentiles [p_lo, p_hi] as fractions with 0 <= p_lo < p_hi <= 1 (\u00a711.3 line 782: 0.5%/99.5%); isp.gamma > 0 (\u00a711.3 line 780 y = clip(...)^(1/gamma)); isp.dde_gain >= 0 (\u00a711.3 line 788 unsharp mask); isp.polarity in {white_hot, black_hot} (\u00a711.4); isp.palette in {gray, ironbow, rainbow, lava} (\u00a712.2 line 891; \u00a711.4 line 792 also names Arctic).",
+  "outputs.radiance_linear (float32 W m^-2 sr^-1), outputs.apparent_temperature (float32 K), outputs.dn_16 (uint16), outputs.display_8 (RGBA8) (\u00a712.2 lines 893-897; \u00a713.4 line 1027 IrRadiance / IrApparentT / IrDN16 / IrDisplay8). Non-negotiable #2: the two float outputs are float32 minimum \u2014 the schema must not allow a dtype knob below float32.",
+  "MATERIAL SCHEMA (\u00a712.3 lines 906-920): `materials.<name>.thermal {density_kg_m3 rho, specific_heat_j_kgk c_p, conductivity_w_mk k, thickness_m delta, solar_absorptivity alpha_sol}` feeding C = rho c_p delta [J m^-2 K^-1] (\u00a76.1 line 351), thermal inertia P = sqrt(k rho c_p) (\u00a76.3 line 394), R_12 = delta_1/(2k) + delta_2/(2k) (\u00a76.4 line 412); \u00a76.2 table lines 372-379 is the minimal parameter set (h is derived, not authored). `optical {spectral_emissivity: csv path (lambda_um, eps(lambda)) over 0.3-15 um; roughness_per_band {nir, swir, mwir, lwir} decreasing with wavelength (\u00a74.3 line 256, \u00a712.3 line 922); angular_model {type: fresnel, n_k_file} | empirical {eps0, a in 0.15-0.35, p in 4-6} | constant (\u00a74.2 Levels A/B/C lines 217-248); transmittance_per_band {nir, swir, mwir, lwir} (\u00a74.4 line 260)}`. thermal-materials skill lines 137-150 adds `source: measured|literature|estimated`.",
+  "Kirchhoff closure eps + rho + tau = 1 per band to 1e-6 absolute (\u00a74.1 lines 203-211 'author one, derive the other'; \u00a74.4; \u00a715 Tier 1 line 1182; CLAUDE.md #4). Schema rule: exactly one of spectral_emissivity / spectral_reflectance may be authored; rho is derived as 1 - eps - tau; validator rejects eps(lambda) + tau_band > 1 + 1e-6 anywhere in the band.",
+  "Band identity: canonical BandId set {nir, swir, mwir, lwir} used as keys of every per-band material dict (\u00a712.3 lines 917-919). Default regime per band from \u00a712.1 line 810-811 (NIR/SWIR reflective, MWIR mixed, LWIR emissive); default detector model from \u00a712.1 line 808 (photon, photon, photon, bolometer). The \u00a712.2 sensor schema has NO explicit band id field \u2014 the link from a sensor's lambda range to the material dict key is undefined.",
+  "\u00a716.2 lines 1262-1278 starting material values (eps_LWIR, eps_MWIR, alpha_sol, rho, c_p, k) for 15 materials \u2014 scalar per band, literature estimates; the \u00a712.3 schema expects a spectral CSV, so the schema must decide whether scalar-per-band emissivity is an accepted fallback (Appendix A #3 line 1388 says emissivity is grey within a band anyway).",
+  "LUT DATA CONTRACT (\u00a73.2(b) line 164; generate_luts.py docstring; ir-radiometry skill lines 63-66): T grid [200, 1000] K at 0.05 K -> 16001 entries per table; float32; three tables Lb [W m^-2 sr^-1], Lb_q [ph s^-1 m^-2 sr^-1], dLb_dT [W m^-2 sr^-1 K^-1] (\u00a73.4 line 188 tabulate alongside); Simpson quadrature of R(lambda) x Planck on a 0.01 um grid; files `data/lut/<sensor>_{Lb,Lb_q,dLb_dT}.npy` + sidecar `<sensor>_lut.json` carrying SHA-256 of the config and the spectral file so a stale LUT is detected rather than silently wrong. Tolerances: LUT vs quadrature < 5 mK equivalent; inverse round trip < 1 mK; Lb strictly increasing (\u00a715 Tier 1 lines 1179-1181).",
+  "Cross-check identity for the spectral-response loader and the LUT script: for a rectangular R(lambda) on [lambda1, lambda2], integral R B dlambda must equal band_radiance_tophat(lambda1, lambda2, T) = (sigma T^4/pi)[F(lambda2 T) - F(lambda1 T)] to 0.1% (\u00a73.2(a) lines 150-162; generate_luts.py lines 15-16).",
+  "Temperature encoding constants coupled to the LUT range: c = (T - T_ref)/T_span with T_ref = 200 K, T_span = 800 K (\u00a713.3 line 981; isaac-sim-spg skill line 104) \u2014 the LUT domain [200, 1000] K is exactly T_ref .. T_ref + T_span; must be defined once (constants) and shared by config, radiometry and irsim_isaac.",
+  "ATMOSPHERE PRESET DATA (schema not given by spec; directory `configs/atmospheres/` exists; CLAUDE.md layout assigns atmosphere YAML schema to config/): per-band gamma_B [m^-1] indexed by (band, atmosphere, humidity, visibility) (\u00a77.2 lines 469-471); LWIR humidity form gamma_LWIR ~ gamma_0 + beta w with w = 216.7 RH e_s / T_K g m^-3, e_s(T) = 6.112 exp(17.67 T_C/(T_C + 243.5)) hPa (\u00a77.3 lines 494-501); tau(d) = exp(-gamma d) (\u00a77.1 line 451). Known-answer table \u00a77.2 lines 475-481: clear-dry LWIR tau@200 m 0.90-0.96, humid 0.72-0.85, light fog (200 m vis) LWIR 0.35-0.60 / MWIR 0.25-0.50 / SWIR 0.10-0.30, dense fog LWIR 0.02-0.10. Sky model parameters that may live in the preset: T_sky(theta_el) = T_air - DeltaT_clear (1 - cloud) cos^q(theta_el), DeltaT_clear 55-70 K, q 0.5-1.0 (\u00a75.3 lines 310-314). Non-negotiable #6: T_air, RH, cloud must come from the injected WeatherSeries, never from the preset.",
+  "WEATHER SERIES FIELDS (thermal-solver skill lines 97-98; \u00a76.4 line 414 spin-up 24-48 h; Appendix A #8 'weather is prescribed'): time (hourly, monotonic), air temperature [K], relative humidity [0-1], wind speed [m/s >= 0], cloud fraction [0-1], direct and diffuse solar irradiance [W m^-2 >= 0, direct normal <= ~1361 W m^-2 \u2014 solar constant not yet in constants.py and must be added there with a source], optional precipitation. Location `data/weather/`.",
+  "NIGHT/SOLAR ILLUMINATION PARAMETERS referenced by \u00a712.2 line 900 ('enable the night-illumination model') but absent from the schema: E_airglow level default ~10 nW cm^-2, range 3.5-39 (\u00a75.5 line 338), k_cloud, moon phase, E_artificial (\u00a75.5 line 335); solar term E_sun, shadow S (\u00a75.4 line 323).",
+  "Reference camera known answers for config tests (\u00a716.1 lines 1245-1256): VOx, 640x512, 12 um pitch, NETD <60/<50/<40 mK, band ~7.5-13.5 um, 60 Hz, 14 mm lens 32 deg HFOV, tau_th 8-12 ms, TCR ~ -2%/K. \u00a76.4 line 412: C_1 ~ 5 kJ m^-2 K^-1 for thin painted metal (car_paint_black in \u00a712.3 gives 7800*470*0.0012 = 4399 J m^-2 K^-1)."
+ ],
+ "work_items": [
+  {
+   "id": "BC-01",
+   "title": "Sensor config schema: pydantic v2 models for \u00a712.2 with physical validation and derived quantities",
+   "spec_refs": [
+    "\u00a712.2",
+    "\u00a712.1",
+    "\u00a78.1",
+    "\u00a78.3",
+    "\u00a79.1",
+    "\u00a79.2",
+    "\u00a79.4",
+    "\u00a710.2",
+    "\u00a711.2",
+    "\u00a711.3",
+    "\u00a716.1",
+    "CLAUDE.md #2 #5"
+   ],
+   "description": "Create `src/irsim/config/sensor.py`: `SensorConfig` with nested `BandSpec`, `OpticsSpec`, `DistortionSpec`, `FpaSpec` (discriminated union on `type`: `BolometerFpa` requires thermal_time_constant_ms/tcr_per_k and forbids photon fields; `PhotonFpa` requires quantum_efficiency/well_capacity_e/integration_time_ms/dark_current_model), `NoiseSpec` + `Ratios3D` (tvh must be exactly 1.0, all >= 0), `NucSpec`, `IspSpec`, `OutputsSpec`. All models `extra='forbid'`, frozen, units-in-name fields, Literal enums for every `a | b | c` comment in \u00a712.2. Cross-field validators: lambda_max > lambda_min within constants bounds; regime consistent with wavelength (emissive forbids lambda_max < 2.5 um; reflective forbids lambda_min > 3 um); clip_percentiles ordered in [0,1]; cold_shield_efficiency in [0,1]; transmittance in (0,1]; fill_factor in (0,1]; bit_depth 8..16; bad_pixel_fraction in [0,0.01]. Read-only derived properties: `pixel_area_m2`, `nyquist_cyc_per_mm`, `hfov_deg`, `frame_period_s`, `dn_max`. Deliberately NO aperture-factor property (non-negotiable #5). Add a `schema_version: int` field. Also in this commit: make `make typecheck` pass by adding `types-PyYAML` to dev deps (or a `yaml.*` mypy override \u2014 record which in the commit body), add a `config` row to the README status table, CHANGELOG entry. Do not yet load YAML (BC-02) \u2014 build models from dicts here.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_boson_dict_matches_spec_16_1: pitch 12 um, 640x512, netd 50 mK, F 1.0, 7.5-13.5 um load exactly (0 tolerance) \u2014 catches a schema that silently renames/defaults a field",
+    "test_pixel_area: pixel_area_m2 == (12e-6)^2 * 0.90 = 1.296e-10 m^2 to 1e-12 relative (a um/m slip is a factor 1e12)",
+    "test_nyquist_matches_spec_8_3_worked_case: nyquist_cyc_per_mm == 41.67 within 0.1% (\u00a78.3 line 577 gives 41.7)",
+    "test_hfov_vs_datasheet: hfov_deg from 640 x 12 um and f = 14 mm is 30.7 deg, within 5% of \u00a716.1's 32 deg",
+    "test_frame_period_and_bolometer_smear_ratio: frame_period_s == 1/60 to 1e-12; tau_th / frame_period == 0.6 within 1% (\u00a79.2 line 634 '~0.6 frames')",
+    "test_dn_max: 2**16 - 1 == 65535 exact",
+    "test_bolometer_forbids_photon_fields_and_photon_requires_them: pydantic ValidationError in both directions",
+    "test_ratios_tvh_must_be_unity: tvh=0.9 raises; a negative ratio raises",
+    "test_regime_wavelength_consistency: emissive with 0.9-1.7 um raises; reflective with 7.5-13.5 um raises",
+    "test_typo_field_rejected: `f_stop: 1.4` alongside missing `f_number` raises instead of silently defaulting F (a silent default would be a 20-100% radiometric error)",
+    "test_every_numeric_field_name_carries_a_unit_or_is_in_the_dimensionless_allowlist (static introspection of model fields; enforces the ir-radiometry unit convention)",
+    "test_config_exposes_no_aperture_factor: no attribute/property in irsim.config matches /aperture|4.*f_number.*2/ (non-negotiable #5 guard)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "BC-02",
+   "title": "YAML loader, data-root path resolution and canonical config hash",
+   "spec_refs": [
+    "\u00a712.2",
+    "\u00a73.2(b)",
+    "ir-radiometry skill 'Generating a LUT from one config and using it with another. Hence the config hash'",
+    "ir-sim-testing skill golden-fixture rule 'store the config hash alongside the array'"
+   ],
+   "description": "Add `src/irsim/config/loader.py`: `load_sensor_config(path, data_dir=None) -> SensorConfig`; top-level `sensor:` key required; relative data paths (`spectral_response`, later `n_k_file`, `spectral_emissivity`) resolved against a data root (default `<repo>/data`, overridable by argument and `IRSIM_DATA_DIR`), stored as absolute resolved paths on the model, existence checked with an error naming the missing file. Add `config_hash(config) -> str` = SHA-256 of the canonical JSON dump of the validated model (sorted keys, floats repr'd, paths replaced by the SHA-256 of the referenced file contents) and `band_hash(config)` covering only `band` + spectral file bytes (this is what keys a LUT). Add `dump_sensor_config(config) -> str` for round trips. Fixes the `responses/` vs `spectra/` inconsistency by documenting `data/spectra/` as canonical and correcting the spec block (docs commit within the step).",
+   "depends_on": [
+    "BC-01",
+    "BC-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_hash_invariant_to_comments_whitespace_key_order: same physics, three textual variants -> identical hash",
+    "test_hash_changes_for_every_leaf_field (parametrised over every numeric/enum leaf by model traversal): perturb each numeric leaf by 1% -> hash differs; flips of every Literal member -> hash differs. A field the hash ignores is a field whose change would silently reuse a stale LUT/golden",
+    "test_band_hash_changes_when_one_response_sample_moves_by_1e-3 (equivalent to > 1 mK shift in Lb at 300 K for a 7.5-13.5 um band)",
+    "test_band_hash_ignores_non_band_fields: changing netd or f_number leaves band_hash unchanged (so LUTs are shared correctly across NETD grades, \u00a716.1 line 1258)",
+    "test_missing_spectral_file_errors_naming_path (would catch the repo's current dangling `spectra/boson_vox.csv` reference)",
+    "test_round_trip_load_dump_load_equal: loaded model == reloaded dump, including resolved paths"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "BC-03",
+   "title": "Spectral response file contract, loader, and the Boson VOx R(lambda) data file",
+   "spec_refs": [
+    "\u00a72 (R(lambda) definition, line 101)",
+    "\u00a73.2",
+    "\u00a712.2 line 832",
+    "ir-radiometry skill 'Normalising R(lambda)\u2026 Decide once: R(lambda) is normalised to peak 1.0\u2026 Document it in the loader and assert it'",
+    "scripts/generate_luts.py docstring step 1"
+   ],
+   "description": "Add `src/irsim/config/spectral_response.py`: `SpectralResponse` frozen dataclass (`wavelength_um: float64 array`, `response: float64 array`, `source_path`, `sha256`) and `load_spectral_response(path)` reading a two-column CSV (header allowed, `#` comments allowed). Asserts: exactly two columns, no NaN, lambda strictly increasing, lambda in [WAVELENGTH_MIN_UM, 100] um, 0 <= R <= 1, max(R) == 1.0 within 1e-6 (peak normalisation), grid spacing <= 0.05 um. Helpers: `support(threshold=1e-3)`, `half_power_points()`, `resampled(grid_um)` (linear interpolation, zero outside support). Author `data/spectra/boson_vox.csv` (ESTIMATED: near-top-hat 7.5-13.5 um with 0.25 um cosine edges, 0.01 um spacing, header with source note) and correct the YAML/spec path. Radiometry's band integral consumes this type; the loader lives here because the file contract is configuration.",
+   "depends_on": [
+    "radiometry: existing planck.py (spectral_radiance, band_radiance_tophat) \u2014 already present"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_exact_tophat_file_integral_matches_closed_form: for a synthetic exact top-hat CSV on [8,12] um, trapezoid of R(lambda) x spectral_radiance(lambda, 300 K) on the file grid equals band_radiance_tophat(8, 12, 300) within 0.1% (fails if the loader reads nm, per-nm response, or area-normalises)",
+    "test_rejects_nanometre_file: lambda 7500-13500 raises ValueError (skill plausibility range)",
+    "test_rejects_area_normalised_response: a file whose integral is 1 but peak is 0.17 raises (peak != 1 +/- 1e-6)",
+    "test_rejects_non_monotonic_or_out_of_range_response: descending lambda, R = 1.2, R = -0.01 each raise",
+    "test_boson_half_power_points_match_yaml_band_edges: 50% crossings within +/-0.2 um of 7.5 and 13.5 um",
+    "test_resample_error_below_0p05pct: integral on the native grid vs on a 0.01 um resample agree within 0.05% at 300 K and 600 K (guards the grid-spacing rule that makes Simpson at 0.01 um 'ample', \u00a73.2(b))"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "BC-04",
+   "title": "Band registry: canonical BandId, nominal ranges, classification from wavelength, per-band defaults",
+   "spec_refs": [
+    "\u00a712.1 (table lines 803-820)",
+    "\u00a712.3 (per-band dict keys)",
+    "\u00a75.2 (lines 285-294)",
+    "\u00a712.2 line 900 ('To add SWIR\u2026')"
+   ],
+   "description": "Add `src/irsim/config/bands.py`: `BandId = Literal['nir','swir','mwir','lwir']`, `NOMINAL_RANGES_UM` from \u00a712.1 (canonical; \u00a75.2 differences noted in docstring), `DEFAULT_REGIME` (reflective, reflective, mixed, emissive), `DEFAULT_DETECTOR_MODEL` (photon, photon, photon, bolometer), `band_id_for(lambda_min_um, lambda_max_um)` by maximal fractional overlap with the nominal ranges (error if overlap < 50% with every band), and `SensorConfig.band.id` as an optional explicit field validated against the derived id when present, derived otherwise. Also `enabled_illumination_terms(regime) -> frozenset({'self_emission','solar','night'})` encoding \u00a75.2's 'one shading core, two illumination paths' so downstream kernels never switch on band name.",
+   "depends_on": [
+    "BC-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_nominal_ranges_classify_to_themselves: each \u00a712.1 range maps to its own id; 7.5-13.5 -> lwir; 3.0-5.0 -> mwir; 0.9-1.7 -> swir; 0.75-1.0 -> nir; 1.8-2.6 um raises (no band)",
+    "test_boson_yaml_resolves_lwir_and_explicit_mismatch_raises: `band.id: mwir` on a 7.5-13.5 um band raises",
+    "test_self_emission_negligible_in_swir_dominant_in_lwir: band_radiance_tophat over nominal SWIR at 300 K divided by the same over nominal LWIR < 1e-6 (\u00a712.1 'negligible' vs 'dominant'; a um/nm mix-up or wrong table entry breaks this by orders of magnitude)",
+    "test_mwir_straddles_crossover: Lb(3-5 um, 300 K)/Lb(7.5-13.5 um, 300 K) in [1e-2, 1e-1] (\u00a75.2 'both'; expected ~0.035)",
+    "test_default_regime_and_detector_per_band_match_spec_12_1 (four known answers)",
+    "test_illumination_terms: emissive -> {self_emission}; reflective -> {solar, night}; mixed -> all three"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "BC-05",
+   "title": "Material schema (\u00a712.3) with Kirchhoff single-authoring rule and per-band dicts",
+   "spec_refs": [
+    "\u00a712.3",
+    "\u00a74.1",
+    "\u00a74.2",
+    "\u00a74.3",
+    "\u00a74.4",
+    "\u00a76.2",
+    "\u00a716.2",
+    "CLAUDE.md #4",
+    "thermal-materials skill 'Material schema' and 'Tests to write'"
+   ],
+   "description": "Add `src/irsim/config/material.py`: `MaterialConfig` with `source: Literal['measured','literature','estimated']` (skill), `ThermalProps` (all > 0; property `areal_heat_capacity_j_m2k = rho c_p delta`, `thermal_inertia = sqrt(k rho c_p)`), `OpticalProps` with exactly one of `spectral_emissivity` (CSV path, lambda 0.3-15 um) or `spectral_reflectance` (mutually exclusive \u2014 authoring both is a ValidationError), optional scalar `emissivity_per_band` fallback keyed by BandId (decision recorded), `roughness_per_band` and `transmittance_per_band` dicts requiring all four BandId keys with values in [0,1], `angular_model` discriminated union {fresnel: n_k_file; empirical: eps0, a in [0,1], p in [1,10]; constant} (\u00a74.2 A/B/C). Validator: for each band, max over band of eps(lambda) + tau_band <= 1 + 1e-6 (closure must be achievable); warn (not error) when roughness increases with wavelength (\u00a74.3) or when `constant` is used with eps0 <= 0.93 (\u00a74.2 Level C rule). Top-level file shape `materials: {name: \u2026}` per spec. Library files, the loader and the full-library closure walk belong to the materials area; this item ships the schema plus test fixtures only.",
+   "depends_on": [
+    "BC-04",
+    "BC-02 (path resolution for csv/n_k files)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_authoring_emissivity_and_reflectance_together_is_rejected (non-negotiable #4 by construction)",
+    "test_closure_impossible_rejected: fixture with eps = 0.90 across LWIR and transmittance_per_band.lwir = 0.20 raises (eps + tau = 1.10 > 1 + 1e-6)",
+    "test_glass_fixture_band_resolution: a glass fixture resolves transmittance swir > 0.5 and lwir < 0.02 by BandId (\u00a74.4; skill test 'Band resolution')",
+    "test_car_paint_black_areal_heat_capacity: 7800 * 470 * 0.0012 = 4399 J m^-2 K^-1, within 20% of \u00a76.4's 'C1 ~ 5 kJ m^-2 K^-1 for thin painted metal'",
+    "test_thermal_inertia_ordering_from_spec_16_2: P(water) > P(concrete) > P(dry soil) > P(cotton) using \u00a716.2 rows (\u00a76.3 low-P/high-P statement)",
+    "test_per_band_dicts_require_all_four_bands: a material missing `swir` in roughness_per_band raises",
+    "test_empirical_angular_params_bounded: a = 1.5 or p = 0 raises; a = 0.25, p = 5 loads"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "BC-06",
+   "title": "Atmosphere preset schema for configs/atmospheres with no weather fields",
+   "spec_refs": [
+    "\u00a77.1",
+    "\u00a77.2",
+    "\u00a77.3",
+    "\u00a75.3(a)",
+    "\u00a77.4",
+    "CLAUDE.md #6",
+    "Appendix A #2 #8"
+   ],
+   "description": "Add `src/irsim/config/atmosphere.py`: `AtmospherePreset` with `name`, `description`, `visibility_km`, `aerosol` label, per-band `gamma_0_per_m` and `beta_m2_per_g` dicts keyed by BandId (\u00a77.3 gamma = gamma_0 + beta w; beta = 0 allowed for bands where humidity is second-order), optional `sky {delta_t_clear_k in [5,80], q in [0.3,1.5]}` (\u00a75.3), `valid_range_m` (default 500, Appendix A #2). `extra='forbid'` and an explicit validator rejecting any weather-like key (air_temperature*, relative_humidity*, wind*, cloud*) so T_air/RH/cloud can only arrive via the injected WeatherSeries (non-negotiable #6). Ship four presets fitted to the \u00a77.2 table (clear_dry, humid, haze_5km, light_fog_200m) with `source: literature (\u00a77.2)` \u2014 the numerical fit method is owned by the atmosphere area and recorded in its ADR; this item only encodes the schema and table-consistent starting values.",
+   "depends_on": [
+    "BC-04",
+    "atmosphere: decision on gamma parameterisation (gamma_0 + beta*w per band vs tau@range table)",
+    "thermal: WeatherSeries field names (for the humidity term)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_preset_rejects_weather_fields: adding `air_temperature_k: 300` or `relative_humidity: 0.8` to a preset raises (non-negotiable #6)",
+    "test_clear_dry_lwir_tau_200m_in_spec_range: exp(-gamma_lwir(w = 8 g m^-3) * 200 m) in [0.90, 0.96] (\u00a77.2 row 1) \u2014 computed in-test, independent of the atmosphere module",
+    "test_light_fog_band_ordering_at_200m: tau_lwir > tau_mwir > tau_swir and tau_swir in [0.10, 0.30], tau_lwir in [0.35, 0.60] (\u00a77.2 row 4; \u00a715 Tier 3 'fog kills SWIR before LWIR')",
+    "test_humid_air_hurts_lwir_more_than_swir: with w = 24 g m^-3 (30 C, 80% RH via \u00a77.3 Magnus computed in-test) tau_lwir in [0.72, 0.85] and tau_swir in [0.88, 0.95] (\u00a77.2 row 2; \u00a715 Tier 3)",
+    "test_gamma_nonnegative_and_all_bands_present"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "BC-07",
+   "title": "Weather file schema and loader (data/weather) with unit-mistake rejection",
+   "spec_refs": [
+    "\u00a76.1",
+    "\u00a76.4 (spin-up)",
+    "\u00a75.3 (cloud fraction)",
+    "\u00a77.3 (RH)",
+    "Appendix A #8",
+    "thermal-solver skill 'Weather and spin-up'",
+    "CLAUDE.md #6"
+   ],
+   "description": "Add `src/irsim/config/weather.py`: `WeatherRecord`/`WeatherFile` schema for hourly CSV/YAML in `data/weather/`: `time_s` (monotonic), `air_temperature_k` in [200, 330], `relative_humidity` in [0,1], `wind_speed_m_s >= 0`, `cloud_fraction` in [0,1], `solar_direct_normal_w_m2` in [0, SOLAR_CONSTANT_W_M2], `solar_diffuse_w_m2 >= 0`, optional `precipitation_mm_h >= 0`; add `SOLAR_CONSTANT_W_M2 = 1361.0` to `irsim.radiometry.constants` with source (Kopp & Lean 2011). Loader returns plain arrays for the thermal area's `WeatherSeries` constructor \u2014 this item must NOT construct solvers or atmospheres. Ownership note: the CLAUDE.md layout lists config/ schemas for sensor/material/atmosphere only; weather ownership must be agreed with the thermal area before this lands (see ambiguities).",
+   "depends_on": [
+    "thermal: WeatherSeries interface (field names and time base)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_rh_in_percent_rejected: RH = 80 raises (would silently scale the \u00a77.3 humidity term by 100x)",
+    "test_celsius_rejected: air_temperature_k = 20 raises (would put the whole scene 273 K cold)",
+    "test_direct_normal_above_solar_constant_rejected: 1500 W m^-2 raises",
+    "test_minimum_spin_up_history_available: a file shorter than 24 h before t = 0 raises or warns per \u00a76.4 (configurable minimum)",
+    "test_time_monotonic_and_hourly_spacing_tolerated"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "BC-08",
+   "title": "LUT sidecar, staleness detection, and `make luts` driver wiring",
+   "spec_refs": [
+    "\u00a73.2(b)",
+    "\u00a73.3",
+    "\u00a73.4",
+    "\u00a713.5 line 1111 ('generate the LUT offline and load it as a binary asset')",
+    "scripts/generate_luts.py docstring",
+    "Makefile `luts`",
+    "CLAUDE.md #2",
+    "ir-radiometry skill 'Fast path'"
+   ],
+   "description": "Add `src/irsim/config/lut_files.py`: `lut_paths(sensor_name, out_dir)`, `write_lut_bundle(...)` writing float32 `.npy` for Lb, Lb_q, dLb_dT plus `<sensor>_lut.json` {schema_version, sensor_name, band_hash, config_hash, t_min_k=200, t_max_k=1000, dt_k=0.05, n=16001, dtype='float32', spectral_sha256, generator_version}; `load_lut_bundle(sensor_config, out_dir)` that recomputes band_hash and raises `StaleLUTError` (naming both hashes and the `make luts` remedy) on mismatch, and asserts dtype float32 and shape (16001,). Implement `scripts/generate_luts.py` to iterate `--configs`, call the radiometry area's `build_band_luts(spectral_response, t_grid)` and write bundles; add `--data` root arg. Decide and record whether LUTs are committed (currently gitignored) or generated (ADR).",
+   "depends_on": [
+    "BC-02",
+    "BC-03",
+    "radiometry: band integral with R(lambda) by Simpson on 0.01 um + LUT builder + inverse lookup"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_generated_boson_lut_is_float32_16001_on_200_1000_step_0p05 (non-negotiable #2; a float16 write passes visually and destroys NETD)",
+    "test_lut_loader_rejects_float16_bundle: a hand-written float16 .npy in tmp_path raises",
+    "test_lut_vs_tophat_closed_form: for an exact top-hat response file, LUT[300 K] and LUT[600 K] vs band_radiance_tophat within 0.1% (generate_luts.py lines 15-16)",
+    "test_lut_vs_quadrature_5mK: max |LUT(T) - Simpson(T)| / dLb_dT(T) < 5 mK over 200-1000 K (\u00a715 Tier 1)",
+    "test_lut_strictly_increasing_and_dLbdT_positive (skill invariant 6)",
+    "test_stale_lut_detected: shift one R(lambda) sample by 1e-3, reload -> StaleLUTError; unchanged config -> loads",
+    "test_two_sensors_same_band_share_band_hash: Boson 'industrial' (40 mK) and 'consumer' (60 mK) variants produce identical band_hash and may reuse one LUT"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "BC-09",
+   "title": "Second-band scalability guard: SWIR InGaAs config + 'no band literals in the core' test",
+   "spec_refs": [
+    "\u00a712.2 line 900 ('That is the test of whether your architecture is actually scalable')",
+    "\u00a712.1",
+    "\u00a75.2",
+    "\u00a716.4 step 10",
+    "CLAUDE.md 'Bands are data, not code'",
+    "ir-radiometry skill 'Adding a band'"
+   ],
+   "description": "Add `configs/sensors/example_swir_ingaas_640.yaml` (regime reflective, fpa.type photon with quantum_efficiency ~0.8, well_capacity_e, integration_time_ms, dark_current_model; ESTIMATED) and `data/spectra/ingaas.csv` (ESTIMATED 0.9-1.7 um shape, peak 1.0). Add `tests/unit/test_band_scalability.py` parametrised over every `configs/sensors/*.yaml`: loads, resolves a BandId, band_hash computes, and (once BC-08 lands) a LUT bundle generates with no code change. Add a static guard that `src/irsim/radiometry`, `src/irsim/optics`, `src/irsim/detector`, `src/irsim/noise`, `src/irsim/isp` contain no band-name string literals ('lwir','mwir','swir','nir') and no hard-coded band edges \u2014 a failure means the abstraction was broken. Update README 'Bands configured' line.",
+   "depends_on": [
+    "BC-01",
+    "BC-02",
+    "BC-03",
+    "BC-04",
+    "BC-08 (for the LUT half of the test)",
+    "radiometry: photon-form band LUT (Lb_q) for photon detectors"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_every_sensor_config_loads_and_classifies (parametrised over configs/sensors)",
+    "test_swir_config_is_photon_and_has_no_bolometer_fields",
+    "test_swir_300K_self_emission_negligible_vs_lwir: Lb_q(SWIR, 300 K) x (hc/lambda_mean) / Lb(LWIR, 300 K) < 1e-6 computed from the two loaded configs (fails if either band range or the photon/energy conversion is wrong)",
+    "test_core_has_no_band_literals (AST/regex over the five core packages)",
+    "test_lut_generation_for_all_configs_produces_monotonic_float32 (after BC-08)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Config schema technology and strictness (pydantic v2, extra='forbid', frozen models, units-in-field-names, schema_version)",
+   "why": "Every downstream module reads these objects and every golden fixture/LUT sidecar embeds their hash; changing the validation model later invalidates fixtures and silently changes which YAML files are accepted. Strict rejection of unknown keys is what prevents a typo like `f_stop` from defaulting F and producing a 20-100% radiometric error.",
+   "options": [
+    "pydantic v2 BaseModel with extra='forbid', frozen=True, Literal enums, field validators (already a dependency; mypy strict may need the pydantic.mypy plugin)",
+    "stdlib dataclasses + hand-written validation (no new dependency semantics, more code, weaker error messages)",
+    "attrs + cattrs (not in pyproject; adds a dependency)"
+   ]
+  },
+  {
+   "title": "Data path resolution root for spectral_response, n_k_file, spectral_emissivity and weather files",
+   "why": "The spec (\u00a712.2 line 832 `responses/\u2026`), the YAML (`spectra/\u2026`), generate_luts.py (`data/spectra/`) and the ir-radiometry skill (`data/spectra/<detector>.csv`) disagree today and the referenced file does not exist. Whatever is chosen is baked into every config file and every hash.",
+   "options": [
+    "Relative to a single data root (`<repo>/data`, overridable by argument and IRSIM_DATA_DIR) \u2014 recommended; matches generate_luts.py and the skill",
+    "Relative to the YAML file's own directory (portable bundles, but configs/ and data/ are separate trees today)",
+    "Absolute paths only (breaks across machines and CI)"
+   ]
+  },
+  {
+   "title": "Canonical config hash definition (what is hashed, how floats/paths are canonicalised, band_hash vs config_hash)",
+   "why": "The hash is written into LUT sidecars (\u00a73.2(b)/skill) and golden fixtures (ir-sim-testing skill) and must stay stable for the life of the repo; a hash that covers too little reuses stale LUTs silently, one that covers too much (e.g. NETD grade) forces needless regeneration and breaks LUT sharing across the \u00a716.1 60/50/40 mK variants.",
+   "options": [
+    "SHA-256 over canonical JSON of the validated model with file paths replaced by content SHA-256; separate band_hash over band block + spectral file only (recommended)",
+    "SHA-256 of the raw YAML bytes (fragile: comments/key order change the hash)",
+    "Hash only the spectral file (misses lambda range and regime changes)"
+   ]
+  },
+  {
+   "title": "LUTs committed to git vs generated on install/CI",
+   "why": ".gitignore excludes data/lut/*.npy|*.json while the ir-radiometry skill says LUTs are 'checked into data/lut/ with a hash'. The choice determines whether a fresh clone can run the radiance kernel without running `make luts`, and whether LUT regeneration diffs are reviewable.",
+   "options": [
+    "Commit the 3 x 64 kB float32 tables + sidecar per band and keep the stale-hash check as the guard (skill's position)",
+    "Keep them gitignored; `make install` and CI run `make luts`; tests generate into tmp_path (current .gitignore position)",
+    "Commit only the sidecar JSON, regenerate arrays on demand"
+   ]
+  },
+  {
+   "title": "Band identity: explicit `band.id` in the sensor YAML vs derived from the wavelength range; canonical nominal ranges",
+   "why": "Per-band material dicts (\u00a712.3) are keyed by {nir,swir,mwir,lwir} but \u00a712.2 gives the sensor no band id; \u00a712.1 and \u00a75.2 also disagree on nominal ranges (SWIR 0.9-1.7 vs 1.0-1.7 (ext 2.5); LWIR 7.5-13.5 vs 8-12). The mapping decides which material roughness/transmittance a camera sees and outlives every config.",
+   "options": [
+    "Optional explicit `band.id` validated against derivation by maximal overlap with \u00a712.1 ranges (recommended)",
+    "Always derived, never authored (fails for unusual filters, e.g. 1.8-2.6 um extended SWIR)",
+    "Always explicit, no derivation (simple, but allows a mismatched id to go unnoticed)"
+   ]
+  },
+  {
+   "title": "R(lambda) normalisation and where quantum efficiency lives",
+   "why": "\u00a79.1 line 603 permits folding eta into R(lambda); \u00a72 line 101 defines R as QE x filter x window; the ir-radiometry skill mandates peak-normalised R with absolute responsivity in the detector model. Choosing wrong double-counts or drops QE in every photon-band NETD prediction, and the choice is embedded in every spectral CSV.",
+   "options": [
+    "R(lambda) peak-normalised shape (may include QE spectral shape) + scalar `fpa.quantum_efficiency` as absolute peak QE (recommended; matches skill and the existing generate_luts docstring)",
+    "Absolute R(lambda) (peak = QE) with no separate eta field (breaks the peak==1 assertion and the bolometer/photon symmetry)",
+    "Shape-only R with QE entirely spectral in a second file (more faithful, more data nobody has)"
+   ]
+  },
+  {
+   "title": "Shared home for T_REF/T_SPAN encoding constants and the LUT temperature grid",
+   "why": "\u00a713.3 defines T_ref = 200 K, T_span = 800 K; \u00a73.2(b) defines the LUT domain [200, 1000] K; they are the same numbers defined in two sections and will be used by config (sidecar), radiometry (grid) and irsim_isaac (encode/decode kernels). Defining them twice is how the encode/decode round trip drifts.",
+   "options": [
+    "Add T_ENCODE_REF_K, T_ENCODE_SPAN_K, LUT_T_MIN_K, LUT_T_MAX_K, LUT_DT_K to irsim.radiometry.constants with \u00a73.2/\u00a713.3 citations (recommended)",
+    "Make them fields of the sensor YAML (allows per-sensor ranges but lets two sensors disagree with one encoder)",
+    "Hard-code in each consumer (status quo in the spec; rejected by CLAUDE.md 'don't invent constants')"
+   ]
+  },
+  {
+   "title": "Material schema split and fallbacks: config/ owns schema, materials/ owns loader+library; `source` field; scalar per-band emissivity fallback; `materials:` wrapper key",
+   "why": "CLAUDE.md layout puts 'pydantic schemas for material YAML' in config/ and 'library + loader' in materials/; the spec \u00a712.3 shows a `materials:` wrapper and a spectral CSV while \u00a716.2 provides only scalar per-band values and Appendix A #3 concedes emissivity is grey within a band. The team needs one answer before the first material file is authored, because retrofitting (\u00a74.4 line 260) is painful.",
+   "options": [
+    "Schema in config/ with optional scalar `emissivity_per_band` fallback (validated against closure) and mandatory `source`; loader/library/closure walk in materials/ (recommended)",
+    "Spectral CSV mandatory from day one (blocks authoring until spectra exist for 15 materials)",
+    "Everything in materials/ (contradicts CLAUDE.md layout)"
+   ]
+  },
+  {
+   "title": "Atmosphere preset parameterisation",
+   "why": "The spec gives no YAML for configs/atmospheres; \u00a77.2 says 'store a small table indexed by (band, atmosphere, humidity, visibility)' while \u00a77.3 gives gamma = gamma_0 + beta w. The preset schema fixes which of these the atmosphere module receives, and non-negotiable #6 requires that humidity/T_air never be preset fields.",
+   "options": [
+    "Per-band (gamma_0, beta) with w computed from the injected WeatherSeries via Magnus (recommended; smallest schema, satisfies #6 by construction)",
+    "Per-band tau at a reference range plus visibility scaling (matches published curves directly, humidity handled ad hoc)",
+    "Full (band, humidity, visibility) lookup table (MODTRAN-derived; more data than exists today)"
+   ]
+  },
+  {
+   "title": "Policy for \u00a712.2 schema gaps: housing temperature parameters, radiometric flag, night/solar illumination block, shutterless residual parameters, distortion coefficient conventions",
+   "why": "`housing_temp_mode: fixed` has no temperature; `coupled` has no thermal parameters (\u00a78.2/\u00a79.2); \u00a711.1 and the sensor-noise-chain skill require a 'radiometric' declaration the schema lacks; \u00a712.2 line 900 says to 'enable the night-illumination model' but no field exists; Brown-Conrady/Kannala-Brandt coefficient counts differ. Extending the schema now vs deferring changes every config file and hash.",
+   "options": [
+    "Extend now with optional, defaulted fields (`optics.housing_temp_k`, `optics.housing_tau_s`, `radiometric: bool`, `illumination: {airglow_nw_cm2, moon, artificial}` or move illumination to a scene config) and a schema_version bump (recommended)",
+    "Defer until the consuming module lands, accepting a hash-breaking schema change later",
+    "Put scene-level items (illumination, sky) in a separate scene/environment YAML from the start"
+   ]
+  },
+  {
+   "title": "Dev dependency for PyYAML typing (`types-PyYAML` vs mypy ignore_missing_imports override)",
+   "why": "mypy strict on src/irsim will fail on the first `import yaml`; the choice adds a dependency to pyproject and outlives the commit.",
+   "options": [
+    "Add `types-PyYAML` to the dev extra (typed, recommended)",
+    "Add `yaml.*` to the mypy ignore_missing_imports override (untyped calls into yaml)"
+   ]
+  },
+  {
+   "title": "LUT file naming and sharing: per-sensor vs per-band-hash",
+   "why": "generate_luts.py names files by sensor; two sensors sharing a detector (Boson consumer/professional/industrial NETD grades, \u00a716.1) would duplicate identical tables and the isaac loader must know which file a sensor uses.",
+   "options": [
+    "Name by band_hash prefix with a sensor->hash map in the sidecar (dedupes; recommended)",
+    "Name by sensor (simple; duplicates)",
+    "Name by BandId only (breaks when two LWIR cameras have different R(lambda))"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "The only sensor config references `spectra/boson_vox.csv`, which does not exist; the spec names `responses/boson_vox.csv`; generate_luts.py and the skill name `data/spectra/`. No real Boson VOx spectral response is available \u2014 any file authored now is ESTIMATED.",
+   "how_to_verify": "`ls data/spectra` (only .gitkeep today). After BC-03, `load_sensor_config` must fail loudly on a dangling path (test_missing_spectral_file_errors_naming_path). Replace the estimated CSV when a measured curve is obtained and confirm band_hash changes."
+  },
+  {
+   "description": "Relationship between `band.lambda_min_um/lambda_max_um` and the support of R(lambda) is undefined: are the band edges integration limits that truncate R, or descriptive 50% points with the integral taken over the whole R support?",
+   "how_to_verify": "Compute Lb(300 K) for the soft-edged Boson R with and without truncation at 7.5/13.5 um; express the difference in mK via dLb_dT. If > 5 mK the choice is physically material \u2014 record it in the LUT ADR and add a validator that the 50% points lie within +/-0.2 um of the declared edges (BC-03 test)."
+  },
+  {
+   "description": "QE placement: peak-normalised R(lambda) + scalar eta (skill) vs QE folded into R (\u00a79.1 line 603). Double counting or dropping eta changes every photon-band NETD prediction by the QE factor (~0.7-0.9) without any visible image change.",
+   "how_to_verify": "After the detector area lands, predict NETD for the SWIR example both ways and compare with the \u00a79.4 workflow; the Tier 2 NETD bench (within 10% of config) must be run with the convention chosen in the ADR and the loader must assert peak == 1.0 so an absolute-QE file cannot be loaded by mistake."
+  },
+  {
+   "description": "`regime: mixed` semantics (which illumination paths are enabled and whether \u00a75.2's 'compile-time flag' culling is per band or per sensor) are not defined; MWIR needs both paths.",
+   "how_to_verify": "BC-04 `enabled_illumination_terms` test pins the mapping; verify with the Tier 3 checklist item 'MWIR shows solar glint at midday and looks like LWIR at night' once the scene radiance area exists."
+  },
+  {
+   "description": "`housing_temp_mode: fixed|ambient|coupled` has no accompanying parameters (no housing temperature for `fixed`, no lumped thermal model parameters for `coupled` per \u00a79.2 line 644); `nuc.mode: shutterless` has no drift/scene-based residual parameters (\u00a711.2 line 772).",
+   "how_to_verify": "Coordinate with optics/noise areas: list the parameters their models actually read, add them as optional defaulted fields under a schema_version bump, and test that `fixed` without `housing_temp_k` raises."
+  },
+  {
+   "description": "Distortion: coefficient count and ordering per model (Brown-Conrady k1,k2,p1,p2,k3 in OpenCV order? Kannala-Brandt k1..k4? f-theta polynomial degree?) is unspecified, and \u00a78.4 defers to Isaac Sim's camera stack whose 6.0 attribute names under `isaacsim.sensors.experimental.rtx.RtxCamera` are not documented in this repo.",
+   "how_to_verify": "Store `model` + opaque `coeffs` list with a per-model length check only; the isaac area verifies attribute names by instantiating `RtxCamera` in a live Isaac Sim 6.0 session and dumping its USD attributes (integration test, @pytest.mark.isaac)."
+  },
+  {
+   "description": "NETD anchor convention: `netd_mk_at_300k` does not state target/atmosphere convention (\u00a79.4 line 683, R27) nor whether it anchors sigma_TVH only or sigma_total (ratios in \u00a712.2 are 'relative to sigma_TVH' while \u00a710.2 says 'all in NETD units').",
+   "how_to_verify": "Docstring the field as: 300 K blackbody filling the FOV, tau_atm = 1, configured F and tau_opt, temporal noise only (the \u00a715 Tier 2 two-blackbody measurement). Verify by the noise area's Tier 2 test: measured NETD from simulated two-blackbody imagery within 10% of the config value."
+  },
+  {
+   "description": "Which area owns the weather file schema: CLAUDE.md lists config/ schemas for sensor/material/atmosphere only, but `data/weather/` exists and non-negotiable #6 depends on WeatherSeries.",
+   "how_to_verify": "Agree with the thermal area before BC-07; the thermal area's 'constructor requires the shared object' test (thermal-solver skill) is the enforcement point, BC-07 only validates file contents."
+  },
+  {
+   "description": "mypy strict + pydantic v2: `Field(...)` defaults, discriminated unions and computed properties may need `plugins = ['pydantic.mypy']`; `import yaml` has no stubs in the current dev extra; Python 3.13 in the active environment vs `requires-python >= 3.10` / ruff py310 (3.11+ syntax such as `typing.Self`, `StrEnum` must be avoided).",
+   "how_to_verify": "Run `make install && make check` in a Python 3.10 environment (e.g. `conda create -n irsim310 python=3.10`) after BC-01; add the plugin/override only if typecheck fails and say so in the commit body."
+  },
+  {
+   "description": "tests/unit/test_planck.py uses `np.trapezoid` (NumPy >= 2.0) while pyproject allows `numpy>=1.24`; a 1.x install fails the existing suite before any config work starts. The scaffold's own `make check` status is unverified because no environment is installed.",
+   "how_to_verify": "`pip install 'numpy<2' && pytest tests/unit/test_planck.py` reproduces the AttributeError; fix by bumping to `numpy>=2.0` (chore(build)) or using `np.trapz` with a compatibility shim. Then run `make check` on the clean scaffold before BC-01."
+  },
+  {
+   "description": "LUT generation uses the 'sensor' as the LUT key, but the LUT depends only on the band block + spectral file; the isaac kernel (\u00a713.5) loads one table per band \u2014 the sensor->LUT mapping and sharing across NETD variants are undefined.",
+   "how_to_verify": "BC-08 test_two_sensors_same_band_share_band_hash; confirm the isaac loader looks up by band_hash from the sidecar rather than by sensor name."
+  },
+  {
+   "description": "`bit_depth` vs `outputs.dn_16`: for a 14-bit ADC (\u00a711.3 '14-16 bit'), whether DN16 is left-shifted, zero-padded or clipped is undefined; the schema must allow bit_depth 8..16 while the isp area defines DN16 container semantics.",
+   "how_to_verify": "Add a 14-bit variant config in tests; the isp area's Tier 2 SITF test must show DN16 = DN14 << 2 (or documented alternative) and no wrap-around (sensor-noise-chain skill 'Well saturation')."
+  },
+  {
+   "description": "Per-band material dicts require all four BandId keys per the \u00a712.3 example, but early on only LWIR is configured; whether a material missing `swir` fails at load or only at use is a policy choice that affects authoring friction.",
+   "how_to_verify": "BC-05 enforces all four keys at load (spec example shape); revisit if the material audit script (thermal-materials skill) shows authoring friction, and record the change in the material-schema ADR."
+  },
+  {
+   "description": "Night-illumination/solar parameters (\u00a75.4, \u00a75.5: airglow level 3.5-39 nW cm^-2, cloud factor, moon phase, artificial sources) are named as something to 'enable' for SWIR (\u00a712.2 line 900) but have no home in any schema; they are scene/environment properties, not camera properties.",
+   "how_to_verify": "Decide in the schema-gaps ADR whether they live in a scene/environment YAML alongside the atmosphere preset; verify with the Tier 3 item 'SWIR at night is usable from airglow alone' once the scene radiance area lands."
+  },
+  {
+   "description": "HFOV derived from the YAML (640 x 12 um, f = 14 mm -> 30.7 deg) differs from \u00a716.1's datasheet 32 deg by 4%; either the lens EFL differs from 14 mm or the datasheet HFOV is a rounded/diagonal figure.",
+   "how_to_verify": "Check the FLIR Boson 640 14 mm lens datasheet (EFL vs nominal focal length); keep the BC-01 test tolerance at 5% and tighten once the true EFL is known."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: `src/irsim/config/` uses only pydantic, PyYAML, NumPy and stdlib; `tests/unit/test_layering.py` already rglobs every `src/irsim/**/*.py` so each new config module is checked automatically for omni/pxr/isaacsim/warp/carb imports. Additionally config must never import `irsim_isaac` \u2014 add that root to the FORBIDDEN set in the same step (BC-01).",
+  "#2 float32 or better: the LUT sidecar records `dtype: float32` and `load_lut_bundle` asserts `np.float32` and shape (16001,) (BC-08 tests test_generated_boson_lut_is_float32_16001 and test_lut_loader_rejects_float16_bundle); `OutputsSpec` exposes no dtype knob below float32 for radiance_linear/apparent_temperature; the spectral response loader returns float64 for quadrature (BC-03).",
+  "#3 Noise in radiance/electron space: not enforced by config code, but `noise.netd_mk_at_300k` is documented in the schema as a Kelvin-space CALIBRATION ANCHOR consumed only through dLb_dT at 300 K (\u00a79.4), never as a Kelvin sigma; the field name keeps the 300 K reference explicit. Enforcement lives in the noise area's 'NETD decreases with scene temperature' test.",
+  "#4 Kirchhoff closure: `MaterialConfig` forbids authoring emissivity and reflectance together and rejects eps(lambda) + tau_band > 1 + 1e-6 (BC-05 tests test_authoring_emissivity_and_reflectance_together_is_rejected, test_closure_impossible_rejected); the full-library walk test that CLAUDE.md requires is owned by the materials area and depends on this schema.",
+  "#5 Aperture factor pi/(4F^2+1) defined once in irsim.optics: config stores `f_number` only and provides no aperture/omega property; BC-01 test_config_exposes_no_aperture_factor greps the config package for any such computation.",
+  "#6 One WeatherSeries feeds thermal and atmosphere: `AtmospherePreset` is `extra='forbid'` with an explicit rejection of air-temperature/humidity/wind/cloud keys (BC-06 test_preset_rejects_weather_fields), so weather can only enter through the injected object; the weather file loader (BC-07) returns plain arrays and constructs neither solver nor atmosphere. The constructor-level enforcement test belongs to the thermal area."
+ ],
+ "spec_internal_inconsistencies": [
+  "Spectral response path: docs/physics-model.md \u00a712.2 line 832 `spectral_response: \"responses/boson_vox.csv\"` vs configs/sensors/flir_boson_640_lwir.yaml line 13 `spectra/boson_vox.csv` vs scripts/generate_luts.py line 7 `data/spectra/` vs .claude/skills/ir-radiometry/SKILL.md line 121 `data/spectra/<detector>.csv`. The file exists under none of these paths (data/spectra/ holds only .gitkeep).",
+  "LUT storage: .gitignore lines `data/lut/*.npy` and `data/lut/*.json` exclude generated LUTs, while .claude/skills/ir-radiometry/SKILL.md lines 65-66 say the LUT is 'checked into data/lut/ with a hash of the config that produced it'.",
+  "Photon fields: \u00a712.2 lines 858-861 list `quantum_efficiency`, `well_capacity_e`, `integration_time_ms`, `dark_current_model` as `null` for a bolometer; the YAML omits them entirely (lines 27-36). The schema must accept both forms (Optional, default None).",
+  "Distortion example: \u00a712.2 line 843 `coeffs: [-0.28, 0.09, 0.0, 0.0, 0.0]` vs YAML line 24 all zeros marked ESTIMATED \u2014 the spec's numbers are illustrative, not Boson data; neither cites a source.",
+  "Band nominal ranges: \u00a712.1 line 805 SWIR 0.9-1.7 um, LWIR 7.5-13.5 um vs \u00a75.2 lines 288-290 SWIR 1.0-1.7 (ext. 2.5) um, LWIR 8.0-12.0 (7.5-13.5) um. A band registry must pick one (recommend \u00a712.1, the configuration section).",
+  "Night illumination: \u00a712.2 line 900 says adding SWIR means 'enable the night-illumination model', and \u00a75.5 line 338 calls the airglow level 'configurable', but the \u00a712.2 schema (lines 826-898) has no illumination/airglow/solar field anywhere.",
+  "Radiometric flag: \u00a711.1 line 755 and .claude/skills/sensor-noise-chain/SKILL.md line 157 ('A camera config declares whether it is radiometric') require a config declaration that \u00a712.2 does not contain; `outputs.apparent_temperature` is the only proxy.",
+  "Housing temperature: \u00a712.2 line 839 offers `housing_temp_mode: fixed | ambient | coupled` but no housing temperature value for `fixed` and none of the T_FPA lumped-model parameters \u00a79.2 line 644 calls for under `coupled`.",
+  "Palette list: \u00a711.4 line 792 names 'Ironbow, Rainbow, Lava, Arctic'; \u00a712.2 line 891 offers `gray | ironbow | rainbow | lava` (adds gray, drops arctic).",
+  "QE placement: \u00a79.1 line 603 'eta the quantum efficiency (folded into R(lambda) if you prefer)' vs \u00a72 line 101 'normalised spectral response (QE x filter x window)' vs ir-radiometry skill lines 133-135 'R(lambda) is normalised to peak 1.0, and absolute responsivity lives in the detector model'.",
+  "LUT spacing: \u00a73.2(b) line 164 '0.05-0.1 K spacing' vs scripts/generate_luts.py line 9 and ir-radiometry skill line 64 '0.05 K' (fixed). 200-1000 K at 0.05 K is 16001 entries, quoted as '~16k'.",
+  "Material schema wrapper and fields: \u00a712.3 lines 907-908 nest under a `materials:` key; .claude/skills/thermal-materials/SKILL.md lines 136-150 show the material at top level and add a `source` field the spec lacks. CLAUDE.md layout assigns 'pydantic schemas for \u2026 material' to config/ but 'library + loader' to materials/ \u2014 the split is undefined in the spec.",
+  "Material emissivity representation: \u00a712.3 line 916 requires a spectral CSV (0.3-15 um) while \u00a716.2 lines 1262-1278 supply only scalar per-band eps values and Appendix A #3 line 1388 states emissivity is grey within a band \u2014 no scalar fallback is defined in the schema.",
+  "T_ref/T_span vs LUT range: \u00a713.3 line 981 (T_ref = 200 K, T_span = 800 K) and \u00a73.2(b) line 164 (LUT on [200, 1000] K) define the same domain independently; neither the spec nor constants.py defines it once.",
+  "Reference camera HFOV: \u00a716.1 line 1253 '14 mm, 32 deg HFOV' vs 2 atan(640 x 0.012 mm / (2 x 14 mm)) = 30.7 deg from the \u00a712.2/\u00a716.1 pitch and resolution \u2014 4% apart.",
+  "Tooling vs declared support: tests/unit/test_planck.py lines 37, 64-65, 80 use `np.trapezoid` (NumPy >= 2.0) while pyproject.toml line 11 allows `numpy>=1.24`; pyproject.toml has no `types-PyYAML` and no `yaml.*` mypy override although `pyyaml` is a runtime dependency and mypy is strict on src/irsim.",
+  "Makefile `luts` target (`--configs configs/sensors --out data/lut`) provides no data-root argument, while the generate_luts.py docstring expects to load R(lambda) from data/spectra/ \u2014 the script's path convention is unspecified.",
+  "Layering test scope: tests/unit/test_layering.py line 12 forbids {omni, pxr, isaacsim, warp, carb}; CLAUDE.md non-negotiable #1 lists omni, pxr, isaacsim, warp only (test is stricter; harmless, but `irsim_isaac` itself is not forbidden by either).",
+  "Sky model parameters (\u00a75.3 lines 310-314: DeltaT_clear, q, cloud) and atmosphere table indices (\u00a77.2 line 471: band, atmosphere, humidity, visibility) have no schema anywhere in \u00a712 although configs/atmospheres/ exists and CLAUDE.md assigns its schema to config/."
+ ]
+}

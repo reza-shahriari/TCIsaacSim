@@ -1,0 +1,439 @@
+{
+ "area": "atmosphere",
+ "existing_state": "NOTHING of the atmosphere subsystem exists beyond scaffolding. Precisely:\n\n- /home/hunter/irsim-scaffold/src/irsim/atmosphere/__init__.py \u2014 one-line docstring stub (\"\"\"See docs/physics-model.md.\"\"\"). No functions, no classes, no submodules.\n- /home/hunter/irsim-scaffold/configs/atmospheres/ \u2014 only an empty .gitkeep. No preset YAML.\n- /home/hunter/irsim-scaffold/data/weather/ \u2014 only .gitkeep (no weather files). /home/hunter/irsim-scaffold/data/lut/ and data/spectra/ \u2014 only .gitkeep. Note .gitignore ignores data/lut/*.npy and data/lut/*.json, so any generated atmosphere tables placed there will NOT be committed.\n- No atmosphere tests. tests/unit/ contains only test_layering.py (walks every src/irsim/**/*.py for engine imports \u2014 will automatically cover new atmosphere files) and test_planck.py.\n- /home/hunter/irsim-scaffold/tests/conftest.py provides fixtures directly reusable for atmosphere kernel tests: `gbuffer_ramp` (256x256, 250\u2013450 K ramp, `distance_m` = 50.0 float32), `gbuffer_uniform` (64x64 at 300 K, `distance_m` = 10.0 float32), and a seeded `rng`.\n- Upstream code that exists and can be used immediately: /home/hunter/irsim-scaffold/src/irsim/radiometry/planck.py \u2014 `spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT`, `fractional_exitance`, `band_radiance_tophat(lo, hi, T)` (closed-form top-hat band radiance; usable as L_B(T_air) in tests). /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py \u2014 C1L, C1Q, C2, SIGMA_SB, WIEN_B, EXP_ARG_MAX, plausibility bounds. NO band LUT, NO inverse (apparent temperature), NO R(lambda) loader yet (scripts/generate_luts.py is a stub that exits 1).\n- Upstream code that does NOT exist: src/irsim/thermal/__init__.py is a stub \u2014 there is no `WeatherSeries`. src/irsim/config/__init__.py is a stub \u2014 no pydantic schemas at all (sensor schema included). No scene-level config that could reference an atmosphere preset.\n- Sensor config /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml has no atmosphere fields and no band-name key (only lambda_min_um/lambda_max_um/spectral_response/regime).\n- Engine side: /home/hunter/irsim-scaffold/src/irsim_isaac/spg/README.md is one line; no atmosphere.cu / .cu.lua / .usda; src/irsim_isaac/pipeline/ has only a stub __init__.\n- README.md status row: `atmosphere | not started`; README \"Current limitations\" already states \"Band-averaged atmosphere (Beer-Lambert). Valid under ~500 m\" and \"Weather is prescribed\". CHANGELOG has no atmosphere entry. Only ADR is 0001 (template).\n- Dependencies available in pyproject: numpy, scipy, pydantic>=2.5, pyyaml. mypy strict on src/irsim; ruff with NPY rules.",
+ "key_equations_and_data": [
+  "\u00a77.1 (line 451): tau_atm(lambda,d) = [tau_1m(lambda)]^d = exp(-gamma(lambda)*d); gamma = gamma_mol + gamma_aer. Units: gamma in m^-1, d in metres. Band form used by the pipeline (\u00a713.4 line 1003): tau_B(d) = exp(-gamma_B*d).",
+  "\u00a77.1 (line 458): L_path(lambda,d) = (1 - tau_atm(lambda,d)) * B(lambda, T_air). Band form (\u00a713.4 line 1004, isaac-sim-spg skill line 136): L' = tau_B*L + (1 - tau_B)*L_B(T_air), with L_B(T_air) from the radiometry band LUT (or band_radiance_tophat).",
+  "\u00a72 (lines 84\u201388): atmosphere multiplies the ENTIRE surface-leaving radiance (self-emission + reflected) by tau, then adds path radiance. The stage input is band radiance L (W m^-2 sr^-1), never temperature.",
+  "\u00a77.3 (line 495): gamma_LWIR \u2248 gamma_0 + beta*w, w in g m^-3 (absolute humidity \u2014 see inconsistency list re 'precipitable water'). Fit gamma_0, beta per band per atmosphere.",
+  "\u00a77.3 (line 500): Magnus: e_s(T_C) = 6.112*exp(17.67*T_C/(T_C+243.5)) hPa (Bolton 1980 coefficients). Known answers: e_s(0\u00b0C)=6.112, e_s(20\u00b0C)=23.37, e_s(30\u00b0C)=42.46 hPa (published 23.39, 42.47 \u2192 0.5% tolerance).",
+  "\u00a77.3 (line 501): w = 216.7 * RH * e_s / T_K  [g m^-3], RH as a FRACTION 0\u20131, T_K in kelvin. 216.7 = 1e5 / R_v with R_v = 461.5 J kg^-1 K^-1 (water-vapour gas constant \u2014 add to irsim.radiometry.constants with source). Known answers: w(30\u00b0C, 0.80) = 24.3 g/m^3; w(20\u00b0C, 1.00) = 17.3 g/m^3; w(15\u00b0C, 0.40) = 5.1 g/m^3.",
+  "Koschmieder relation (NOT in spec but required to turn \u00a77.2's 'visibility' index into gamma_aer): gamma_vis = 3.912 / V  (3.912 = -ln 0.02, the 2% contrast threshold). Per-band aerosol extinction = ratio_B * gamma_vis with ratio_B from the \u00a77.2 table (fog: LWIR \u2248 0.13\u20130.27 of visible at V=200 m). Constant 3.912 goes in constants with source.",
+  "\u00a77.2 table (lines 475\u2013481) \u2014 the known-answer data set: tau at 200 m per band \u00d7 condition. Clear dry: LWIR 0.90\u20130.96, MWIR 0.92\u20130.97, SWIR 0.93\u20130.98, Vis 0.95\u20130.98. Humid 30\u00b0C/80%RH: 0.72\u20130.85 / 0.85\u20130.93 / 0.88\u20130.95 / 0.93\u20130.97. Haze 5 km: 0.85\u20130.92 / 0.82\u20130.90 / 0.70\u20130.85 / 0.45\u20130.65. Light fog 200 m: 0.35\u20130.60 / 0.25\u20130.50 / 0.10\u20130.30 / 0.02\u20130.10. Dense fog 50 m: 0.02\u20130.10 / 0.01\u20130.06 / ~0 / ~0. Implied gamma ranges (per km): clear LWIR 0.20\u20130.53; humid LWIR 0.81\u20131.64; fog200 LWIR 2.55\u20135.25, SWIR 6.0\u201311.5, Vis 11.5\u201319.6.",
+  "Derived starting coefficients from table midpoints (mark ESTIMATED): LWIR gamma_dry \u2248 0.36/km at w\u22485 g/m^3, gamma_humid \u2248 1.21/km at w\u224824.3 g/m^3 \u2192 beta \u2248 0.044 /km per g/m^3, gamma_0 \u2248 0.14/km.",
+  "\u00a77.2 step 1 (line 469): 4\u20136 presets: US Standard 1976, mid-latitude summer, mid-latitude winter, tropical, fog/rain; plus haze. \u00a77.2 step 3 (line 471): table indexed by (band, atmosphere, humidity, visibility) \u2192 preset YAML schema (new; \u00a712.2 has no atmosphere section): name, provenance, valid_range_m (500), per-band {gamma0_per_m, beta_per_m_per_g_m3, aerosol_ratio_to_visible}, optional per-band sky dT_clear_k and q, optional per-band solar_zenith_transmittance.",
+  "WeatherSeries fields the atmosphere consumes (thermal-solver skill lines 97\u201398 + CLAUDE.md #6): air_temperature_k(t), relative_humidity(t) [fraction], cloud_fraction(t) (sky model), and visibility_m(t) \u2014 the last is NOT in the skill's field list and must be added (see inconsistencies).",
+  "Isothermal identity (the master Tier-1 test): if L = L_B(T_air) then L' = L_B(T_air) for every d and gamma. Radiance-space contrast identity: (L'(T1) - L'(T2)) / (L(T1) - L(T2)) = tau_B exactly. Segment composition: applying the stage over d1 then d2 (same T_air) equals applying over d1+d2 exactly.",
+  "Apparent-temperature anchor for tests (computed with band_radiance_tophat, 8\u201312 \u00b5m): L_B(310 K)=45.1149, L_B(290 K)=32.5169 W m^-2 sr^-1; tau=0.8, T_air=290 K \u2192 L'=42.5953 \u2192 T_app = 306.303 K. dL_B/dT(290 K, 8\u201312 \u00b5m) = 0.5672 W m^-2 sr^-1 K^-1, so 1 mK \u2261 5.7e-4 W m^-2 sr^-1.",
+  "gbuffer_ramp anchor: d=50 m, gamma=2e-3 m^-1 \u2192 contrast ratio exp(-0.1) = 0.9048374.",
+  "Thermal path radiance magnitude by band at 300 K (why SWIR path radiance is scattered sunlight, not thermal): L_B(0.9\u20131.7 \u00b5m) = 3.2e-7, L_B(3\u20135 \u00b5m) = 1.87, L_B(8\u201312 \u00b5m) = 38.5 W m^-2 sr^-1.",
+  "\u00a75.3 (lines 305\u2013314) sky/downwelling (ownership ambiguous, see decisions): L_down \u2248 V_s*L_sky(theta_zen) + (1-V_s)*L_ground; T_sky = T_air - dT_clear*(1-cloud)*cos^q(theta_ZEN) [spec writes theta_el \u2014 bug]; dT_clear \u2248 55\u201370 K LWIR zenith clear-dry, 5\u201310 K overcast/humid; q \u2248 0.5\u20131.0; [R13]: LWIR sky \u2248 -40\u00b0C at 15\u00b0 elevation while MWIR reads > +10\u00b0C \u2192 dT_clear must be per band.",
+  "\u00a75.4 (line 323): solar-path transmittance tau_atm^sun(lambda) for reflective bands \u2014 a slant path through the whole atmosphere, not the horizontal Beer-Lambert model; needs its own per-band per-preset parameter and air-mass law (deferred to build-order step 10).",
+  "\u00a713.3 (line 973) / isaac-sim-spg skill line 122: path length d comes from the `DistanceToCamera` AOV, float32, metres \u2014 Euclidean distance (not z-depth). Sky/background pixels have no finite d and must bypass the stage (policy undefined in spec).",
+  "\u00a71 fidelity ladder (lines 53\u201355): L1 = constant tau (d-independent override), L2 = band-averaged Beer-Lambert (TARGET), L3 = MODTRAN LUT. \u00a77.4 (line 508) and Appendix A.2 (line 1387): dropped multiple scattering, adjacency, refraction, spectral fine structure within band; valid < ~500 m. Appendix A.6: no turbulence. Must be stated in README and an ADR.",
+  "float32 dtype contract (CLAUDE.md #2): distance, tau, L, L_air arrays float32 or float64; float16 rejected at the apply_atmosphere boundary."
+ ],
+ "work_items": [
+  {
+   "id": "ATM-01",
+   "title": "Beer-Lambert transmittance and path radiance reference kernel",
+   "spec_refs": [
+    "\u00a77.1",
+    "\u00a72 lines 84\u201388",
+    "\u00a713.4 line 1003\u20131004",
+    "\u00a71 L1/L2"
+   ],
+   "description": "Create irsim/atmosphere/beer_lambert.py (pure NumPy, float32/float64 only): transmittance(distance_m, gamma_per_m) = exp(-gamma*d) (d may be +inf \u2192 0); path_radiance(tau, L_air_band); apply_atmosphere(L_band, distance_m, gamma_per_m, L_air_band) = tau*L + (1-tau)*L_air. Guards: gamma >= 0, d >= 0, float16 raises, output dtype == input dtype. Provide a tau_override (constant-tau, d-independent) documented as the L1 fidelity fallback. Docstrings cite \u00a77.1. This item has no dependency on weather, config or the thermal solver and can be built immediately after the Planck step, despite \u00a716.4 placing atmosphere at step 8.",
+   "depends_on": [
+    "radiometry: planck.py band_radiance_tophat (exists \u2014 used as L_B(T_air) oracle in tests)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Multiplicativity: tau(d1+d2) == tau(d1)*tau(d2) to 1e-12 relative; tau(0)=1; tau(inf)=0; tau(100 m, gamma=ln2/100) == 0.5 to 1e-12 (catches per-km vs per-m and sign errors).",
+    "Isothermal invariance: with L = L_B(T_air) (band_radiance_tophat 8\u201312 \u00b5m, T_air 290 K), output == L_B(T_air) to 1e-12 relative for d in {0, 10, 200, 5000, inf} and gamma in {0, 1e-3, 1e-1} m^-1 \u2014 equivalent to < 1e-6 mK (1 mK = 5.7e-4 W m^-2 sr^-1). Fails if (1-tau) is missing, if B is evaluated at the wrong T, or if the stage operates in Kelvin.",
+    "Contrast attenuation identity: (L'(310 K) - L'(290 K)) / (L(310) - L(290)) == tau to 1e-12 relative (linearity in radiance; a Kelvin-space 'contrast scaling' implementation fails this).",
+    "Segment composition: apply over d1=80 m then d2=120 m (same T_air) equals apply over 200 m to 1e-12 relative.",
+    "Convexity: min(L, L_air) <= L' <= max(L, L_air) for random L, L_air, d (seeded rng) \u2014 fails on a sign error in the path term.",
+    "gbuffer_ramp fixture at gamma=2e-3 m^-1: contrast ratio across the ramp == exp(-0.1) = 0.9048374 to 1e-6; output finite, dtype float32.",
+    "Dtype guard: float16 L or d raises; float32 in \u2192 float32 out; float64 in \u2192 float64 out (non-negotiable #2)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ATM-02",
+   "title": "Magnus saturation pressure, absolute humidity, and molecular gamma(w)",
+   "spec_refs": [
+    "\u00a77.3 lines 492\u2013504"
+   ],
+   "description": "Create irsim/atmosphere/humidity.py: saturation_vapour_pressure_hpa(T_C) [Magnus/Bolton 1980, coefficients 6.112 hPa, 17.67, 243.5 \u00b0C with source in module], absolute_humidity_g_m3(T_K, RH_fraction) = 216.7*RH*e_s/T_K, gamma_molecular(w, gamma0_per_m, beta_per_m_per_g_m3) = gamma0 + beta*w. Add R_V_WATER = 461.5 J kg^-1 K^-1 to irsim.radiometry.constants with source and derive the 216.7 factor from it (or keep 216.7 verbatim \u2014 record which). Guard RH in [0,1] (RH=80 raises with a 'fraction not percent' message) and T_K plausibility. Rename away from 'precipitable water' \u2014 the quantity is absolute humidity / water-vapour density.",
+   "depends_on": [
+    "radiometry: constants.py (exists)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known answer vs published saturation tables: e_s(20 \u00b0C) = 23.39 hPa and e_s(30 \u00b0C) = 42.47 hPa within 0.5%; e_s(0 \u00b0C) = 6.112 hPa to 1e-12.",
+    "Known answer absolute humidity: w(30 \u00b0C, 0.80) = 24.3 g/m^3 within 1%; w(20 \u00b0C, 1.00) = 17.3 g/m^3 within 1%; w(-5 \u00b0C, 0.70) = 2.4 g/m^3 within 2% (catches a Celsius/Kelvin swap in the denominator, a missing 100 Pa/hPa factor, and a percent/fraction error).",
+    "RH = 80 (percent) raises; RH monotonic: w strictly increasing in RH and in T.",
+    "gamma_molecular(w=0) == gamma0 exactly; finite-difference dgamma/dw == beta to 1e-12."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ATM-03",
+   "title": "Atmosphere preset schema, loader, and 6\u20137 preset YAMLs fitted to the \u00a77.2 table",
+   "spec_refs": [
+    "\u00a77.2 lines 467\u2013488",
+    "\u00a712.2 (no atmosphere section \u2014 new schema)",
+    "\u00a716.4 step 8"
+   ],
+   "description": "Create irsim/config/atmosphere.py (pydantic v2): AtmospherePreset{name, description, provenance (must say ESTIMATED when inverted from the \u00a77.2 table), valid_range_m=500, reference_weather{T_air_k, RH, visibility_m} used for the table check, bands: {band_key: {gamma0_per_m, beta_per_m_per_g_m3, aerosol_ratio_to_visible}}}. Create irsim/atmosphere/library.py load_preset(name|path). Author configs/atmospheres/us_standard_clear.yaml, midlat_summer_humid.yaml, midlat_winter_dry.yaml, tropical.yaml, haze_5km.yaml, fog_light_200m.yaml, fog_dense_50m.yaml with per-band gamma0/beta for lwir, mwir, swir, nir/vis, derived from table midpoints (starting values: LWIR gamma0 \u2248 1.4e-4 m^-1, beta \u2248 4.4e-5 m^-1 per g/m^3). Loader must NOT read weather files (non-negotiable #6). Needs the band-identity-key decision from the config area (see ADR list).",
+   "depends_on": [
+    "ATM-01",
+    "ATM-02",
+    "config: canonical band identity key on the sensor schema (does not exist yet)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known-answer table check: for every preset \u00d7 band, tau_B(200 m) evaluated at the preset's reference weather via ATM-01/02 lies inside the \u00a77.2 row [lo, hi] (e.g. LWIR clear-dry in [0.90, 0.96]; humid in [0.72, 0.85]). A per-km/per-m unit slip (factor 1000) or a sign error fails immediately.",
+    "Every preset declares the identical band-key set; an unknown band key or a negative gamma is rejected by the schema.",
+    "Gas closure: 0 < tau_B(d) <= 1 for all d >= 0 across all presets (the atmosphere's emissivity 1-tau stays in [0,1)).",
+    "Provenance string non-empty and contains a source or the literal ESTIMATED."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ATM-04",
+   "title": "Aerosol/fog extinction from visibility (Koschmieder + per-band ratio)",
+   "spec_refs": [
+    "\u00a77.2 table lines 475\u2013481",
+    "\u00a77.1 gamma_aer",
+    "\u00a712.1 line 818\u2013819",
+    "\u00a715 Tier 3 line 1203"
+   ],
+   "description": "Add gamma_aerosol(visibility_m, ratio_B) = ratio_B * KOSCHMIEDER / visibility_m (KOSCHMIEDER = 3.912 in constants with source), combine gamma_B = gamma_mol,B(w) + gamma_aer,B(V) in irsim/atmosphere/extinction.py. Per-band ratio_B from the table (fog rows) with a droplet_regime tag (radiation vs advection fog) in the preset. Decide (ADR) how the inconsistent haze row is resolved.",
+   "depends_on": [
+    "ATM-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Koschmieder identity: with ratio=1, tau_vis(d = V) == 0.02 to 1e-12 for V in {50, 200, 5000} m.",
+    "V \u2192 inf gives gamma_aer \u2192 0 and tau equals the clear-air value to 1e-12; gamma_aer strictly increases as V decreases.",
+    "Tier-3 fog ordering at V=200 m (automated): tau_LWIR > tau_MWIR > tau_SWIR > tau_vis, all strict, and tau_LWIR(200 m) in [0.35, 0.60], tau_vis(200 m) in [0.02, 0.10] (table).",
+    "Dense fog V=50 m: tau_LWIR(200 m) in [0.02, 0.10], tau_vis(200 m) < 1e-4."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ATM-05",
+   "title": "Atmosphere state bound to the shared WeatherSeries (non-negotiable #6) with automated humidity/fog crossover tests",
+   "spec_refs": [
+    "\u00a77.3",
+    "\u00a77.2",
+    "CLAUDE.md #6",
+    "thermal-solver skill lines 93\u201398",
+    "\u00a715 Tier 3 lines 1203\u20131204"
+   ],
+   "description": "Create irsim/atmosphere/model.py: Atmosphere(preset: AtmospherePreset, weather: WeatherSeries, bands) with state(t) -> AtmosphereState{T_air_k: float32, gamma_per_m: {band: float32}, L_air_band: {band: float32}}. The constructor takes the injected WeatherSeries object only \u2014 no path argument, no file I/O. L_air from the radiometry band LUT (band_radiance_tophat as interim). Reads air_temperature_k(t), relative_humidity(t), visibility_m(t) from weather.",
+   "depends_on": [
+    "thermal: WeatherSeries with air_temperature_k, relative_humidity (fraction), cloud_fraction, visibility_m (must be added to the field list) and time interpolation",
+    "radiometry: band LUT L_B(T) per band (interim: band_radiance_tophat)",
+    "ATM-03",
+    "ATM-04"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Coupling by construction: Atmosphere(preset, '/path/weather.csv') raises TypeError; Atmosphere without a weather argument raises; the atmosphere's T_air at t equals weather.air_temperature_k(t) exactly for 24 sampled hours.",
+    "Humidity response: synthetic weather stepping 20 \u00b0C/30% RH \u2192 30 \u00b0C/80% RH changes gamma_LWIR by exactly beta*(w2 - w1) to 1e-9 relative.",
+    "Tier-3 humid crossover (automated): at the humid sample tau_LWIR(200 m) < tau_SWIR(200 m) strictly ('humid clear air degrades LWIR more than SWIR').",
+    "Tier-3 fog crossover (automated): at a visibility_m=200 sample tau_LWIR(200 m) > tau_SWIR(200 m) strictly ('fog kills SWIR before LWIR'); the same object produces both orderings from weather alone.",
+    "Shared-object test: a thermal-solver stub and the Atmosphere constructed from the same WeatherSeries satisfy `solver.weather is atmosphere.weather`."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ATM-06",
+   "title": "G-buffer atmosphere stage with sky-pixel policy and apparent-temperature verification",
+   "spec_refs": [
+    "\u00a713.3 line 973",
+    "\u00a713.4",
+    "\u00a73.3",
+    "\u00a715 Tier 1"
+   ],
+   "description": "Create apply_atmosphere_gbuffer(L_band[H,W] float32, distance_m[H,W] float32, state: AtmosphereState, band) in irsim/atmosphere/stage.py: applies ATM-01 per pixel, treats non-finite / sentinel distances as sky pixels and passes them through untouched (to be filled by the sky model), asserts float32, returns float32. Keep a scalar per-pixel reference loop in the test as the oracle for the vectorised path.",
+   "depends_on": [
+    "ATM-05",
+    "radiometry: band LUT with inverse (apparent temperature) \u2014 required for the mK-denominated tests"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Apparent-temperature known answer: 310 K blackbody, T_air 290 K, tau 0.8, 8\u201312 \u00b5m top-hat \u2192 T_app = 306.303 K within 1 mK, cross-checked by an independent bisection on band_radiance_tophat inside the test.",
+    "Isothermal G-buffer: gbuffer_uniform at T_air \u2192 |T_app - T_air| < 1 mK for every pixel at d = 10 m and again with distance_m set to 5 km.",
+    "gbuffer_ramp: per-pixel result equals the scalar reference loop to 1e-12 relative; contrast ratio exp(-gamma*50) to 1e-6.",
+    "Sky pixels (distance = inf and distance = the engine sentinel) are bit-identical to the input; no NaN anywhere.",
+    "Output dtype float32 for float32 inputs; float16 inputs raise (non-negotiable #2)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ATM-07",
+   "title": "Quantify the grey-band (single gamma_B) approximation error \u2014 ADR evidence",
+   "spec_refs": [
+    "\u00a77.2 step 2\u20133",
+    "\u00a77.4",
+    "Appendix A.2 line 1387",
+    "\u00a712.1 line 818 (CO2 4.2\u20134.4 \u00b5m)"
+   ],
+   "description": "Add scripts/validate_atmosphere_band_average.py and a unit test: for a synthetic spectral gamma(lambda) (two-level within 8\u201312 \u00b5m; and 3\u20135 \u00b5m with an opaque 4.2\u20134.4 \u00b5m CO2 notch) compute the exact band transmittance tau_B(d) = \u222bR B(lambda,T) exp(-gamma(lambda) d) dlambda / \u222bR B dlambda by quadrature, fit gamma_B over 0\u2013300 m, and report the relative error of exp(-gamma_B d) at 500 m and 1000 m. Numbers go into the band-averaged-atmosphere ADR and the README limitation line.",
+   "depends_on": [
+    "radiometry: planck.py (exists)",
+    "radiometry: spectral response loader (optional \u2014 top-hat R suffices)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Grey identity: for gamma(lambda) = const the exact band tau equals exp(-gamma d) to 1e-12 relative at d in {50, 500, 2000} m.",
+    "Curve of growth: for structured gamma(lambda), gamma_eff(d) = -ln tau_B(d)/d is strictly decreasing in d (strong absorbers saturate first); fails if the implementation averages gamma over the band instead of averaging tau.",
+    "Bound assertion: LWIR two-level case error of the 0\u2013300 m fit at 500 m < 2%; MWIR-with-CO2-notch value is recorded (expected several %) and asserted only as an upper bound agreed in the ADR."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ATM-08",
+   "title": "Sky radiance model (\u00a75.3a) with corrected angular form and per-band clear-sky depression \u2014 ownership to be decided",
+   "spec_refs": [
+    "\u00a75.3 lines 302\u2013314",
+    "\u00a77.1 line 461",
+    "\u00a715 Tier 3 line 1200",
+    "R13"
+   ],
+   "description": "If the ADR places it in this area: irsim/atmosphere/sky.py with T_sky(theta_zen, T_air_k, cloud_fraction, dT_clear_k, q) = T_air - dT_clear*(1-cloud)*cos^q(theta_zen) [spec's cos^q(theta_el) is a bug], and L_sky_B(theta_zen) via the band LUT; per-band dT_clear and q live in the atmosphere preset (LWIR 55\u201370 K; MWIR much smaller per [R13]); reads T_air and cloud from the same WeatherSeries. Consumer is the reflected-environment term (materials/scene area) and the sky-pixel fill in ATM-06.",
+   "depends_on": [
+    "radiometry: band LUT L_B(T)",
+    "thermal: WeatherSeries (cloud_fraction, air_temperature_k)",
+    "ATM-03 (preset fields)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Overcast: cloud=1 \u2192 T_sky == T_air to 1e-12 at every angle (Tier-3 'overcast flattens the image').",
+    "Zenith depression: clear sky, theta_zen=0 \u2192 T_air - T_sky == dT_clear to 1e-12 \u2014 this test FAILS against the spec's literal cos^q(theta_el) form, which is the point.",
+    "Monotonic warming toward the horizon; T_sky(horizon) == T_air.",
+    "Band ordering: with the preset's per-band dT_clear, LWIR sky at 15\u00b0 elevation is colder than MWIR sky by > 30 K (R13: \u2248 -40 \u00b0C vs > +10 \u00b0C).",
+    "Loose known answer: LWIR, T_air 288 K, clear-dry, 15\u00b0 elevation: T_sky within [-45, -25] \u00b0C for q in [0.5, 1.0] (tolerance 10 K, documented as loose)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ATM-09",
+   "title": "Solar-path transmittance for reflective bands (\u00a75.4 tau_atm^sun)",
+   "spec_refs": [
+    "\u00a75.4 line 323",
+    "\u00a712.1",
+    "\u00a716.4 step 10"
+   ],
+   "description": "Per-preset per-band solar_zenith_transmittance and an air-mass law tau_sun(theta_zen) = tau_zenith^m with m = 1/cos(theta_zen) (Kasten\u2013Young optional), returning 0 below the horizon. Deferred until the SWIR band is added (build-order step 10); scope it now so the preset schema has the field.",
+   "depends_on": [
+    "ATM-03",
+    "materials/scene: solar reflected term consumer"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tau_sun(0\u00b0) == tau_zenith; tau_sun(60\u00b0) == tau_zenith^2 to 1e-12 (air mass 2).",
+    "Sun below horizon \u2192 0; tau_sun monotonically decreasing with zenith angle.",
+    "Band ordering for a clear preset: tau_sun,SWIR > tau_sun,vis (aerosol falls with wavelength)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ATM-10",
+   "title": "Warp atmosphere stage (Path B) verified against the CPU reference on real DistanceToCamera data",
+   "spec_refs": [
+    "\u00a713.3 line 973",
+    "\u00a713.4 SPG#2",
+    "\u00a713.6",
+    "isaac-sim-spg skill lines 115\u2013136, 168\u2013174"
+   ],
+   "description": "irsim_isaac/pipeline/atmosphere_stage.py: Warp kernel L' = tau*L + (1-tau)*L_air with tau = exp(-gamma*d) reading the DistanceToCamera annotator output (float32), gamma/L_air per band from AtmosphereState, sky-pixel bypass. Includes an integration test that establishes DistanceToCamera semantics (units, Euclidean vs z-depth, sky sentinel, dtype).",
+   "depends_on": [
+    "isaac: temperature encode/decode round trip < 10 mK (first engine task)",
+    "isaac: G-buffer capture including the DistanceToCamera annotator",
+    "ATM-06"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "@pytest.mark.gpu: Warp kernel vs irsim CPU reference on gbuffer_ramp and gbuffer_uniform: 1e-4 relative on radiance (5 mK equivalent).",
+    "@pytest.mark.isaac: a sphere placed at 10.000 m reads DistanceToCamera = 10.000 \u00b1 0.005 m at image centre (units and Euclidean-vs-z semantics), dtype float32; a sky pixel's value is recorded and matches the sentinel used by ATM-06.",
+    "@pytest.mark.isaac isothermal scene: uniform T_air blackbody plane at 5 m and 300 m yields T_app within 5 mK of T_air at both ranges."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "ATM-11",
+   "title": "SPG port: atmosphere.cu / atmosphere.cu.lua / atmosphere.usda (Path A)",
+   "spec_refs": [
+    "\u00a713.2",
+    "\u00a713.4 SPG#2",
+    "isaac-sim-spg skill lines 23\u201367"
+   ],
+   "description": "Element-wise CUDA kernel with float32 texture in (Radiance, DistanceToCamera) and float32 surface out; gamma and L_air as value inputs (inputs[x].value); chained output-to-input after band_radiance and before optics; captured via FileCapture (float AOVs do not display). Only after ATM-10 has verified the physics.",
+   "depends_on": [
+    "ATM-10",
+    "isaac: SPG band_radiance stage (chaining order)",
+    "isaac: Kit launched with --enable omni.rtx.spg"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "@pytest.mark.isaac: FileCapture of the SPG output vs the CPU reference computed from the captured input AOVs: 1e-4 relative / 5 mK.",
+    "@pytest.mark.isaac: changing the gamma value input by \u00d72 changes -ln(contrast ratio) by exactly \u00d72 (\u00b11e-3) on a two-blackbody scene."
+   ],
+   "engine_free": false,
+   "size": "M"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Band-averaged grey Beer-Lambert (single gamma_B per band) as the L2 atmosphere",
+   "why": "Exact in d only for a grey band; wrong near band edges, for MWIR's opaque CO2 notch, and beyond ~500 m. The fit range (0\u2013300 m) and the measured residual at 500 m (ATM-07) must be recorded so a reviewer can tell a deliberate approximation from an oversight (Appendix A.2, \u00a77.4).",
+   "options": [
+    "Scalar gamma_B per band per preset fitted over 0\u2013300 m (spec \u00a77.2 step 3; simplest; adding a band means adding a table entry to every preset)",
+    "Coarse spectral gamma(lambda) curve per preset, band-averaged against R(lambda) at LUT-generation time (bands stay pure data; handles unusual filters; needs a 1-D tau_B(d) table per band)",
+    "MODTRAN-derived tau_B(d) and L_path(d) LUT per preset (L3 of the fidelity ladder; needs MODTRAN access)"
+   ]
+  },
+  {
+   "title": "Provenance of gamma_0 / beta / aerosol coefficients",
+   "why": "Without MODTRAN the only data is the \u00a77.2 table, which lacks T/RH for the 'clear, dry' row and has an internally inconsistent haze row. The coefficients are therefore ESTIMATED; the ADR must state the assumed reference humidity (e.g. 15 \u00b0C/40% \u2192 5.1 g/m^3), which midpoints were used, and what replaces them (MODTRAN runs, published LOWTRAN water-continuum fits).",
+   "options": [
+    "Invert \u00a77.2 table midpoints (now)",
+    "Run MODTRAN/LOWTRAN for the 5 presets and fit (when available)",
+    "Adopt published per-band continuum fits from the literature with citations"
+   ]
+  },
+  {
+   "title": "Aerosol/fog scaling across bands",
+   "why": "The LWIR-in-fog advantage is 'the entire commercial argument' (\u00a77.2) and its magnitude depends on droplet size: radiation fog (small droplets) gives LWIR/visible extinction ratios \u2248 0.1\u20130.3 as in the table; advection fog (10\u201320 \u00b5m droplets) gives \u2248 1. The chosen law fixes which fogs the simulator can and cannot represent.",
+   "options": [
+    "Koschmieder gamma_vis = 3.912/V with a fixed per-band ratio from the \u00a77.2 table",
+    "Koschmieder with an Angstrom lambda^-alpha law for haze plus a separate droplet-regime ratio table for fog",
+    "Mie-computed per-band extinction from a droplet size distribution (higher fidelity, more parameters)"
+   ]
+  },
+  {
+   "title": "Where visibility (and fog state) lives \u2014 WeatherSeries vs atmosphere preset",
+   "why": "\u00a77.2 indexes the table by visibility, but the thermal-solver skill's WeatherSeries field list omits it. If visibility lives only in the atmosphere preset, a scene can run dense fog in the atmosphere while the thermal solver sees clear-sky solar loading \u2014 exactly what non-negotiable #6 forbids.",
+   "options": [
+    "Add visibility_m(t) (and optionally precipitation) to WeatherSeries; presets carry only fit coefficients (recommended)",
+    "Keep visibility in the preset and forbid mixing by a scene-level consistency check",
+    "Derive visibility from WeatherSeries RH/precipitation via an empirical fog model"
+   ]
+  },
+  {
+   "title": "Path radiance = (1 - tau_B) L_B(T_air) with uniform T_air, no elevation dependence, sky pixels bypass the stage, no scattered sunlight",
+   "why": "\u00a77.1 says path radiance varies with elevation; the model does not. In SWIR/NIR/visible the real daytime path radiance is scattered sunlight (thermal L_B(300 K, 0.9\u20131.7 \u00b5m) is 3e-7 W m^-2 sr^-1 \u2014 negligible), so hazy daytime SWIR will be too contrasty. The boundary between 'path to a surface' (this stage) and 'path to the sky' (\u00a75.3 sky model) must be defined.",
+   "options": [
+    "Uniform T_air along the path, sky pixels handed to the sky model (L2, recommended)",
+    "Add a veiling/scattered-sunlight term for reflective bands proportional to (1 - tau_aer) and solar irradiance",
+    "Elevation-dependent path radiance via per-angle sky temperature integration"
+   ]
+  },
+  {
+   "title": "Band identity key used by atmosphere (and material) per-band tables",
+   "why": "\u00a712.2 sensor schema has no band name; \u00a712.3 materials and \u00a77.2 atmosphere tables are keyed by band. Adding a band must not require code changes ('bands are data'). This is a cross-area schema decision owned by config but blocking ATM-03.",
+   "options": [
+    "Add band.name/key ('lwir','mwir','swir','nir') to the sensor schema and key all tables by it",
+    "Key tables by wavelength range and match by overlap tolerance",
+    "Store spectral curves (gamma(lambda), epsilon(lambda)) and band-average with R(lambda) at LUT time \u2014 no key needed"
+   ]
+  },
+  {
+   "title": "Ownership and form of the sky radiance model (\u00a75.3a)",
+   "why": "CLAUDE.md scopes atmosphere/ to transmittance + path radiance; \u00a75.3 places the sky model under scene radiance; no module in the layout owns it. It is atmospheric emission driven by the same WeatherSeries, and the spec's formula has an angular-variable bug and needs per-band dT_clear. Whoever owns it must also own the sky-pixel fill for ATM-06.",
+   "options": [
+    "irsim/atmosphere/sky.py (same physics and weather inputs; recommended)",
+    "A new irsim/scene/ or irsim/environment/ module consumed by materials and atmosphere",
+    "Inside materials/ next to the reflected-environment term"
+   ]
+  },
+  {
+   "title": "Storage of atmosphere data: hand-authored YAML presets vs generated tables in data/lut",
+   "why": ".gitignore excludes data/lut/*.npy and *.json while the ir-radiometry skill says LUTs are checked in with a hash. Atmosphere coefficients are tiny and must be reviewable diffs; if option 2 of the first ADR (spectral curves) is chosen, generated tau_B(d) tables need a home that is committed and hash-stamped.",
+   "options": [
+    "YAML presets only (coefficients in configs/atmospheres, committed)",
+    "YAML presets plus generated per-band tables in data/lut with config hash (fix .gitignore)",
+    "Presets in YAML, generated tables rebuilt by make luts and never committed"
+   ]
+  },
+  {
+   "title": "Solar-path transmittance treatment for reflective bands (deferred)",
+   "why": "\u00a75.4 needs tau_atm^sun along a slant path through the whole atmosphere, which the horizontal Beer-Lambert model cannot provide. Deferring it is fine for LWIR but must be recorded so the SWIR step (\u00a716.4 step 10) does not reuse the horizontal gamma by accident.",
+   "options": [
+    "Per-preset per-band zenith transmittance with a 1/cos air-mass law (ATM-09)",
+    "Kasten\u2013Young air mass with a simple Angstrom aerosol optical depth",
+    "MODTRAN solar irradiance tables per preset"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "\u00a77.2 table gives no temperature/RH for the 'Clear, dry' row, so gamma_0 and beta cannot be fitted from the two clear rows without assuming a dry-row absolute humidity (I used 15 \u00b0C/40% RH \u2192 5.1 g/m^3, giving LWIR beta \u2248 0.044 /km per g/m^3).",
+   "how_to_verify": "State the assumed reference weather in each preset YAML (reference_weather block) and in the ADR; cross-check the resulting LWIR clear value (\u22480.36/km) against any published 8\u201312 \u00b5m horizontal-path curve (e.g. MODTRAN mid-latitude summer, 23 km visibility gives tau \u2248 0.93 at 200 m) before relying on it."
+  },
+  {
+   "description": "The 'Haze (5 km vis)' row's visible tau at 200 m (0.45\u20130.65) contradicts Koschmieder (3.912/V gives tau = 0.855 at 5 km); the row's values imply V \u2248 1.0\u20131.8 km. Either the label or the numbers are wrong.",
+   "how_to_verify": "Compute exp(-3.912*200/V) for V = 5 km in a test; pick one anchor (recommend keeping the visibility label and Koschmieder, re-deriving the row) and pin the choice with the ATM-04 test and the aerosol ADR."
+  },
+  {
+   "description": "\u00a77.3 RH unit is unstated (fraction vs percent) and w is mislabelled 'precipitable water' (a column amount in mm) while the formula yields absolute humidity in g/m^3 \u2014 a 100\u00d7 or 1000\u00d7 error waiting to happen at the weather-file boundary.",
+   "how_to_verify": "ATM-02 tests: w(30 \u00b0C, 0.80) = 24.3 g/m^3 \u00b11% and RH=80 raises; name the function absolute_humidity_g_m3 and have the WeatherSeries loader normalise percent \u2192 fraction with an assertion."
+  },
+  {
+   "description": "The single-gamma exponential in d is exact only for a grey band. MWIR (3\u20135 \u00b5m) contains the opaque 4.2\u20134.4 \u00b5m CO2 band (\u00a712.1), so tau_B(d) is strongly non-exponential; a gamma_B fitted at 200 m will be wrong at 20 m and at 500 m in different directions.",
+   "how_to_verify": "ATM-07 quadrature experiment with an opaque notch: report the relative error of exp(-gamma_B d) at 20, 200, 500, 1000 m and put the numbers in the ADR; if MWIR error at 500 m exceeds a few %, adopt a per-band tau_B(d) table instead of a scalar gamma for MWIR."
+  },
+  {
+   "description": "Isaac Sim 6.0 DistanceToCamera AOV semantics are unverified: units (metres vs stage units \u2014 USD assets are often authored in cm), Euclidean distance vs z-depth (DistanceToImagePlane), the value written for sky/background pixels (0, inf, or a large sentinel), and whether the annotator really delivers float32.",
+   "how_to_verify": "ATM-10 integration test: sphere at exactly 10.000 m must read 10.000 \u00b1 0.005 m at centre and larger toward the frame edge (Euclidean); read one sky pixel and record its value; assert dtype float32. Do this before wiring the stage."
+  },
+  {
+   "description": "Sky pixels: if the atmosphere stage runs on pixels with d = inf, it outputs L_B(T_air) \u2014 but the LWIR sky is 30\u201360 K colder than T_air. The spec never defines which pixels get the Beer-Lambert path model and which get the \u00a75.3 sky model.",
+   "how_to_verify": "ATM-06 sky-mask test (sky pixels bit-identical to input) plus a Tier-3 scalar check on a demo scene: sky region T_app on a clear night must be < T_air - 20 K in LWIR."
+  },
+  {
+   "description": "The \u00a77.2 fog rows imply LWIR/visible extinction ratios of 0.13\u20130.27, which holds for small-droplet radiation fog but not advection fog (ratio \u2248 1). The simulator may overstate LWIR's fog advantage \u2014 the headline claim of the product.",
+   "how_to_verify": "Add a droplet_regime tag to fog presets and compare the per-band ratios against published Mie extinction for 2 \u00b5m and 10 \u00b5m droplet modes; make the Tier-3 'fog kills visible before LWIR' test parametrised by regime rather than universal."
+  },
+  {
+   "description": "In SWIR/NIR/visible the modelled path radiance (1 - tau) L_B(T_air) is thermally negligible (3e-7 W m^-2 sr^-1 at 300 K in 0.9\u20131.7 \u00b5m), but real daytime haze adds scattered sunlight (veiling radiance) that is not modelled. Hazy daytime SWIR/NIR images will be too contrasty.",
+   "how_to_verify": "When SWIR is added (\u00a716.4 step 10), compare the simulated hazy-day contrast against a simple veiling-luminance estimate ((1 - tau_aer) \u00d7 sky radiance) and decide whether to add the term; record in the path-radiance ADR."
+  },
+  {
+   "description": "WeatherSeries does not exist yet and its specified field list omits visibility; the atmosphere's humidity/fog dependence (ATM-05) is blocked on the thermal area adding visibility_m(t) and settling RH as a fraction.",
+   "how_to_verify": "Agree the WeatherSeries interface (air_temperature_k, relative_humidity fraction, cloud_fraction, visibility_m, wind, solar) in the thermal area's plan before ATM-05; ATM-01\u201304 and ATM-07 can proceed without it."
+  },
+  {
+   "description": "No canonical band identity key exists on the sensor config; the atmosphere (and material) per-band tables cannot be keyed reliably. Wavelength-range matching would mis-assign a narrow 8\u20139.5 \u00b5m LWIR filter.",
+   "how_to_verify": "Config-area decision (ADR); until then ATM-03 tests use explicit band keys and a test asserting every preset covers every band key declared in configs/sensors."
+  },
+  {
+   "description": "\u00a77.1 says path radiance varies with elevation angle for a ground-based sensor, but the model has no elevation dependence. For slant paths to ground under 500 m this is second-order; for the sky it is handled only if the \u00a75.3 sky model is implemented and used for sky pixels.",
+   "how_to_verify": "Tier-3 automated check: a horizontal ground path at 300 m and a 10\u00b0 downward slant path of the same length give T_app within 0.1 K of each other (uniform T_air assumption is self-consistent); sky pixels covered by ATM-08 tests."
+  },
+  {
+   "description": "The fidelity ladder L1 'constant tau' mode (\u00a71) is implied but not specified \u2014 whether it is a d-independent tau or gamma with a fixed d. Tests written for L2 will silently pass an L1 override that ignores distance if the override is not explicit.",
+   "how_to_verify": "Expose tau_override as a named parameter (ATM-01) and add a test that with the override set, output is independent of d and equals tau*L + (1-tau)*L_air."
+  },
+  {
+   "description": "The 216.7 factor in \u00a77.3 is a rounded 1e5/R_v (= 216.68); the Magnus constants are empirical fits. CLAUDE.md says physical constants live in irsim.radiometry.constants \u2014 it is unclear whether empirical fit coefficients belong there or in the atmosphere module.",
+   "how_to_verify": "Put R_v (physical) in radiometry.constants with its CODATA/standard source and the Magnus/Koschmieder fit coefficients in irsim/atmosphere with Bolton 1980 / Koschmieder citations; note the 0.007% difference between 216.7 and 216.68 is irrelevant at the 1% test tolerance."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: everything in ATM-01\u2026ATM-09 is pure NumPy under src/irsim/atmosphere and src/irsim/config; tests/unit/test_layering.py already parametrises over every src/irsim/**/*.py and will cover new files with no change. Only ATM-10/ATM-11 live in src/irsim_isaac and import warp/omni.",
+  "#2 float32 or better: transmittance, path radiance, distance and band radiance arrays must be float32/float64; apply_atmosphere and apply_atmosphere_gbuffer assert dtype and raise on float16 (ATM-01 and ATM-06 dtype tests); ATM-10's integration test asserts the DistanceToCamera AOV is float32; the SPG kernel uses float32 textures/surfaces (ATM-11).",
+  "#3 Noise in radiance space: the atmosphere adds no noise, but it must operate on band radiance, never on temperature \u2014 the contrast-attenuation identity \u0394L'/\u0394L = tau (exact only in radiance) and the isothermal-invariance test (ATM-01, ATM-06) fail for any Kelvin-space shortcut, and the 306.303 K apparent-temperature anchor pins the radiance-space formulation.",
+  "#4 Kirchhoff closure: touched indirectly \u2014 path radiance (1 - tau) L_B(T_air) is Kirchhoff applied to the gas column (absorptivity = emissivity = 1 - tau); the isothermal-invariance test is exactly this closure (a blackbody at T_air is invisible through any path). The material-library closure test is not affected.",
+  "#6 One WeatherSeries feeds thermal and atmosphere: the Atmosphere constructor accepts only an injected WeatherSeries object, never a path (ATM-05 TypeError test, T_air(t) equality test, `solver.weather is atmosphere.weather` identity test); requires visibility_m to be a WeatherSeries field so fog cannot diverge from the thermal solver's weather.",
+  "#5 Aperture factor: not touched by this area (optics)."
+ ],
+ "spec_internal_inconsistencies": [
+  "docs/physics-model.md \u00a77.3 line 495 calls w 'precipitable water (g\u00b7m\u207b\u00b3)'. Precipitable water is a column quantity (mm or kg m^-2); the formula at line 501 (216.7\u00b7RH\u00b7e_s/T_K) computes absolute humidity / water-vapour density in g m^-3. Substituting a real precipitable-water value would be a ~1000\u00d7 error.",
+  "\u00a77.3 line 501 leaves the RH unit undefined (fraction vs percent). With percent the formula is 100\u00d7 off. The thermal-solver skill (line 97) also says only 'relative humidity'. Must be fixed as a fraction and asserted at the weather loader.",
+  "\u00a77.2 table line 479: 'Haze (5 km vis)' visible tau at 200 m = 0.45\u20130.65 is inconsistent with the Koschmieder definition of visibility (tau_vis(200 m) at V = 5 km = exp(-3.912\u00b70.04) = 0.855); the stated tau implies V \u2248 1.0\u20131.8 km. The fog rows (lines 480\u2013481) ARE consistent with Koschmieder (0.02 at V = d; ~0 at V = 50 m), so the haze row is the outlier.",
+  "\u00a77.1 line 451 states tau = [tau_1m]^d spectrally; \u00a77.2 step 3 (line 471) and \u00a713.4 line 1003 apply a single band gamma_B. The identity is exact only for a grey band. \u00a712.1 line 818 names CO2 4.2\u20134.4 \u00b5m as the MWIR limiter \u2014 precisely the non-grey case where a scalar gamma_B is wrong \u2014 and the spec never says over which distance range gamma_B is to be fitted.",
+  "\u00a75.3 line 311: T_sky(theta_el) = T_air \u2212 \u0394T_clear(1\u2212cloud)cos^q(theta_el) gives ZERO depression at zenith (theta_el = 90\u00b0), contradicting line 314 ('\u0394T_clear \u2248 55\u201370 K at zenith') and line 305 which parameterises L_sky by theta_zen. Intended form is cos^q(theta_zen) = sin^q(theta_el). Also, R13's \u2248 \u221240 \u00b0C at 15\u00b0 elevation implies a \u2248 55 K depression at only 15\u00b0 elevation, which cos^0.5(75\u00b0) \u2248 0.51 \u00d7 60 K \u2248 31 K does not reproduce \u2014 the parameter ranges and the functional form are not mutually calibrated.",
+  "\u00a77.2 line 471 indexes the table by (band, atmosphere, humidity, visibility) \u2014 visibility is an input \u2014 but .claude/skills/thermal-solver/SKILL.md lines 97\u201398 list WeatherSeries fields as air temperature, RH, wind, cloud, solar, optional precipitation: no visibility. CLAUDE.md non-negotiable #6 requires one weather object to feed both models, so visibility must live on WeatherSeries or #6 is violated by construction.",
+  "\u00a77.2 line 471 keys the atmosphere table by band and \u00a712.3 line 917 keys material tables by {nir, swir, mwir, lwir}, but the \u00a712.2 sensor schema (lines 829\u2013833) and configs/sensors/flir_boson_640_lwir.yaml define a band only by wavelength range and response file \u2014 there is no band identity key anywhere.",
+  "CLAUDE.md layout (line 74) scopes src/irsim/atmosphere to 'Beer-Lambert transmittance, path radiance'; the sky radiance model of \u00a75.3 (atmospheric emission, driven by T_air and cloud from the same weather) has no owning module in the layout (not materials, thermal, optics, or atmosphere). \u00a77.1 line 461 even cites the elevation dependence of path radiance [R13] under the atmosphere section while the model there has none.",
+  ".claude/skills/ir-radiometry/SKILL.md line 66 says generated LUTs are 'checked into data/lut/ with a hash of the config'; /home/hunter/irsim-scaffold/.gitignore ignores data/lut/*.npy and data/lut/*.json. Any generated atmosphere table put there per the skill would not be committed.",
+  "\u00a716.4 line 1305 places atmosphere at step 8 (after the thermal solver, step 6) with 'Tier 3 weather tests', and \u00a71 line 54 lists band-averaged Beer-Lambert as part of the L2 target. But ATM-01/02/03/04/07 depend only on step 1 (Planck) and carry Tier-1 analytic tests; only the WeatherSeries coupling (ATM-05) and the crossover phenomenology need step 6. The build order over-serialises this area.",
+  "\u00a75.4 line 323 uses tau_atm^sun(lambda) \u2014 a slant path through the whole atmosphere \u2014 under the same symbol family as \u00a77.1's horizontal tau_atm(lambda, d). They are different quantities with different inputs (air mass vs ground range); the spec does not say which module provides the solar one.",
+  "\u00a77.1 line 458 writes path radiance with the spectral Planck function B(lambda, T_air) while \u00a713.4 line 1004 and the isaac-sim-spg skill line 136 write B(T_air) as a band scalar; the band-averaged product (1\u2212tau_B)\u00b7L_B(T_air) \u2260 \u222bR(1\u2212tau(lambda))B dlambda when tau(lambda) has structure \u2014 an additional, undocumented approximation inside the band-averaging decision."
+ ]
+}

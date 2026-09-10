@@ -1,0 +1,437 @@
+{
+ "area": "radiometry",
+ "existing_state": "CODE (src/irsim/radiometry/): (1) constants.py \u2014 H_PLANCK, C_LIGHT, K_BOLTZMANN, Q_E (CODATA 2018 exact), C1L=1.1910429723971884e8, C1Q=5.995849160000001e26, C2=1.4387768775039337e4, SIGMA_SB=5.670374419e-8, WIEN_B=2897.771955, EXP_ARG_MAX=700.0, WAVELENGTH_MIN_UM=0.1, WAVELENGTH_MAX_UM=1000.0, TEMPERATURE_MIN_K=1.0, TEMPERATURE_MAX_K=6000.0. All values re-derived by me from h, c, k_B and match to full precision. (2) planck.py \u2014 spectral_radiance (energy form, \u00a73.1), spectral_photon_radiance (\u00a73.1), d_spectral_radiance_dT (energy form only, \u00a73.4), fractional_exitance (adaptive series, scalar-only, \u00a73.2a), band_radiance_tophat (scalar, \u00a73.2a); _validate() enforces wavelength/temperature plausibility bounds but NOT monotonicity; fractional_exitance/band_radiance_tophat have NO unit validation (band_radiance_tophat(8e-6,12e-6,300) silently returns 0). All float64. No photon-form thermal derivative, no photon-form fractional exitance, no quadrature band integration, no LUT, no inverse, no spectral-response loader, no Band type. (3) __init__.py \u2014 docstring only, exports nothing. TESTS: tests/unit/test_planck.py \u2014 11 tests: photon/energy identity (1e-12), Stefan-Boltzmann via trapezoid 0.1\u20131000 \u00b5m (tol 2e-5, not the spec's 1e-6), Wien (1e-3), dL/dT vs central FD (1e-6), derivative rises 300\u2192373 K (>1.5x), fractional_exitance bounds/monotonic, tophat vs trapezoid (1e-4), tophat strictly increasing, known value B(10 \u00b5m,300 K)=9.925 (rel 1e-3), overflow sweep 0.4\u201320 \u00b5m x {200,220,2000} K, unit-mistake raises. Uses np.trapezoid (numpy>=2.0 only). tests/unit/test_layering.py \u2014 enforces no {omni,pxr,isaacsim,warp,carb} imports across src/irsim/**/*.py (parametrised over rglob, so new radiometry modules are covered automatically). tests/conftest.py \u2014 rng (seed 20260910), gbuffer_ramp (256x256 float32 250\u2013450 K), gbuffer_uniform (64x64 float32 300 K). tests/golden/ and tests/integration/ contain only .gitkeep. DATA: data/spectra/ EMPTY (only .gitkeep) \u2014 configs/sensors/flir_boson_640_lwir.yaml references spectra/boson_vox.csv which does not exist. data/lut/ EMPTY; .gitignore ignores data/lut/*.npy and data/lut/*.json. data/nk/, data/weather/ empty. CONFIG: configs/sensors/flir_boson_640_lwir.yaml exists with band block {lambda_min_um: 7.5, lambda_max_um: 13.5, spectral_response: spectra/boson_vox.csv (marked ESTIMATED), regime: emissive} and fpa.type: bolometer; no pydantic schema exists (src/irsim/config/__init__.py is a docstring). SCRIPTS: scripts/generate_luts.py is a stub that prints its planned behaviour and exits 1; Makefile target `luts` calls it with --configs configs/sensors --out data/lut (args ignored by stub; no --data root). Makefile `golden-update` passes --update-golden, which no conftest defines. ENVIRONMENT: the default interpreter (miniconda Python 3.13.5) has no numpy/pytest/ruff/mypy; no .venv exists; `make check` has not been run in this checkout (single commit 3b653b3 \"Project Structure Created\"; CHANGELOG claims analytic tests pass but that is unverified here). README status row: radiometry \ud83d\udfe1 partial T1 \"Planck + constants landed; band LUT pending\"; \"Bands configured: none yet\".",
+ "key_equations_and_data": [
+  "\u00a73.1 energy-form Planck: B(\u03bb,T) = C1L / (\u03bb^5 (exp(C2/(\u03bbT)) \u2212 1)), \u03bb in \u00b5m, B in W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7\u00b5m\u207b\u00b9; C1L = 2hc\u00b2 = 1.19104297e8 W\u00b7\u00b5m\u2074\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 (constants.C1L, exists)",
+  "\u00a73.1 photon-form Planck: B_q(\u03bb,T) = C1Q / (\u03bb^4 (exp(C2/(\u03bbT)) \u2212 1)), ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7\u00b5m\u207b\u00b9; C1Q = 2c = 5.995849e26 (constants.C1Q, exists). Mandatory for photon detectors (MWIR/SWIR/NIR, \u00a79.1); energy form for bolometers (\u00a79.2)",
+  "\u00a73.1/\u00a716.3 C2 = hc/k_B = 1.4387769e4 \u00b5m\u00b7K; \u03c3 = 5.670374419e-8 W\u00b7m\u207b\u00b2\u00b7K\u207b\u2074; Wien \u03bb_max\u00b7T = 2897.771955 \u00b5m\u00b7K; h, c, k_B, q exact CODATA 2018 (all exist in constants.py)",
+  "\u00a73.1 known answers: B(10 \u00b5m, 300 K) = 9.924 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7\u00b5m\u207b\u00b9 (I get 9.92403); B_q = 4.996e20 (I get 4.99587e20); B_q\u00b7hc/\u03bb = B to 1e-12 rel; M = \u03c3T\u2074, Lambertian L = \u03c3T\u2074/\u03c0; 300 K peaks at 9.66 \u00b5m",
+  "\u00a73.2(a) fractional exitance F_{0\u2192\u03bbT} = (15/\u03c0\u2074) \u03a3_n e^{\u2212nx}/n (x\u00b3 + 3x\u00b2/n + 6x/n\u00b2 + 6/n\u00b3), x = C2/(\u03bbT); L_B = (\u03c3T\u2074/\u03c0)[F(\u03bb\u2082T) \u2212 F(\u03bb\u2081T)] for a top-hat response (exists: fractional_exitance, band_radiance_tophat; scalar only)",
+  "NOT IN SPEC but required as an independent oracle for the photon LUT: photon fractional exitance F_q(x) = (1/(2\u03b6(3))) \u03a3_n e^{\u2212nx}(x\u00b2/n + 2x/n\u00b2 + 2/n\u00b3); M_q = \u03c3_q T\u00b3 with \u03c3_q = 2\u03c0\u00b72\u03b6(3)\u00b7k_B\u00b3/(h\u00b3c\u00b2) = 1.52046e15 ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7K\u207b\u00b3 (verified numerically: Lb/Lb_q for 7.5\u201313.5 \u00b5m at 300 K gives \u03bb_eff = 10.4 \u00b5m). \u03c3_q must be added to constants.py with this derivation as its source",
+  "\u00a73.2 band radiance by quadrature: L_B(T) = \u222b R(\u03bb) B(\u03bb,T) d\u03bb, Simpson on a 0.01 \u00b5m grid; R(\u03bb) normalised to peak 1.0 (ir-radiometry skill lines 133\u2013135; \u00a72 symbol table: R = QE \u00d7 filter \u00d7 window, normalised). Same for L_{q,B}, (\u2202L/\u2202T)_B, (\u2202L_q/\u2202T)_B",
+  "\u00a73.2(b) LUT: uniform T grid [200, 1000] K at 0.05 K \u2192 16001 entries, float32, 64 004 bytes per quantity per band; linear interpolation in T. Quantities: Lb, Lb_q, dLb_dT (skill) PLUS dLb_q_dT (required by \u00a79.4 photon NETD, missing from skill/script)",
+  "\u00a73.3 apparent temperature T_app = L_B\u207b\u00b9(L_measured); L_B monotonic \u2192 binary search on the same LUT (or stored inverse). T_kinetic vs T_apparent naming must be kept distinct",
+  "\u00a73.4 thermal derivative \u2202B/\u2202T = B \u00b7 C2/(\u03bbT\u00b2) \u00b7 e^x/(e^x \u2212 1) (exists, energy form; implemented as 1 + 1/expm1(x)); photon analogue \u2202B_q/\u2202T = B_q \u00b7 C2/(\u03bbT\u00b2) \u00b7 e^x/(e^x \u2212 1) (MISSING); in-band (\u2202L/\u2202T)_B = \u222b R \u2202B/\u2202T d\u03bb tabulated alongside L_B",
+  "\u00a73.4 [R9] NETD anchor: uncooled core \u224839 mK at ambient \u2192 \u224823 mK at 100 \u00b0C. Verified: (\u2202L_B/\u2202T)(373 K)/(\u2202L_B/\u2202T)(300 K) = 1.736 for 7.5\u201313.5 \u00b5m (1.750 for 8\u201312 \u00b5m) \u2192 39/1.736 = 22.5 mK. A known-answer test for the in-band derivative",
+  "\u00a79.4 photon-count NETD = \u03c3_N,total / (\u2202N_e/\u2202T), \u2202N_e/\u2202T = \u03b7 A_d t_int \u03c0 \u03c4_opt/(4F\u00b2+1) \u00b7 (\u2202L_q/\u2202T)_B \u2014 consumer of the dLb_q_dT table; \u00a79.2 bolometer NETD uses (\u2202L/\u2202T)_B energy form",
+  "\u00a713.3 temperature encoding c = (T \u2212 T_ref)/T_span, T_ref = 200 K, T_span = 800 K, float32 \u2192 the LUT range [200, 1000] K must equal [T_ref, T_ref + T_span]; fp16 spacing at 300 K = 0.25 K (non-negotiable #2)",
+  "\u00a713.5 GPU LUT contract the CPU reference must mirror exactly: planckLUT[N] float32, lutT0, lutT1; u = (T \u2212 T0)/(T1 \u2212 T0)\u00b7(N \u2212 1); u clamped to [0, N \u2212 1.001]; i0 = int(u), fr = u \u2212 i0; L = lut[i0](1 \u2212 fr) + lut[i0+1]\u00b7fr. Sidecar JSON must carry N, T0, T1",
+  "\u00a712.2 config fields consumed here: sensor.name (LUT file stem), sensor.band.lambda_min_um, sensor.band.lambda_max_um, sensor.band.spectral_response (CSV path), sensor.band.regime (emissive|reflective|mixed), sensor.fpa.type (bolometer|photon \u2192 which Planck form downstream, but generate all four tables regardless so bands stay data)",
+  "Data file contract (skill lines 116\u2013125, script docstring): data/spectra/<detector>.csv with columns \u03bb_um, R(\u03bb) normalised to peak 1.0, monotonic \u03bb; data/lut/<sensor>_{Lb,Lb_q,dLb_dT,dLb_q_dT}.npy float32 + data/lut/<sensor>_lut.json with SHA-256 of the sensor config and the spectral CSV, T0/T1/N/dT, dtype, units, generator version",
+  "\u00a715 Tier-1 tolerances owned by this area: photon vs energy form 1e-12 rel; \u222bB d\u03bb = \u03c3T\u2074/\u03c0 to 1e-6; LUT vs direct quadrature < 5 mK equivalent over 200\u20131000 K; L_B\u207b\u00b9(L_B(T)) = T < 1 mK; \u2202L/\u2202T vs finite difference < 1e-5 rel; quadrature vs closed-form top-hat < 0.1 % (skill line 76); GPU vs CPU 1e-4 rel or 5 mK (testing skill)",
+  "Verified closed-form known-answer anchors (top-hat, W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9): Lb(7.5\u201313.5 \u00b5m, 300 K) = 55.492, dLb/dT = 0.8825 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7K\u207b\u00b9 (5 mK \u2194 4.41e-3 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9); Lb(7.5\u201313.5, 200 K) = 5.5594; Lb(7.5\u201313.5, 1000 K) = 2253.4; Lb(8\u201312, 300 K) = 38.500, dLb/dT = 0.6297; Lb(3\u20135, 300 K) = 1.8660, dLb/dT = 0.06770; Lb(3\u20135, 200 K) = 9.261e-3; Lb(3\u20135, 500 K) = 167.53; Lb(0.9\u20131.7, 300 K) = 3.15e-7 (SWIR self-emission negligible, consistent with \u00a712.1); Lb_q(7.5\u201313.5, 300 K) = 2.915e21 ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9",
+  "Error budget facts for tolerance design: max linear-interpolation error on a 0.05 K grid is \u2264 0.03 mK (worst case SWIR 0.9\u20131.7 \u00b5m at 300 K; 0.003 mK for LWIR at 300 K) so any LUT-vs-quadrature disagreement above ~0.1 mK is a bug; float32 ulp of Lb at 300 K LWIR \u2248 4 \u00b5K; 0.1 % of Lb(7.5\u201313.5, 300 K) \u2248 63 mK, so the 0.1 % top-hat cross-check and the 5 mK LUT check are NOT interchangeable; a half-cell (0.005 \u00b5m) top-hat edge misalignment on the 0.01 \u00b5m grid \u2248 0.08 % \u2248 50 mK",
+  "Numerical guards (exist): x = C2/(\u03bbT) clipped at EXP_ARG_MAX = 700 before exp; expm1 for the denominator; sweep 200\u20132000 K \u00d7 0.4\u201320 \u00b5m must be finite and non-negative"
+ ],
+ "work_items": [
+  {
+   "id": "R-00",
+   "title": "Make the existing Planck gate honest: numpy floor vs np.trapezoid, Stefan-Boltzmann tolerance to spec",
+   "spec_refs": [
+    "\u00a73.1",
+    "\u00a715 Tier 1 (line 1178)",
+    "ir-sim-testing tolerance table",
+    "pyproject.toml numpy>=1.24"
+   ],
+   "description": "tests/unit/test_planck.py uses np.trapezoid (numpy \u2265 2.0) while pyproject allows numpy \u2265 1.24 \u2014 either raise the floor to numpy>=2.0 (ADR: dependency) or add a compat shim. Tighten test_integral_equals_stefan_boltzmann from 2e-5 to the spec's 1e-6 by adding the analytic tail beyond 1000 \u00b5m via fractional_exitance (tail at 300 K is ~6e-6, which is why 1e-6 is currently unreachable) or by integrating in x-space; keep the comment explaining the residual. Run make install + make check for the first time in this checkout and record the result in the commit body.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_integral_equals_stefan_boltzmann: numeric integral 0.1\u20131000 \u00b5m + analytic tail = \u03c3T\u2074/\u03c0 to 1e-6 relative at 250/300/800 K (catches wrong C1L or a dropped \u03c0 at the 3x level; the tighter tolerance now also catches a wrong C2)",
+    "existing photon/energy identity 1e-12 must still pass under the pinned numpy"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-01",
+   "title": "Photon-form thermal derivative d_spectral_photon_radiance_dT",
+   "spec_refs": [
+    "\u00a73.4",
+    "\u00a79.4 (\u2202L_q/\u2202T)_B",
+    "\u00a79.1"
+   ],
+   "description": "Add d_spectral_photon_radiance_dT(\u03bb, T) = B_q \u00b7 C2/(\u03bbT\u00b2) \u00b7 e^x/(e^x\u22121) to planck.py using the same expm1/clip guards as the energy form; export both derivative forms from irsim.radiometry.__init__. Needed because photon-detector NETD (\u00a79.4) divides by the photon-form in-band derivative and nothing downstream may derive it by hand.",
+   "depends_on": [
+    "R-00"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "d_spectral_photon_radiance_dT \u00d7 hc/\u03bb == d_spectral_radiance_dT to 1e-12 relative over 0.5\u201325 \u00b5m \u00d7 {250,300,500,1000} K (catches a wrong constant or a form mix-up)",
+    "photon derivative vs central finite difference of spectral_photon_radiance (dT = 1 mK) < 1e-6 relative on 3\u201314 \u00b5m at 300 K",
+    "no NaN/inf/negative on the 200\u20132000 K \u00d7 0.4\u201320 \u00b5m sweep"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-02",
+   "title": "Photon-form closed-form band radiance (fractional photon exitance, \u03c3_q) and unit validation on the top-hat functions",
+   "spec_refs": [
+    "\u00a73.2(a)",
+    "\u00a73.1 photon form",
+    "CLAUDE.md 'Don't invent physical constants'"
+   ],
+   "description": "Add SIGMA_Q = 2\u03c0\u00b72\u03b6(3)\u00b7k_B\u00b3/(h\u00b3c\u00b2) = 1.52046e15 ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7K\u207b\u00b3 to constants.py with its derivation as source. Add fractional_photon_exitance(\u03bb, T) = (1/(2\u03b6(3))) \u03a3 e^{\u2212nx}(x\u00b2/n + 2x/n\u00b2 + 2/n\u00b3) (adaptive convergence like the energy series) and band_photon_radiance_tophat(lo, hi, T) = \u03c3_q T\u00b3/\u03c0 [F_q(hi) \u2212 F_q(lo)]. This is the only implementation-independent oracle for the Lb_q LUT. Same commit (fix): route fractional_exitance / band_radiance_tophat inputs through _validate so band_radiance_tophat(8e-6, 12e-6, 300) raises instead of returning 0.",
+   "depends_on": [
+    "R-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "fractional_photon_exitance(5000 \u00b5m, 300 K) == 1 to 1e-6 and F_q(0.2 \u00b5m, 300 K) < 1e-9; strictly increasing in \u03bb",
+    "band_photon_radiance_tophat(8,12,300) vs trapezoid of spectral_photon_radiance on 200 001 points < 1e-4 relative (two independent derivations; catches wrong \u03c3_q or wrong series coefficients)",
+    "band_photon_radiance_tophat \u00d7 mean photon energy consistency: Lb/Lb_q = hc/\u03bb_eff with \u03bb_eff inside [lo, hi] for LWIR/MWIR/SWIR bands",
+    "known answer Lb_q(7.5\u201313.5 \u00b5m, 300 K) = 2.915e21 ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 to 1e-3 relative",
+    "band_radiance_tophat with metre-valued wavelengths raises ValueError"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-03",
+   "title": "Band definition and spectral-response loader (irsim.radiometry.band)",
+   "spec_refs": [
+    "\u00a712.2 sensor.band",
+    "\u00a72 symbol table R(\u03bb)",
+    "\u00a73.2(b) 'true R(\u03bb) folded in'",
+    "ir-radiometry skill 'Adding a band' and 'Common failure modes'"
+   ],
+   "description": "Introduce Band (name, lambda_min_um, lambda_max_um, regime, wavelength_um, response) as a frozen dataclass; load_spectral_response(path) reading a two-column CSV (\u03bb_um, R), asserting monotonic increasing \u03bb, \u03bb within 0.1\u2013100 \u00b5m (an nm-valued file must be rejected), 0 \u2264 R \u2264 1, peak == 1.0 \u00b1 1e-6 (assert, do not silently renormalise); resample onto a uniform 0.01 \u00b5m grid aligned to the band edges by linear interpolation, R = 0 outside the tabulated support; Band.tophat(lo, hi, name) constructor for tests and cross-checks. Decide and document the path-resolution rule (relative to data/) and the precedence between config lambda_min/max and the CSV support (proposal: config range clips the CSV support; the loader raises if the CSV support is narrower than the config range by more than one grid cell).",
+   "depends_on": [
+    "R-00"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Band.tophat(8,12) resampled response integrates to exactly 4.0 \u00b5m (Simpson on the aligned grid) to 1e-12 \u2014 catches an off-by-one-cell edge or a normalisation slip",
+    "CSV with \u03bb in nm (7500\u201313500) raises; CSV with peak 0.8 raises; CSV with non-monotonic \u03bb raises; CSV with R > 1 raises",
+    "synthetic CSV with a known Gaussian R(\u03bb) round-trips: resampled R at the CSV nodes equals the file values to 1e-12",
+    "spectral_response file hash recorded on the Band equals hashlib.sha256 of the file bytes"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "R-04",
+   "title": "Reference band integration by Simpson quadrature (irsim.radiometry.band_integration)",
+   "spec_refs": [
+    "\u00a73.2 (b) quadrature",
+    "\u00a73.4 in-band derivative",
+    "\u00a79.1/\u00a79.2 form selection",
+    "\u00a715 Tier 1"
+   ],
+   "description": "band_radiance(band, T), band_photon_radiance(band, T), d_band_radiance_dT(band, T), d_band_photon_radiance_dT(band, T): float64, vectorised over T (broadcast T against the band's \u03bb grid), composite Simpson on the band's 0.01 \u00b5m grid (numpy-only reference implementation, or scipy.integrate.simpson \u2014 decide once). Returns W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 / ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 / per K; units in the first docstring line; assert \u03bb grid uniform and odd-length. This is the oracle everything faster is tested against; keep it simple.",
+   "depends_on": [
+    "R-03",
+    "R-02"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "band_radiance(Band.tophat(lo,hi), T) vs band_radiance_tophat(lo,hi,T) (closed-form series, independent derivation) < 0.1 % for (7.5\u201313.5, 300), (8\u201312, 300), (3\u20135, 300), (3\u20135, 500), (0.9\u20131.7, 300) \u2014 grid aligned to edges so the 0.1 % is physics not sampling; also report the error in mK via dLb_dT",
+    "band_photon_radiance vs band_photon_radiance_tophat (R-02) < 0.1 % on the same cases",
+    "d_band_radiance_dT vs central finite difference of band_radiance (dT = 1 mK) < 1e-5 relative over 200\u20131000 K every 50 K (spec \u00a715); same for the photon form",
+    "known answer: d_band_radiance_dT(7.5\u201313.5, 373 K)/d_band_radiance_dT(7.5\u201313.5, 300 K) = 1.736 \u00b1 0.5 % \u2014 this is the 39 mK \u2192 23 mK NETD anchor of \u00a73.4 [R9]",
+    "band_radiance strictly increasing in T on 200\u20131000 K at 0.05 K steps (no sign change, no plateau)",
+    "photon/energy consistency: band_radiance(Band with R=1 at a single 0.01 \u00b5m cell) \u2248 B(\u03bb)\u00b70.01 to 1e-6"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "R-05",
+   "title": "Band-weighted spectral averaging for grey-within-band material properties",
+   "spec_refs": [
+    "Appendix A #3 'Emissivity is grey within a band'",
+    "\u00a712.3 spectral_emissivity CSV",
+    "\u00a74.1 Kirchhoff",
+    "\u00a73.2(c) runtime quadrature deliberately skipped"
+   ],
+   "description": "band_average(band, spectrum_lambda, T_ref) = \u222b R(\u03bb) s(\u03bb) B(\u03bb,T_ref) d\u03bb / \u222b R(\u03bb) B(\u03bb,T_ref) d\u03bb (energy form; photon-weighted variant for photon detectors). This is the only sanctioned way for the materials area to reduce \u03b5(\u03bb), \u03c1(\u03bb), \u03c4(\u03bb) files to per-band scalars. Linear in s, so Kirchhoff closure survives the reduction. Needs an ADR on the reference temperature (300 K fixed vs T-dependent table) because the weighted average of a sloped \u03b5(\u03bb) shifts with T.",
+   "depends_on": [
+    "R-04"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "constant s(\u03bb) = 0.9 \u2192 band_average == 0.9 to 1e-12 (catches a missing normalisation)",
+    "step s(\u03bb) = 1 below 10 \u00b5m, 0 above, top-hat 8\u201312 \u00b5m at 300 K \u2192 equals band_radiance_tophat(8,10,300)/band_radiance_tophat(8,12,300) (closed-form series, independent) to 1e-4",
+    "linearity/closure: band_average(\u03b5) + band_average(\u03c1) + band_average(\u03c4) = 1 to 1e-9 for spectra with \u03b5+\u03c1+\u03c4 = 1 pointwise (non-negotiable #4 survives band reduction)",
+    "T-dependence is real: for a linearly sloped \u03b5(\u03bb) the average at 300 K and 600 K differ by more than 1e-3 (documents the approximation the ADR accepts)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-06",
+   "title": "Band LUT: build, float32 storage, linear-interpolation lookup mirroring the GPU contract",
+   "spec_refs": [
+    "\u00a73.2(b)",
+    "\u00a713.3 encoding range",
+    "\u00a713.5 kernel LUT contract",
+    "CLAUDE.md non-negotiable #2"
+   ],
+   "description": "irsim.radiometry.lut.BandLUT: t0 = 200.0, t1 = 1000.0, n = 16001 (linspace so t1 is exact), float32 arrays for Lb, Lb_q, dLb_dT, dLb_q_dT built from R-04 in float64 then cast; band name, regime, spectral hash carried along. lookup(T, quantity): accepts float32/float64 arrays of any shape (G-buffers), raises on float16, computes u = (T \u2212 t0)/(t1 \u2212 t0)\u00b7(n \u2212 1) in float32 with the \u00a713.5 clamp, returns float32. Out-of-range policy (clamp, as the kernel sketch does) recorded in the ADR and surfaced as a documented flag/warning. Provide a session-scoped pytest fixture that builds the LWIR top-hat LUT once (build must stay < 2 s to respect the 30 s suite budget).",
+   "depends_on": [
+    "R-04"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "LUT lookup vs band_radiance quadrature at OFF-grid temperatures (T = grid + 0.5\u00b7dT, every 1 K over 200\u20131000 K), error converted to mK via dLb_dT: max < 5 mK (spec); expected \u2264 0.03 mK, so the assertion message prints the actual mK \u2014 any regression above 0.1 mK is a bug even though the test passes at 5 mK",
+    "float32 cast error: |float32(Lb) \u2212 Lb| / dLb_dT < 0.05 mK over the whole grid (documents that float32 storage costs ~4 \u00b5K)",
+    "Lb table strictly increasing; dLb_dT table strictly positive",
+    "float16 temperature input raises TypeError/ValueError; float32 input returns float32 with the input shape (gbuffer_ramp fixture, 256\u00d7256, 250\u2013450 K)",
+    "photon table consistency: lookup(T,'Lb')/lookup(T,'Lb_q') = hc/\u03bb_eff with \u03bb_eff inside the band for all T",
+    "clamp behaviour: lookup(199 K) == lookup(200 K) and lookup(1001 K) == lookup(1000 K) exactly, matching the \u00a713.5 kernel (so the future GPU parity test cannot disagree at the edges)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "R-07",
+   "title": "Inverse lookup: apparent temperature from band radiance",
+   "spec_refs": [
+    "\u00a73.3",
+    "\u00a715 Tier 1 'L_B\u207b\u00b9(L_B(T)) = T < 1 mK'",
+    "ir-radiometry skill 'Apparent temperature'"
+   ],
+   "description": "BandLUT.apparent_temperature(Lb, quantity='Lb'|'Lb_q'): np.searchsorted on the monotonic float32 forward table + linear inversion inside the bin, float32 in/out, arbitrary shape; defined policy for radiance outside [Lb(t0), Lb(t1)] (clamp to the end temperatures, or NaN \u2014 ADR). Name the output T_apparent; never route through T_kinetic.",
+   "depends_on": [
+    "R-06"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "round trip apparent_temperature(lookup(T)) == T to < 1 mK for T on a 0.013 K sweep over 200\u20131000 K (off-grid), float32 end to end",
+    "independent inverse: for a grey body \u03b5 = 0.9 at 300 K in a top-hat 7.5\u201313.5 \u00b5m band, T_app = apparent_temperature(0.9\u00b7Lb(300)) agrees with scipy brentq on band_radiance_tophat to < 5 mK (expected T_app \u2248 291.7 K; the ~8 K gap IS the emissivity error \u00a73.3 says the simulator must reproduce)",
+    "monotonic: apparent temperature strictly increasing in radiance on a fine radiance sweep",
+    "photon-form round trip (Lb_q) < 1 mK as well",
+    "out-of-range radiance handled per policy (no NaN leakage when clamping is chosen; NaN only where documented)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-08",
+   "title": "LUT on disk: .npy tables, JSON sidecar with config/spectral hashes, stale detection on load",
+   "spec_refs": [
+    "\u00a73.2(b)",
+    "\u00a713.5 (N, T0, T1 needed by the kernel)",
+    "ir-radiometry skill lines 64\u201366, 136",
+    "scripts/generate_luts.py docstring",
+    "ir-sim-testing 'store the config hash alongside'"
+   ],
+   "description": "save_band_lut(lut, out_dir) writes <sensor>_{Lb,Lb_q,dLb_dT,dLb_q_dT}.npy (float32, C-order) and <sensor>_lut.json {t0, t1, n, dt, dtype:'float32', units per quantity, band{name, lambda_min_um, lambda_max_um, regime}, config_sha256, spectral_sha256, generator{irsim_version, quadrature_step_um}}. load_band_lut(sensor_name, lut_dir, config_path, data_dir) recomputes both hashes and raises StaleLUTError naming which input changed; asserts dtype float32 on every array. Decide the artefact policy (commit vs generate; .gitignore currently ignores them) and whether a raw float32 .bin is also needed for the SPG Lua path \u2014 both ADR items.",
+   "depends_on": [
+    "R-06",
+    "R-07",
+    "R-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "save \u2192 load round trip is bitwise identical for all four tables and the lookup of a 300 K ramp matches the in-memory LUT to 0 mK",
+    "loaded arrays are float32 (a float64 or float16 file written by hand must be rejected on load \u2014 non-negotiable #2 at the disk boundary)",
+    "altering one byte of a temp copy of the spectral CSV \u2192 StaleLUTError; altering the sensor YAML \u2192 StaleLUTError",
+    "sidecar t0/t1/n reproduce the \u00a713.5 interpolation: (T \u2212 t0)/(t1 \u2212 t0)\u00b7(n \u2212 1) lands exactly on integer indices for grid temperatures"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "R-09",
+   "title": "scripts/generate_luts.py and `make luts`",
+   "spec_refs": [
+    "\u00a73.2(b)",
+    "\u00a712.2",
+    "Makefile luts target",
+    "ir-radiometry skill 'Adding a band'"
+   ],
+   "description": "Replace the stub: --configs DIR --out DIR --data DIR (default data/); for each configs/sensors/*.yaml read sensor.name and sensor.band.*, resolve spectral_response relative to --data, build via R-03/R-04/R-06, cross-check against band_radiance_tophat / band_photon_radiance_tophat over the config's \u03bb range (report max % and mK; fail above a documented threshold that accounts for a real R(\u03bb) not being a top-hat), write via R-08, print a summary table. Adding a band must touch only a YAML, a CSV and this command \u2014 no code in irsim/radiometry (the scalability requirement). Uses the config area's pydantic schema if it exists by then; otherwise a minimal typed read of the band block, to be swapped later.",
+   "depends_on": [
+    "R-08",
+    "config: pydantic SensorConfig with the \u00a712.2 band block (soft \u2014 script can parse the band block directly until it lands)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "run the generator on a temp dir with a synthetic top-hat CSV + minimal YAML: produced Lb.npy at 300 K equals band_radiance_tophat(7.5,13.5,300) = 55.49 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 to 0.1 % and the sidecar hashes verify",
+    "generator exits non-zero and writes nothing when the CSV peak \u2260 1 or \u03bb is in nm",
+    "re-running with an unchanged config is deterministic (bitwise-identical .npy)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "R-10",
+   "title": "First band data: estimated Boson VOx spectral response and the generated LWIR LUT",
+   "spec_refs": [
+    "\u00a712.2 (spectral_response: spectra/boson_vox.csv, ESTIMATED)",
+    "\u00a716.1 spectral band ~7.5\u201313.5 \u00b5m",
+    "\u00a712.1 LWIR row"
+   ],
+   "description": "Author data/spectra/boson_vox.csv (\u03bb_um, R) as a documented ESTIMATE: 7.5\u201313.5 \u00b5m with soft roll-offs typical of VOx + germanium/AR window, peak 1.0, header lines stating provenance and that it is synthetic until measured; ADR recording the assumption. Run make luts; either commit the LUT or the recipe per the R-08 ADR. Update README: 'Bands configured: LWIR (flir_boson_640_lwir)'.",
+   "depends_on": [
+    "R-09"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "loader accepts the file (monotonic, peak 1, \u00b5m range) and its 0.01 \u00b5m resample has \u03bb_eff at 300 K within 9.5\u201311.5 \u00b5m (Lb/Lb_q consistency \u2014 catches a nm/\u00b5m error by 1e3 and a normalisation error by ~2x)",
+    "generated LWIR Lb(300 K) within 10 % of the top-hat 55.49 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9 (loose on purpose: soft edges legitimately differ by a few %; the failure classes this catches are unit and normalisation errors, which are \u2265 2x)",
+    "the LUT's dLb_dT(373)/dLb_dT(300) within 1.65\u20131.85 (NETD-falls-with-T anchor holds for the real curve, not only the top-hat)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "R-11",
+   "title": "Golden regression fixture for the LWIR LUT and the --update-golden plumbing",
+   "spec_refs": [
+    "ir-sim-testing 'Golden / regression fixtures'",
+    "Makefile golden-update"
+   ],
+   "description": "tests/golden/: store every 100th entry of the LWIR Lb and dLb_dT tables (float32) with the config + spectral hash; compare with a 1 mK tolerance; on failure write the actual array beside the expected and print both paths; report 'stale' (hash mismatch) distinctly from 'failing'. Add the --update-golden pytest option to tests/conftest.py, which the Makefile already assumes exists.",
+   "depends_on": [
+    "R-10"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "regenerated LUT vs golden slice < 1 mK equivalent at every stored temperature (catches an accidental change to quadrature, constants or the spectral file that still passes the loose R-10 checks)",
+    "hash mismatch is reported as STALE with the offending input named, not as a numeric failure"
+   ],
+   "engine_free": true,
+   "size": "S"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Band LUT grid, precision and out-of-range policy",
+   "why": "Fixes the temperature range every other stage (encoding \u00a713.3, GPU kernel \u00a713.5, thermal solver outputs, sky temperatures) must respect; the clamp behaviour silently saturates flares/exhaust above the top and cold sky below the bottom; the choice outlives the commit and must match the CUDA kernel bit-for-bit.",
+   "options": [
+    "[200, 1000] K at 0.05 K, float32, linear interpolation, clamp at both ends (matches \u00a713.3 encoding and the \u00a713.5 kernel sketch exactly; 16001 entries, 64 kB per table)",
+    "[200, 1000] K at 0.1 K (8001 entries; interpolation error still \u2264 0.12 mK) \u2014 half the memory, no measurable accuracy cost",
+    "Wider range e.g. [150, 1500] K to cover winter clear-sky (T_air \u2212 70 K) and exhaust manifolds, at the cost of changing T_ref/T_span in \u00a713.3 and the encoding round-trip test",
+    "NaN or raise instead of clamp outside the range (safer in the CPU reference, but the GPU kernel clamps, so parity tests would disagree at the edges)"
+   ]
+  },
+  {
+   "title": "Inverse (apparent temperature) method",
+   "why": "\u00a73.3 allows binary search on the forward table or a stored inverse; the choice determines whether the < 1 mK round trip is exact-by-construction or limited by a second interpolation, and what the GPU IrApparentT stage must implement.",
+   "options": [
+    "searchsorted + linear inversion inside the bin on the same float32 forward table (exact inverse of the piecewise-linear forward function; round trip limited only by float32; 14 iterations per pixel on GPU)",
+    "Precomputed inverse table on a uniform radiance grid (one gather per pixel, but radiance spans 3 decades between 200 K and 1000 K so a uniform grid is either huge or coarse at the cold end)",
+    "Newton iteration seeded from a coarse inverse (fast, but a second code path to validate)"
+   ]
+  },
+  {
+   "title": "LUT artefacts: committed vs generated, and on-disk format",
+   "why": "The ir-radiometry skill says LUTs are checked into data/lut with a config hash; .gitignore ignores data/lut/*.npy and *.json. Which is true determines whether tests and the Isaac glue can assume the files exist, whether bit-reproducibility across numpy versions matters, and what the SPG Lua launch script can load.",
+   "options": [
+    "Commit the .npy + .json (64 kB \u00d7 4 per band; remove the .gitignore lines; golden-style tolerance comparison on regeneration because float64 quadrature is not guaranteed bitwise across numpy/BLAS versions)",
+    "Never commit; `make luts` is part of `make install` and unit tests build LUTs on the fly from top-hat/synthetic bands (fast: < 2 s) \u2014 the Isaac side must run make luts before first use and check the hash",
+    "Commit only the sidecar JSON (hash + parameters) and regenerate arrays lazily with a cache keyed by the hash",
+    "Format: .npy + JSON sidecar (Python/Warp path reads natively) vs additionally a raw little-endian float32 .bin for the SPG Lua cuda.static upload \u2014 depends on what the Lua runtime can read (unverified)"
+   ]
+  },
+  {
+   "title": "Spectral response semantics and quadrature rule",
+   "why": "R(\u03bb) normalisation (peak 1, QE excluded and living in the detector model \u2014 or QE folded in as \u00a79.1 permits), the resampling rule (linear interpolation to 0.01 \u00b5m, zero outside support), precedence between config lambda_min/max and CSV support, and Simpson (numpy composite vs scipy.integrate.simpson) are all silent multiplicative factors if two modules assume differently. The 5 mK LUT tolerance only means something if every consumer uses the same R(\u03bb).",
+   "options": [
+    "R(\u03bb) is a peak-1 shape only; \u03b7 (QE) lives in fpa config and is applied in the detector (recommended: keeps the LUT band-only and the config field 'quantum_efficiency' meaningful)",
+    "R(\u03bb) includes QE \u00d7 filter \u00d7 window as \u00a72's symbol table literally says, then normalised \u2014 \u03b7 still needed separately for absolute photon counts, so the LUT and detector must agree on where the absolute scale lives",
+    "Config range clips CSV support (and the loader errors if the CSV is narrower) vs CSV support wins and the config range is documentation only",
+    "Composite Simpson in numpy on an edge-aligned odd-length grid (5 lines, inspectable) vs scipy.integrate.simpson (handles even N with a correction that changes results at the 1e-6 level)"
+   ]
+  },
+  {
+   "title": "Grey-within-band emissivity reduction (fidelity level deliberately skipped: \u00a73.2(c) runtime quadrature)",
+   "why": "Appendix A #3 accepts grey \u03b5 per band; the reduction from a spectral \u03b5(\u03bb) file to a scalar needs a weighting (R\u00b7B at some T) and the answer depends on T. Choosing T_ref = 300 K introduces a bounded but non-zero error for hot targets and for materials with sloped \u03b5 (quartz reststrahlen, vegetation); this is exactly the 'cheaper approximation on purpose' the ADR process exists for.",
+   "options": [
+    "Weight by R(\u03bb)\u00b7B(\u03bb, 300 K) once per material per band (simplest; error for a 600 K exhaust with sloped \u03b5 can be checked with the R-05 T-dependence test)",
+    "Tabulate \u03b5_B(T) per material per band on the same 200\u20131000 K grid (one more small LUT per material; exact for grey-body self-emission, still approximate for reflected terms)",
+    "Per-pixel runtime quadrature (hyperspectral fidelity; rejected by \u00a73.2(c) for an imaging camera)"
+   ]
+  },
+  {
+   "title": "numpy version floor (dependency)",
+   "why": "tests use np.trapezoid, present only in numpy \u2265 2.0, while pyproject declares numpy>=1.24; raising the floor is a dependency decision affecting the Isaac Sim 6.0 Python environment, whose bundled numpy version is unverified.",
+   "options": [
+    "Raise to numpy>=2.0 (simplest; verify Isaac Sim 6.0's bundled numpy is \u2265 2.0 first)",
+    "Keep 1.24 floor and use a compat shim (np.trapezoid if present else np.trapz)",
+    "Avoid trapezoid entirely in tests by using the closed-form series and Simpson"
+   ]
+  },
+  {
+   "title": "Estimated Boson VOx spectral response",
+   "why": "The real Boson R(\u03bb) is not public; whatever curve is authored becomes the absolute radiometric calibration of the LWIR camera until a measured curve replaces it. Its provenance and the expected error must be recorded so nobody mistakes it for data.",
+   "options": [
+    "Synthetic 7.5\u201313.5 \u00b5m top-hat with ~0.5 \u00b5m cosine roll-offs (documented as ESTIMATED; hash-tagged so replacing it invalidates every LUT)",
+    "Digitised typical VOx + Ge/AR curves from literature (better shape, still not this unit)",
+    "Pure top-hat (simplest, worst edge behaviour; \u00a73.2(a) says ~1 % error for uncooled cores)"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "The dev environment has never run the gate: miniconda Python 3.13 has no numpy/pytest/ruff/mypy, no .venv exists, and the single commit predates any CI. The CHANGELOG's 'analytic identity tests passing' is unverified in this checkout; mypy --strict on planck.py (FloatArray typing with scalar T) and ruff NPY rules may already fail.",
+   "how_to_verify": "make install && make check on a Python 3.10\u20133.13 interpreter; record the outcome in R-00's commit body. Also pip install 'numpy<2' on Python 3.10 and run pytest to confirm the np.trapezoid AttributeError."
+  },
+  {
+   "description": "Spectral response file location is defined three different ways: spec \u00a712.2 line 832 'responses/boson_vox.csv', the checked-in YAML line 13 'spectra/boson_vox.csv', the ir-radiometry skill line 121 'data/spectra/<detector>.csv'; and nothing states what the path is relative to (Makefile passes no data root). data/spectra/ will also hold material \u03b5(\u03bb) files (\u00a712.3 'spectra/car_paint_black.csv'), which use a different normalisation (physical 0\u20131, not peak-1).",
+   "how_to_verify": "Decide in R-03's ADR (relative to data/, detector files under data/spectra/); add a loader test that a material-style file (peak 0.9) is rejected by the detector-response loader; fix the spec line or the YAML so they agree."
+  },
+  {
+   "description": "CSV format for R(\u03bb) is unspecified: delimiter, header lines, column order, whether \u03bb may be descending, duplicate \u03bb, and what to do outside the tabulated support. Any of these silently change Lb by percent-level amounts.",
+   "how_to_verify": "Write the format down in the loader docstring and the CSV header; R-03 tests for descending/nm/peak\u22601; compare Lb from a hand-written top-hat CSV against band_radiance_tophat to 0.1 %."
+  },
+  {
+   "description": "Precedence between config lambda_min_um/lambda_max_um and the R(\u03bb) CSV support is undefined. If the CSV extends beyond the config range (e.g. 7.0\u201314.0 \u00b5m) and the config range clips it, Lb differs by several percent from the unclipped integral.",
+   "how_to_verify": "R-03 ADR decision plus a test: same CSV with two config ranges gives Lb values that differ exactly by band_radiance_tophat over the excluded interval (if clipping) or are identical (if the CSV wins)."
+  },
+  {
+   "description": "Out-of-range temperatures are real, not hypothetical: \u00a75.3 gives T_sky = T_air \u2212 55\u202670 K, so a \u221213 \u00b0C winter night puts zenith sky at ~190 K, below the 200 K LUT floor; \u00a73.1 mentions 1000 K flares and exhaust manifolds exceed 1000 K. The \u00a713.5 kernel clamps silently. If the sky radiance is computed through the LUT, cold-sky reflections on car roofs are wrong on exactly the nights the phenomenology checklist tests.",
+   "how_to_verify": "Compute L_sky on the CPU via the quadrature path (R-04), not the LUT, and add a test that band_radiance(190 K) \u2260 lookup(190 K); decide in the LUT ADR whether to widen the range (and correspondingly T_ref/T_span in \u00a713.3)."
+  },
+  {
+   "description": "Tolerance non-equivalence trap: the skill's '0.1 % on a top-hat' and the spec's '< 5 mK' differ by an order of magnitude (0.1 % of Lb at 300 K LWIR \u2248 63 mK). A team member could 'satisfy' the 5 mK LUT test by comparing against the closed-form top-hat at 0.1 %, which proves nothing about the LUT. Conversely, a half-cell edge misalignment on the 0.01 \u00b5m grid is ~50 mK, so a top-hat oracle test at 5 mK fails for grid reasons, not physics.",
+   "how_to_verify": "R-04 uses the 0.1 % top-hat check with an edge-aligned grid; R-06 uses the 5 mK check against R-04's quadrature at off-grid T; both tests print the error in mK (via dLb_dT) so reviewers can see which regime they are in."
+  },
+  {
+   "description": "Which quantities to tabulate disagrees between spec and skill: \u00a73.4 tabulates (\u2202L/\u2202T)_B; \u00a79.4's photon-count NETD needs (\u2202L_q/\u2202T)_B; the skill (line 65) and the script docstring list only Lb, Lb_q, dLb_dT. Omitting dLb_q_dT forces the detector area to finite-difference the Lb_q table, a second implementation of the same derivative.",
+   "how_to_verify": "Include dLb_q_dT in R-06/R-08; test that the finite difference of the Lb_q table agrees with the dLb_q_dT table to 1e-4 relative, so a consumer using either gets the same NETD."
+  },
+  {
+   "description": "SPG Lua asset loading is unverified for Isaac Sim 6.0: the spec (\u00a713.5 note line 1111) says 'generate the LUT offline and load it as a binary asset' but neither the spec nor the isaac-sim-spg skill shows a Lua file-read or which formats cuda.array accepts; .npy has a header the Lua side would have to parse. The Warp/annotator path (\u00a713.6, 'start here') reads .npy natively, so this only blocks the later SPG port.",
+   "how_to_verify": "Small experiment in Isaac Sim 6.0 with --enable omni.rtx.spg: attempt to read a raw float32 .bin in the .cu.lua via Lua io and pass through cuda.array inside cuda.static; if it works, R-08 also writes <sensor>_Lb.f32 next to the .npy. Belongs to the isaac area but decides R-08's format."
+  },
+  {
+   "description": "R(\u03bb) normalisation vs quantum efficiency: \u00a72's symbol table defines R as 'QE \u00d7 filter \u00d7 window, normalised', \u00a79.1 says \u03b7 may be 'folded into R(\u03bb) if you prefer', the YAML has a separate fpa.quantum_efficiency field, and the skill says 'absolute responsivity lives in the detector model'. Folding \u03b7 into R and also applying fpa.quantum_efficiency double-counts it; not folding it but omitting the field under-counts photons.",
+   "how_to_verify": "Decide in the R-03 ADR (R is peak-1 shape; \u03b7 applied once in the detector); add a detector-area test that photoelectron count for a flat QE equals \u03b7 \u00d7 A_d \u00d7 t_int \u00d7 \u03a9 \u00d7 Lb_q from the LUT."
+  },
+  {
+   "description": "CPU/GPU parity depends on replicating float32 index arithmetic exactly: the kernel computes u = (T \u2212 T0)/(T1 \u2212 T0)\u00b7(N \u2212 1) in float32 and clamps to N \u2212 1.001. A CPU reference using float64 or np.interp will differ by up to one float32 ulp in u, which is harmless (< 1 \u00b5K) but a CPU reference that raises or extrapolates at the edges will disagree with the kernel by whole kelvins at 199 K/1001 K.",
+   "how_to_verify": "R-06 implements the kernel's formula in float32 and tests exact equality at 199 K/200 K and 1000 K/1001 K; the isaac area's Warp parity test then compares at 1e-4 relative or 5 mK over the gbuffer_ramp fixture."
+  },
+  {
+   "description": "Unit-suite time budget (< 30 s total): building a 16001-point LUT from a 601-point \u03bb grid is ~10 M Planck evaluations per quantity (fast in vectorised numpy, ~0.5 s), but fractional_exitance is a scalar Python loop \u2014 cross-checking all 16001 temperatures with it takes seconds. Naive tests will blow the budget and people will stop running the suite.",
+   "how_to_verify": "Session-scoped LUT fixture; top-hat cross-checks at \u2264 200 sampled temperatures; time the suite in CI (pytest --durations=10) and keep radiometry under 5 s."
+  },
+  {
+   "description": "LUT determinism across numpy/BLAS/platform versions is not guaranteed at the bit level (float64 exp/expm1 differ in the last ulp between libm implementations), so a committed .npy compared bitwise will 'fail' on another machine while being physically identical.",
+   "how_to_verify": "If LUTs are committed (R-08 ADR), compare on regeneration with a 0.1 mK tolerance, never bitwise; record the numpy version in the sidecar."
+  },
+  {
+   "description": "Grey-band emissivity reference temperature (R-05) is unspecified anywhere in the spec; Appendix A only says \u03b5 is grey within a band. For sloped \u03b5(\u03bb) (vegetation, quartz) the 300 K-weighted average applied to a 600 K target is wrong by an amount the spec does not bound.",
+   "how_to_verify": "R-05's T-dependence test quantifies the shift for a representative sloped \u03b5; the ADR either bounds it (< 0.5 % of \u03b5 for the material library) or chooses the \u03b5_B(T) table option."
+  },
+  {
+   "description": "Simpson requires an odd number of uniformly spaced points; a band from 7.5 to 13.5 \u00b5m at 0.01 \u00b5m gives 601 points (odd, fine) but 0.9\u20131.7 \u00b5m gives 81 (fine) and arbitrary config ranges can give even counts. scipy.integrate.simpson silently applies an even-N correction; a hand-rolled Simpson may silently drop the last interval.",
+   "how_to_verify": "R-04 asserts odd length (grid constructed with N = round(span/0.01) + 1, adjusting if even) and the top-hat integral test checks \u222bR d\u03bb == span to 1e-12."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: every module added here (band.py, band_integration.py, lut.py, and scripts/generate_luts.py's imports) is pure numpy (+ optional scipy); tests/unit/test_layering.py parametrises over src/irsim/**/*.py so new files are checked automatically \u2014 nothing extra to write, but the LUT-loading side for SPG/Warp must live in src/irsim_isaac and import from irsim.radiometry, never the reverse.",
+  "#2 float32 or better wherever temperature/radiance flows: LUT tables are float32 (built in float64, cast once); BandLUT.lookup/apparent_temperature assert input dtype \u2209 {float16} and return float32 (R-06/R-07 tests: float16 input raises; gbuffer_ramp float32 in \u2192 float32 out); load_band_lut asserts float32 on every .npy (R-08 test: hand-written float16/float64 file rejected); the LUT range [200, 1000] K is pinned to \u00a713.3's T_ref/T_span so the encode/decode round trip (isaac area, < 10 mK) and the LUT cover the same interval.",
+  "#3 Noise in radiance/electron space, never Kelvin: radiometry adds no noise but is what makes the rule enforceable \u2014 it must publish dLb_dT and dLb_q_dT tables so the noise area converts \u03c3_radiance \u2194 mK per pixel at the local temperature. Tests: existing test_thermal_derivative_rises_with_temperature plus R-04's known-answer ratio 1.736 (39 mK \u2192 22.5 mK) and R-06's positive, increasing dLb_dT table. Any Kelvin-space noise shortcut would show up as a flat NETD in the Tier-2 bench, which these tables make detectable.",
+  "#4 Kirchhoff closure \u03b5 + \u03c1 + \u03c4 = 1 to 1e-6: touched only through R-05 band averaging, which must be linear so closure survives the spectral \u2192 grey reduction; R-05 test asserts band_average(\u03b5) + band_average(\u03c1) + band_average(\u03c4) = 1 to 1e-9 for pointwise-closed spectra. The material-library walk test itself belongs to the materials area.",
+  "#5 Aperture factor \u03c0/(4F\u00b2+1) defined once in irsim.optics: radiometry must contain NO aperture, F-number, or \u03c0/(4F\u00b2) factor \u2014 Lb is radiance (W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9), not focal-plane irradiance; docstring first lines state units so a reviewer can catch a stray \u03c0. Verified by the Stefan-Boltzmann identity (L = \u03c3T\u2074/\u03c0) and by unit-labelled return types; a grep for 'f_number' or '4 *' in src/irsim/radiometry should stay empty.",
+  "#6 One WeatherSeries for thermal and atmosphere: not touched by radiometry; the sky-temperature \u2192 L_sky conversion (\u00a75.3) consumes R-04/R-06 but takes T_sky as an input from the thermal/atmosphere side, so radiometry has no weather dependency to get wrong."
+ ],
+ "spec_internal_inconsistencies": [
+  "Spectral response path: docs/physics-model.md \u00a712.2 line 832 says `responses/boson_vox.csv`; configs/sensors/flir_boson_640_lwir.yaml line 13 says `spectra/boson_vox.csv`; .claude/skills/ir-radiometry/SKILL.md line 121 says `data/spectra/<detector>.csv`. No document states the base directory; Makefile line for `luts` passes only --configs and --out.",
+  "LUT artefacts committed vs ignored: ir-radiometry skill lines 65\u201366 'checked into data/lut/ with a hash of the config'; .gitignore lines 12\u201313 ignore data/lut/*.npy and data/lut/*.json.",
+  "Stefan-Boltzmann tolerance is stated three ways: spec \u00a715 line 1178 and ir-radiometry skill line 107 say 1e-6; ir-sim-testing skill line 52 says 1e-12 relative for 'Analytic identities (Planck forms, Stefan-Boltzmann)'; tests/unit/test_planck.py line 42 asserts 2e-5 with a comment attributing the residual to tail truncation beyond 1000 \u00b5m (which is ~6e-6 at 300 K, so 1e-6 is unattainable by that method without the analytic tail). 1e-12 is only meaningful for the closed-form series (fractional_exitance \u2192 1), not for quadrature.",
+  "Tables to tabulate: spec \u00a73.4 line 188 tabulates (\u2202L/\u2202T)_B alongside L_B; spec \u00a79.4 line 671 needs (\u2202L_q/\u2202T)_B for photon detectors; ir-radiometry skill line 65 and scripts/generate_luts.py docstring line 11 list only {Lb, Lb_q, dLb_dT}. The photon-form derivative (spectral and in-band) exists nowhere in code.",
+  "Wavelength plausibility bound: ir-radiometry skill line 38 says assert 0.1\u2013100 \u00b5m and monotonic increasing; src/irsim/radiometry/constants.py line 50 sets WAVELENGTH_MAX_UM = 1000.0 (required by the Stefan-Boltzmann test integrating to 1000 \u00b5m) and planck._validate (lines 37\u201355) checks no monotonicity.",
+  "numpy floor vs API: pyproject.toml line 11 `numpy>=1.24`; tests/unit/test_planck.py lines 37, 64\u201365, 80 use np.trapezoid, which exists only in numpy \u2265 2.0 (np.trapz before). On the allowed numpy 1.x the suite errors.",
+  "LUT spacing: spec \u00a73.2(b) line 164 '0.05\u20130.1 K'; ir-radiometry skill line 64, scripts/generate_luts.py line 9, and the CLAUDE.md/ship-step commit examples all say 0.05 K. Harmless, but pick one in the ADR.",
+  "Makefile `golden-update` target (line 27) passes `--update-golden`, which no conftest defines; pytest will reject the unknown option. ir-sim-testing skill line 108 presumes it works.",
+  "README line 'Bands configured: _none yet_' while configs/sensors/flir_boson_640_lwir.yaml fully configures the LWIR band (only its spectral CSV is missing); README status row for radiometry claims T1 but the T1 rows in \u00a715 that belong to radiometry (LUT vs quadrature, inverse round trip) do not exist.",
+  "CLAUDE.md non-negotiable #2 says 'There is a test for the encode/decode round trip; keep it passing' and the isaac-sim-spg skill line 112 names tests/integration/test_temperature_encoding.py; tests/integration/ contains only .gitkeep. (Isaac area, but the LUT range decision here must match that future test's T_ref/T_span.)",
+  "Out-of-range temperature behaviour: spec \u00a713.5 kernel (line 1057) clamps T to the LUT range silently, while \u00a73.1 line 144 cites 1000 K flares (exactly the LUT top) and \u00a75.3 line 311 yields sky temperatures below 200 K on cold clear nights; \u00a73.3 gives no policy for radiance outside the table on inversion. planck._validate's TEMPERATURE bounds (1\u20136000 K) are far wider than the LUT, so the reference and fast paths will diverge silently unless a policy is written.",
+  "Fail-loud philosophy is applied inconsistently in existing code: planck.spectral_radiance/_photon_radiance/d_spectral_radiance_dT validate units (lines 79\u201381, 96\u201398, 110\u2013112) but fractional_exitance and band_radiance_tophat (lines 121\u2013175) accept metres/celsius and return plausible nonsense (0.0), contradicting the docstring of _validate (lines 38\u201342) and skill line 37\u201338.",
+  "ir-radiometry skill line 109 says to express the LUT-vs-quadrature tolerance in mK; skill line 76 gives the quadrature-vs-closed-form check as 0.1 %; the ship-step commit example (line 83) claims 'agrees with direct Simpson quadrature to < 2 mK' \u2014 0.1 % of Lb(300 K, 7.5\u201313.5 \u00b5m) is ~63 mK, so the two checks cannot be the same test and the example's 2 mK cannot come from the 0.1 % top-hat comparison."
+ ]
+}

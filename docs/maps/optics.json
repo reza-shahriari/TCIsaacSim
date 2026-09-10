@@ -1,0 +1,509 @@
+{
+ "area": "optics",
+ "existing_state": "Nothing implemented. Exactly what exists today:\n\nCODE\n- /home/hunter/irsim-scaffold/src/irsim/optics/__init__.py: one line, `\"\"\"See docs/physics-model.md.\"\"\"`. No other files in the package. No aperture factor, no MTF, no vignetting, no self-emission, no PSF/downsample code anywhere in the repo (grep for optic|MTF|aperture|cos4|self_emission|vignett across *.py finds nothing outside docs/skills/CLAUDE.md).\n- /home/hunter/irsim-scaffold/src/irsim/config/__init__.py: same one-line stub. No pydantic schema exists for the sensor YAML, so the `optics:` block is not yet parsed or validated by anything.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/planck.py: float64 reference `spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT`, `fractional_exitance`, `band_radiance_tophat(lambda_min_um, lambda_max_um, T)`. No band LUT, no inverse (T_app), no R(lambda) quadrature yet (scripts/generate_luts.py exits 1 \"not implemented\"). Optics tests can use `band_radiance_tophat` as an oracle for L_B(T_housing) today.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py: H_PLANCK, C_LIGHT, K_BOLTZMANN, Q_E, C1L, C1Q, C2, SIGMA_SB, WIEN_B, EXP_ARG_MAX, plausibility bounds. No optics constant needed beyond pi.\n- /home/hunter/irsim-scaffold/src/irsim_isaac/: `__init__.py`, `pipeline/__init__.py` (empty), `spg/README.md` (one line). No kernels, no camera setup, no AOV code.\n\nTESTS\n- /home/hunter/irsim-scaffold/tests/unit/test_layering.py: AST scan of every src/irsim/**/*.py for imports of omni/pxr/isaacsim/warp/carb. It rglobs, so any new optics module is automatically covered.\n- /home/hunter/irsim-scaffold/tests/unit/test_planck.py: Planck identities only.\n- /home/hunter/irsim-scaffold/tests/conftest.py: fixtures `rng` (seed 20260910), `gbuffer_ramp` (256x256 float32 250-450 K ramp, normal_dot_view=1, distance 50 m, material_id 0, sky_view 0.5), `gbuffer_uniform` (64x64 at 300 K). Neither carries pixel coordinates, field angle, supersample factor, or a step edge. The ir-sim-testing skill (line 96) asks for \"a step edge for MTF work\" -- it does not exist yet.\n- tests/integration/ and tests/golden/ contain only .gitkeep. pyproject addopts deselects `isaac` and `gpu` markers by default.\n\nCONFIG / DATA\n- /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml lines 16-25 `optics:` block: f_number 1.0, focal_length_mm 14.0 (comment \"32 deg HFOV variant\"), transmittance 0.92 (ESTIMATED), housing_temp_mode coupled, cold_shield_efficiency 1.0, distortion {model: brown_conrady, coeffs: [0,0,0,0,0]} (ESTIMATED), vignetting_cos4 true. Lines 27-36 `fpa:` block: bolometer, 640x512, pitch_um 12.0, fill_factor 0.90 (ESTIMATED), frame_rate_hz 60, bit_depth 16. No integration_time_ms, no supersample factor, no MTF/aberration sigma, no housing temperature value or thermal parameters, no narcissus or mechanical-vignetting fields.\n- data/ has only .gitkeep files (no spectra, no LUTs, no vignetting maps).\n- docs/decisions/ has only 0001 (the ADR template). README status row: `optics | not started`. CHANGELOG has no optics entry.\n\nENVIRONMENT NOTE: the default python (/home/hunter/miniconda3/bin/python) has neither numpy nor pytest installed; `make install` must run before any optics test can execute.",
+ "key_equations_and_data": [
+  "\u00a78.1 / \u00a72: FPA irradiance E_FPA = pi * L_B * tau_opt * cos^4(theta) / (4F^2 + 1)  [W m^-2]; pixel power Phi = E_FPA * A_d  [W]. Photon form: substitute L_{q,B} and Phi becomes a photon rate [ph s^-1]. The function must be quantity-agnostic (bands are data).",
+  "\u00a72 convention warning / CLAUDE.md #5: aperture factor Omega_eff = pi/(4F^2+1), NOT pi/(4F^2). Identity to test against: pi/(4F^2+1) == pi * sin^2(theta_max) with theta_max = atan(1/(2F)). At F/1.0: 0.628319 vs paraxial 0.785398 (paraxial is 25% too large; spec's '20%' is relative to the paraxial value). Defined once in irsim.optics and imported by detector (\u00a79.1 N_e, \u00a79.4 dN_e/dT).",
+  "\u00a78.1: F = f/D, first-class config field `optics.f_number`. NETD scales as (4F^2+1) via \u00a79.4 photon-count form: NETD(F/1.4)/NETD(F/1.0) = 8.84/5 = 1.768 (not F^2 = 1.96).",
+  "\u00a72 symbol table: A_d = detector active area [m^2] = fill_factor * (pitch_um*1e-6)^2. Boson: 0.90 * (12e-6)^2 = 1.296e-10 m^2. Config fields `fpa.pitch_um`, `fpa.fill_factor` (\u00a712.2).",
+  "\u00a72 line 110 / \u00a78.1: cos^4(theta_ij) natural vignetting; theta_ij is the field angle of pixel (i,j). Not given explicitly in spec -- derive from pinhole intrinsics: tan(theta_ij) = r_ij / f, r_ij = pitch * sqrt((i+0.5-c_x)^2 + (j+0.5-c_y)^2). Needs `optics.focal_length_mm`, `fpa.pitch_um`, `fpa.width`, `fpa.height`, `optics.vignetting_cos4` (\u00a712.2). Boson known answers: half-width 3.84 mm, half-height 3.072 mm, corner theta = 19.354 deg, cos^4 = 0.79240; edge-centre cos^4 = 0.86496; computed HFOV = 30.68 deg.",
+  "\u00a72 line 110: mechanical vignetting is 'normally measured rather than derived' -- an optional measured multiplicative map (no config field exists; must be added).",
+  "\u00a78.2 general N-element stack: L_self = sum_{i=1..N} eps_i * B(lambda,T_i) * prod_{j>i} tau_j. Elements ordered scene -> detector; each element's emission attenuated by every element downstream. Kirchhoff per element: eps_i = 1 - tau_i - rho_i (non-negotiable #4).",
+  "\u00a78.2 single-lens simplification: Phi_self ~= A_d * Omega_eff * (1 - tau_opt) * L_B(T_housing), Omega_eff = pi/(4F^2+1). No cos^4 on this term; rho_lens = 0 implied. First-order sensitivity at T_housing = T_scene: dT_app/dT_housing = (1-tau_opt)/tau_opt = 0.0870 K/K for tau_opt = 0.92 -- i.e. ~87 mK of apparent-temperature drift per kelvin of housing drift, larger than NETD. This is the physical origin of shutterless drift and FFC need (\u00a78.2, \u00a711.2).",
+  "\u00a78.2 / \u00a712.2: `optics.housing_temp_mode: fixed | ambient | coupled`. Spec gives no model for T_housing(t). 'ambient' must read T_air from the single WeatherSeries (non-negotiable #6). 'coupled' by analogy to \u00a79.2 line 644: lumped node driven by ambient plus power dissipation. Fields for the fixed value / node tau / self-heating do not exist in \u00a712.2 and must be added.",
+  "\u00a78.2 narcissus: 'radially symmetric multiplicative field with a slowly drifting amplitude' -- no equation, no config fields.",
+  "\u00a79.1 / \u00a712.2: `optics.cold_shield_efficiency` in [0,1] (config places it in the optics block, comment 'cooled systems only'). No formula in spec for how it modifies background flux.",
+  "\u00a78.3: MTF_sys(xi) = MTF_diff * MTF_aberr * MTF_det * MTF_motion * MTF_defocus * MTF_elec (product of independent terms).",
+  "\u00a78.3: MTF_diff(xi) = (2/pi)[arccos(xi/xi_c) - (xi/xi_c) sqrt(1-(xi/xi_c)^2)], xi_c = 1/(lambda F), zero for xi >= xi_c. Independent check: normalised autocorrelation of a circular pupil.",
+  "\u00a78.3 [R20]: MTF_det(xi) = |sin(pi w xi)/(pi w xi)|, square pixel width w, first zero at xi = 1/w, value 2/pi = 0.6366 at xi = 1/(2w). NumPy convention trap: np.sinc(x) already includes pi, so the correct call is np.sinc(w*xi); np.sinc(pi*w*xi) is a bug that gives 0.198 instead of 0.637 at the worked-case Nyquist.",
+  "\u00a78.3: MTF_motion(xi) = |sinc(pi v t_int xi)| with image-plane velocity v (from the MotionVectors AOV, \u00a713.3) over integration time t_int.",
+  "\u00a78.3: aberration/defocus fitted as a Gaussian exp(-2 pi^2 sigma^2 xi^2) from a measured slant edge (sigma = PSF standard deviation in image-plane length units). MTF_elec has no definition in the spec.",
+  "\u00a78.3 [R21]: Nyquist xi_N = 1/(2p). Worked case (12 um pitch, F/1.0, lambda 10 um): xi_c = 100 cyc/mm, xi_N = 41.67 cyc/mm, MTF_diff(xi_N) = 0.4853 (spec ~0.49), MTF_det(xi_N) = 0.6366 with w = p (spec ~0.64); with the config's fill_factor 0.90 (w = 11.38 um) MTF_det(xi_N) = 0.6689.",
+  "\u00a78.3 / \u00a713.4 line 1030 / \u00a713.8: render at 3-4x native resolution and downsample with a box filter matching the pixel footprint -- this is the mechanism for MTF_det AND aliasing AND sub-pixel target behaviour; blurring at native resolution is explicitly rejected. No `supersample_factor` config field exists in \u00a712.2.",
+  "\u00a72 line 77: the convolution [MTF * L_sensor](lambda,i,j) sits inside the spectral integral (wavelength-dependent), but the pipeline (\u00a713.4) applies band-integrated radiance to SPG#3, so a band-representative lambda for MTF_diff must be chosen (worked case uses 10 um for 7.5-13.5 um).",
+  "\u00a78.4 [R23]: distortion models `brown_conrady` (moderate FOV) | `kannala_brandt` | `ftheta` (wide IR lenses), `optics.distortion.coeffs` list (\u00a712.2 example has 5 coefficients). Use the engine's distortion; the core does not reimplement it.",
+  "\u00a713.3: AOVs relevant to optics -- MotionVectors (image-plane velocity, fp16 ok) for MTF_motion; no field-angle AOV, so theta_ij comes from intrinsics. \u00a713.4: SPG#3 optics.cu does pi*tau_opt/(4F^2+1), cos^4(theta), Phi = f(L'), + Phi_self(T_housing), and optionally the box filter of the supersampled input.",
+  "\u00a715 Tier 2 [R37]: MTF validation by slant-edge -- aluminium sheet at ~5.5 deg tilt before a 100 C hotplate; reproduce in sim. Engine-free counterpart: synthetic step-edge G-buffer -> ESF -> LSF -> FFT -> compare to the MTF cascade.",
+  "isaac-sim-spg skill line 171 / ir-sim-testing: GPU kernel vs CPU reference tolerance 1e-4 relative on radiance or 5 mK on apparent temperature.",
+  "\u00a716.1 / configs/sensors/flir_boson_640_lwir.yaml: reference geometry 640x512, 12 um, 14 mm lens, F/1.0, tau_opt 0.92 (ESTIMATED), fill 0.90 (ESTIMATED), 60 Hz."
+ ],
+ "work_items": [
+  {
+   "id": "O1",
+   "title": "Aperture factor, FPA irradiance and pixel power (the single definition of pi/(4F^2+1))",
+   "spec_refs": [
+    "\u00a78.1",
+    "\u00a72 (master equation and convention warning)",
+    "CLAUDE.md non-negotiable #5"
+   ],
+   "description": "Create src/irsim/optics/aperture.py with: `aperture_factor(f_number) -> pi/(4F^2+1)`; `cone_half_angle(f_number) = atan(1/(2F))`; `fpa_irradiance(L_band, f_number, tau_opt, cos4=1.0)`; `pixel_power(L_band, f_number, tau_opt, A_d, cos4=1.0)`. Quantity-agnostic (W m^-2 sr^-1 -> W, or ph s^-1 m^-2 sr^-1 -> ph s^-1). Accept float32/float64 arrays, reject float16, output dtype preserved (float32 minimum). Add a source-scan test (like test_layering) asserting no other file under src/irsim writes the aperture expression by hand. Export from irsim.optics.__init__.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Analytic identity: aperture_factor(F) == pi*sin^2(atan(1/(2F))) to 1e-12 relative for F in {0.8,1.0,1.4,2.0,4.0} -- fails if the paraxial pi/(4F^2) form is used.",
+    "Independent derivation: numerical integral of Lambertian radiance over the cone, E = int_0^{theta_max} 2 pi L cos(theta) sin(theta) dtheta (scipy.integrate.quad), equals fpa_irradiance to 1e-10 relative.",
+    "Known answer: aperture_factor(1.0)/(pi/4) == 0.8 exactly (the spec's 20% statement at F/1.0); aperture_factor(1.0) == 0.628319 to 1e-6.",
+    "Linearity/units: pixel_power with A_d = 1.296e-10 m^2 (Boson), F/1, tau 0.92, L_B = 1.0 W m^-2 sr^-1 equals 7.492e-11 W to 1e-9 relative (hand computed).",
+    "dtype guard: float16 input raises; float32 input returns float32 (non-negotiable #2).",
+    "Source scan: any `4*F**2` / `4 * f_number ** 2` outside optics/aperture.py fails the suite."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O2",
+   "title": "Field-angle map and cos^4(theta) natural vignetting field",
+   "spec_refs": [
+    "\u00a72 line 110",
+    "\u00a78.1",
+    "\u00a712.2 optics.vignetting_cos4, focal_length_mm, fpa.pitch_um/width/height"
+   ],
+   "description": "src/irsim/optics/vignetting.py: `field_angle_map(width, height, pitch_um, focal_length_mm, principal_point=None, supersample=1) -> theta_ij` at pixel centres (i+0.5) from pinhole geometry, and `cos4_field(...)`. Returns float32 (H,W). `vignetting_cos4: false` returns ones. Hook for an optional measured multiplicative vignetting map (npy path, validated to shape and range (0,1]) -- field to be added to the schema in O8. The map is computed from UNDISTORTED pinhole geometry (see ADR on distortion).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known answer for the Boson geometry (640x512, 12 um, 14 mm): corner cos^4 = 0.79240 and horizontal edge-centre cos^4 = 0.86496 to 1e-4; principal point = 1.0 exactly.",
+    "Symmetry: field equals its left-right and up-down flip to 1e-7 (catches off-by-half-pixel centre errors).",
+    "Independent derivation: cos^4 at a pixel equals (f^2/(f^2+r^2))^2 computed directly, to 1e-12.",
+    "Supersample consistency: cos4_field at 4x, box-averaged back to native, matches the native field to 1e-4 (curvature within a pixel is negligible).",
+    "Monotonic: cos^4 strictly decreases with radius from the principal point."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O3",
+   "title": "Optics self-emission: single-lens simplification and N-element Kirchhoff-closed stack",
+   "spec_refs": [
+    "\u00a78.2",
+    "\u00a72 Phi_self symbol",
+    "\u00a711.2 (shutterless drift origin)",
+    "CLAUDE.md non-negotiable #4"
+   ],
+   "description": "src/irsim/optics/self_emission.py: `self_emission_power(A_d, f_number, tau_opt, Lb_housing)` = A_d * Omega_eff * (1 - tau_opt) * Lb_housing (takes band radiance of the housing as input so it is band-agnostic; caller supplies L_B(T_housing) from the radiometry LUT or band_radiance_tophat). `OpticalElement(tau, T_k, rho=0.0)` with eps derived = 1 - tau - rho (assert closure 1e-6); `stack_self_radiance(elements, Lb_of_T)` implementing sum_i eps_i L_B(T_i) prod_{j>i} tau_j and `stack_transmittance`. Added in power/radiance space, never Kelvin (non-negotiable #3).",
+   "depends_on": [
+    "O1"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Isothermal-enclosure identity: for a blackbody scene at T and T_housing = T, on-axis, Phi_scene + Phi_self = A_d*Omega_eff*L_B(T) independent of tau_opt, to 1e-12 relative for tau_opt in {0.5,0.8,0.92,1.0} -- fails if Omega, (1-tau) or a stray cos^4 is wrong.",
+    "Stack reduces to simplification: one element with tau=tau_opt, rho=0 reproduces self_emission_power to 1e-12; two elements (window tau_w, lens tau_l) give eps_w*L(T_w)*tau_l + eps_l*L(T_l), checked against a hand-computed value to 1e-12 (catches downstream-only attenuation errors).",
+    "Shutterless-drift known answer: with Boson parameters (tau 0.92, F/1) and T_housing = T_scene = 300 K, a +1 K housing step shifts apparent temperature by (1-tau)/tau = 87 mK +/- 1 mK (using band_radiance_tophat 7.5-13.5 um and its derivative for the inversion).",
+    "Kirchhoff closure: OpticalElement(tau=0.92, rho=0.05) has eps 0.03; tau+rho>1 raises; eps+rho+tau == 1 to 1e-6 for every element in a stack.",
+    "Monotonic: Phi_self strictly increases with T_housing and with (1-tau_opt); zero when tau_opt = 1."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "O4",
+   "title": "Housing temperature source: fixed | ambient | coupled",
+   "spec_refs": [
+    "\u00a78.2 (T_housing drifts)",
+    "\u00a712.2 optics.housing_temp_mode",
+    "\u00a79.2 line 644 (lumped FPA node analogue)",
+    "CLAUDE.md non-negotiable #6"
+   ],
+   "description": "src/irsim/optics/housing.py (or thermal/ -- decide in ADR): `HousingTemperature.at(t_s) -> float32 K`. fixed: config `housing_temp_k` (new field). ambient: T_air(t) from the injected WeatherSeries instance (same object used by thermal and atmosphere). coupled: lumped node dT/dt = (T_air - T)/tau_h + P/(C) with new fields `housing_tau_s`, `housing_self_heating_k` (steady offset above ambient), spun up from the weather series. Must not accept a separate weather object from the atmosphere's.",
+   "depends_on": [
+    "thermal: WeatherSeries with T_air(t) interpolation",
+    "thermal: lumped-capacitance node solver (reuse, not duplicate)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "coupled step response: ambient step of 10 K gives T(t) = T0 + 10*(1 - exp(-t/tau_h)) to 0.01 K at t = tau_h, 2 tau_h, 5 tau_h; steady state = T_air + housing_self_heating_k to 0.01 K.",
+    "ambient mode tracks WeatherSeries T_air(t) exactly (1e-6 K) at arbitrary interpolated times.",
+    "Single-weather-object invariant: constructing a scene whose housing model and atmosphere hold different WeatherSeries instances raises (or a registry test asserts identity).",
+    "fixed mode returns the configured value at every t, float32."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "O5",
+   "title": "MTF component functions and the cascade",
+   "spec_refs": [
+    "\u00a78.3 all equations",
+    "\u00a78.3 worked case",
+    "[R20] [R21]"
+   ],
+   "description": "src/irsim/optics/mtf.py: `mtf_diffraction(xi, lambda_um, f_number)`, `mtf_detector(xi, w)`, `mtf_motion(xi, v, t_int)`, `mtf_gaussian(xi, sigma)`, `mtf_system(xi, ...)` (product of the enabled terms, each optional), `cutoff_frequency(lambda_um, F)`, `nyquist_frequency(pitch)`. Units: cycles/mm and mm, stated in every docstring; xi arrays float64 internally, results float64. Uses np.sinc(w*xi) (normalised sinc) with an explicit comment about the pi convention.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Worked case (12 um, F/1, 10 um): xi_c = 100 cyc/mm, xi_N = 41.667 cyc/mm, MTF_diff(xi_N) = 0.4853 +/- 0.5%, MTF_det(xi_N, w = 12 um) = 0.6366 +/- 0.1% (the double-pi bug gives 0.198 and fails).",
+    "Independent implementation: mtf_diffraction equals the normalised 2-D autocorrelation of a sampled circular pupil (FFT of |Airy PSF|) to 2e-3 absolute up to 0.95 xi_c; exactly 0 for xi >= xi_c.",
+    "MTF_det first zero exactly at xi = 1/w (|MTF| < 1e-12 there) and 2/pi at xi = 1/(2w) to 1e-12; equals |FFT of a box of width w| to 1e-6.",
+    "MTF_gaussian equals the FFT of a Gaussian PSF of std sigma to 1e-6 (catches a missing factor 2 in the exponent).",
+    "MTF_motion zero at xi = 1/(v t_int); reduces to 1 when v = 0 or t_int = 0.",
+    "Cascade: mtf_system(0) = 1; mtf_system <= min of its factors everywhere; non-increasing up to the first zero of any factor."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O6",
+   "title": "PSF synthesis from the optical MTF and FFT application at the supersampled pitch; step-edge fixture and slant-edge estimator",
+   "spec_refs": [
+    "\u00a78.3 (aberration/defocus Gaussian, diffraction)",
+    "\u00a72 line 77 (MTF * L)",
+    "\u00a715 Tier 2 MTF slant-edge",
+    "ir-sim-testing skill line 96 (step-edge fixture)"
+   ],
+   "description": "src/irsim/optics/psf.py: `optical_psf(lambda_um, f_number, sigma_aberr, pitch_um, supersample) -> float64 kernel` from the radially symmetric product MTF_diff*MTF_gauss (excluding MTF_det, which the box filter provides, and MTF_motion, handled per ADR), normalised to sum 1, non-negative; `apply_psf(image_ss, kernel)` FFT convolution in float64, output cast to input dtype (float32 minimum). tests/conftest.py: add `gbuffer_step_edge` (two-temperature vertical edge at ~5.5 deg tilt, supersampled) and a `slant_edge_mtf(image, pitch)` helper (ESF -> LSF -> |FFT|) in tests/ or irsim.optics.validation.",
+   "depends_on": [
+    "O5"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Radiometric conservation: a uniform 300 K-radiance field is unchanged by apply_psf to 1e-6 relative; kernel sums to 1 to 1e-9 and min >= 0.",
+    "Slant-edge round trip: blur the step-edge fixture with optical_psf, box-downsample (O7), estimate MTF by slant-edge; matches mtf_system (diffraction*gaussian*detector) within 2% absolute for xi <= xi_N (fails if the PSF is built from the wrong cascade or wrong sampling pitch).",
+    "Airy check: with sigma_aberr = 0, the PSF's first dark ring radius equals 1.22*lambda*F to 3% at 8x supersampling.",
+    "Symmetry: PSF is radially symmetric (kernel == its transpose and flips to 1e-12).",
+    "dtype: float16 input rejected; float32 in -> float32 out."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "O7",
+   "title": "Box-filter downsample from supersampled render to detector grid (detector MTF + aliasing)",
+   "spec_refs": [
+    "\u00a78.3 'Render at 3-4x and downsample with a box filter'",
+    "\u00a713.4 line 1030",
+    "\u00a713.8"
+   ],
+   "description": "src/irsim/optics/sampling.py: `box_downsample(image_ss, factor, fill_factor=1.0)` averaging factor x factor blocks (integer factor asserted; input shape must be divisible); fill_factor < 1 handled per ADR (active-width sub-box with fractional edge weights, centred in the pitch cell). `required_render_size(width, height, factor)`. Preserves float32; radiance-space mean (not sum) so units are unchanged.",
+   "depends_on": [
+    "O5 (as test oracle)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Independent implementation of MTF_det: a supersampled sinusoid of frequency xi (in cyc/mm) is attenuated by |sinc(w xi)| after box_downsample, matching mtf_detector to 1e-3 for xi in {0.25,0.5,0.75,1.0}/w (also verifies the zero at 1/w).",
+    "Aliasing: a sinusoid at 1.5/p appears at 0.5/p in the downsampled image (peak of the FFT within one bin), and its amplitude matches |sinc(w*1.5/p)| to 1e-2 -- fails if a blur-then-decimate scheme replaces the box.",
+    "Conservation: uniform field unchanged to 1e-7; mean radiance of any field preserved to 1e-7 relative when fill_factor = 1.",
+    "Sub-pixel target: a point source of fixed total flux moved in 1/4-pixel steps at 4x keeps total downsampled flux constant to 1e-6 and its peak pixel value modulates between 1.0 and 0.25 of the aligned case (known answer for a 4x4 box).",
+    "Shape/dtype: non-divisible shapes raise; float32 in -> float32 out."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "O8",
+   "title": "OpticsConfig / FPA geometry pydantic schema with derived quantities and validation",
+   "spec_refs": [
+    "\u00a712.2 optics: and fpa: blocks",
+    "\u00a78.1 (F first-class)",
+    "\u00a78.4 (distortion model names)",
+    "\u00a79.1 cold_shield_efficiency range"
+   ],
+   "description": "In src/irsim/config/ (config area owns the root SensorConfig; optics owns these models): `DistortionConfig(model: Literal['brown_conrady','kannala_brandt','ftheta'], coeffs: list[float])` with per-model coefficient-count validation; `OpticsConfig(f_number>0, focal_length_mm>0, transmittance in (0,1], housing_temp_mode enum, housing_temp_k, housing_tau_s, housing_self_heating_k, cold_shield_efficiency in [0,1], distortion, vignetting_cos4, vignetting_map: path|None, supersample_factor int in [1,8] default 4, mtf: {aberration_sigma_um>=0, reference_wavelength_um|None, apply_motion_mtf: bool})`; derived properties `detector_active_area_m2 = fill_factor*pitch^2`, `active_width_um = sqrt(fill_factor)*pitch`, `nyquist_cyc_per_mm`, `cutoff_cyc_per_mm`, `hfov_deg`. Rule: vignetting_cos4 with a non-rectilinear model emits a validation error (cos^4 is a rectilinear-lens result).",
+   "depends_on": [
+    "config: root SensorConfig / YAML loader (pydantic)",
+    "O5 (frequency helpers)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Boson YAML loads and derived A_d == 1.296e-10 m^2 to 1e-15, active width 11.384 um to 1e-3 um, xi_N == 41.667 cyc/mm, xi_c(10 um) == 100 cyc/mm, hfov 30.68 deg to 0.01 deg (documents the 32-deg discrepancy).",
+    "Validation: f_number 0, transmittance 1.2, cold_shield_efficiency 1.5, brown_conrady with 3 coeffs, kannala_brandt with vignetting_cos4 true, supersample_factor 0 -- each raises.",
+    "housing_temp_mode 'fixed' without housing_temp_k raises; 'coupled' without housing_tau_s raises."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O9",
+   "title": "Composed optics stage reference (`apply_optics`) -- the CPU oracle for SPG#3 / Warp stage 3",
+   "spec_refs": [
+    "\u00a72 master equation",
+    "\u00a78.1",
+    "\u00a78.2",
+    "\u00a78.3",
+    "\u00a713.4 SPG#3",
+    "isaac-sim-spg skill 'Verification discipline'"
+   ],
+   "description": "src/irsim/optics/stage.py: `apply_optics(Lb_ss, cfg: OpticsConfig+FPA, T_housing_k, Lb_of_T, motion=None) -> Phi (H,W) float32 [W or ph/s]` in the fixed order: optical PSF at supersampled pitch (O6) -> box downsample (O7) -> * pi tau_opt/(4F^2+1) * cos^4 (O1,O2) * A_d -> + Phi_self(T_housing) (O3) [+ cold shield (O10), narcissus (O11) when enabled]. Also `invert_optics(Phi, cfg, T_housing_k)` returning the equivalent scene band radiance (used by the ISP linearisation to T_app). Document the ordering choice and the band-representative wavelength in the docstring with the ADR reference.",
+   "depends_on": [
+    "O1",
+    "O2",
+    "O3",
+    "O5",
+    "O6",
+    "O7",
+    "O8",
+    "radiometry: band LUT Lb(T) with inverse Lb^-1 (for the T_app round-trip test; band_radiance_tophat suffices as interim oracle)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Blackbody round trip: gbuffer_uniform at 300 K, no blur, T_housing = 300 K, tau 0.92, F/1 -> invert_optics(apply_optics(.)) recovers 300.000 K within 1 mK at the principal point and within 1 mK everywhere once cos^4 is divided out (fails if vignetting or self-emission is applied inconsistently between forward and inverse).",
+    "Known answer: on-axis Phi for a 300 K blackbody in 7.5-13.5 um (Lb = band_radiance_tophat) with Boson parameters equals A_d*pi/5*(0.92*Lb(300) + 0.08*Lb(T_housing)) to 1e-9 relative.",
+    "gbuffer_ramp: Phi strictly increasing along the ramp; corner/centre ratio of a uniform field equals 0.79240 to 1e-4.",
+    "Housing drift: raising T_housing by 1 K with the scene fixed changes the inverted apparent temperature by +87 mK +/- 2 mK (Boson parameters) -- fails if the self term is missing, uses pi/(4F^2), or is added in Kelvin.",
+    "Order sensitivity: applying the PSF after the box filter changes the slant-edge MTF by > 2% at xi_N, so the test pins the spec order (blur at supersampled pitch, then box)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "O10",
+   "title": "Cold-shield efficiency background term for cooled photon cameras",
+   "spec_refs": [
+    "\u00a79.1 'Cold shield efficiency'",
+    "\u00a712.2 optics.cold_shield_efficiency",
+    "\u00a712.1 self-emission row"
+   ],
+   "description": "Extend O3 with `background_power(A_d, f_number, cold_shield_efficiency, Lb_housing)`: with eta_cs = 1 only the in-cone lens self-emission survives; with eta_cs < 1 a fraction (1 - eta_cs) of the out-of-cone hemisphere (pi - Omega_eff) at T_housing reaches the pixel. Formula is not in the spec -- ADR required; keep the term zero for eta_cs = 1 so LWIR results are unchanged. Deferred until the first cooled band (build order step 10) unless trade studies need it earlier.",
+   "depends_on": [
+    "O3",
+    "ADR: cold-shield model"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "eta_cs = 1 -> background_power == 0 exactly; eta_cs = 0 -> equals A_d*(pi - Omega_eff)*Lb_housing to 1e-12 (full-hemisphere limit: in-cone + out-of-cone = A_d*pi*Lb(T) for an isothermal enclosure, i.e. the exitance identity M = pi L).",
+    "Monotonic: background flux and hence predicted NETD (detector area) increase as eta_cs decreases; NETD(eta 0.9)/NETD(eta 1.0) > 1.",
+    "Identity with O3 isothermal test extended: enclosure at T with eta_cs = 0 gives total pixel power A_d*pi*Lb(T) to 1e-12."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O11",
+   "title": "Narcissus multiplicative field with drifting amplitude (optional, L3)",
+   "spec_refs": [
+    "\u00a78.2 narcissus paragraph"
+   ],
+   "description": "src/irsim/optics/narcissus.py: field N_ij = 1 - a(t) * exp(-r_ij^2/(2 sigma_r^2)) applied multiplicatively in radiance space, with a(t) an Ornstein-Uhlenbeck random walk (mean a0, sd, tau) seeded from (frame_id, sensor_id). Config fields `narcissus: {amplitude, radius_px, drift_tau_s, drift_sd}` (new). Default disabled. Gate behind an ADR (model vs skip at L2).",
+   "depends_on": [
+    "O2 (radius map)",
+    "O9",
+    "ADR: narcissus fidelity"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Field value at centre = 1 - a to 1e-9, -> 1 at r >> sigma_r; radially symmetric to 1e-12; amplitude stays within [a0 - 5 sd, a0 + 5 sd] over 10^4 steps (seeded).",
+    "Determinism: same (frame_id, sensor_id) -> bit-identical field; different seeds differ.",
+    "Radiance-space check: the induced apparent-temperature dip at centre for a 300 K scene with a = 0.02 is 0.02*Lb(300)/dLb_dT(300) to 1 mK (fails if applied in Kelvin)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "O12",
+   "title": "Isaac glue: camera intrinsics + distortion onto the RtxCamera prim, supersampled render product, renderer-side vignetting/DoF audit, MotionVectors units",
+   "spec_refs": [
+    "\u00a78.4",
+    "\u00a713.3",
+    "\u00a713.6",
+    "\u00a713.8",
+    "isaac-sim-spg skill (RtxCamera/CameraSensor, deprecations)"
+   ],
+   "description": "src/irsim_isaac/pipeline/camera.py: build the camera from OpticsConfig (focal length, pitch/aperture size, f-number, distortion model + coeffs mapped to the OpenCV/f-theta/Kannala-Brandt attributes of `isaacsim.sensors.experimental.rtx.RtxCamera`), render product at supersample_factor x native, depth-of-field disabled, and the AOV set. Record what was verified about renderer-side behaviour in an ADR.",
+   "depends_on": [
+    "isaac: temperature encode/decode round trip < 10 mK (build order step 2)",
+    "O8",
+    "O7"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "@isaac: a uniform-emission plane filling the FOV renders a PtSelfIllumination AOV flat to 1e-4 relative (proves the renderer applies no cos^4/vignetting of its own, so O2 is not double-counted).",
+    "@isaac: with fStop set on the prim, a sharp emission edge stays sharp (DoF off) -- slant-edge MTF of the raw AOV >= 0.98 up to xi_N at the supersampled pitch; otherwise the renderer would add an unmodelled defocus.",
+    "@isaac: distortion coefficients round-trip through the prim attributes; a rendered grid target with brown_conrady k1 = -0.28 shows the analytically predicted radial displacement at 80% field to 0.5 px.",
+    "@isaac: supersampled AOV -> box_downsample matches the CPU reference of the same encoded-T field to 1e-4 relative; AOV dtype is float32 (non-negotiable #2).",
+    "@isaac: MotionVectors for a target moving at a known image-plane speed report the expected px/frame to 5% (units pinned for MTF_motion)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "O13",
+   "title": "Stage-3 optics kernel (Warp first, SPG optics.cu later) validated against apply_optics",
+   "spec_refs": [
+    "\u00a713.4 SPG#3",
+    "\u00a713.5/13.6",
+    "isaac-sim-spg skill 'Verification discipline'"
+   ],
+   "description": "src/irsim_isaac/pipeline/optics_stage.py (Warp kernel) implementing exactly O9's arithmetic on GPU arrays: box filter of the supersampled band-radiance, aperture factor (constant uploaded once), cos^4 map (uploaded once via cuda.static / warp array), A_d, + Phi_self from the current T_housing. Later port to src/irsim_isaac/spg/optics.cu + .cu.lua + .usda. PSF blur is a separable/FFT pass before this stage (SPG#0) if enabled.",
+   "depends_on": [
+    "O9",
+    "O12",
+    "isaac: stage 1 band_radiance and stage 2 atmosphere kernels (input contract)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "@gpu: kernel vs apply_optics on gbuffer_ramp and gbuffer_step_edge: 1e-4 relative on Phi, and 5 mK after inversion to apparent temperature.",
+    "@gpu: cos^4 map upload is float32 and matches O2 to 1e-6; corner/centre ratio 0.79240.",
+    "@gpu: changing T_housing by 1 K between frames shifts the inverted apparent temperature by 87 mK +/- 2 mK (self-emission actually wired to the housing model, not a constant)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Supersample-and-box-filter as the detector-MTF/aliasing mechanism; factor (3 vs 4) and fill-factor representation",
+   "why": "It is the load-bearing choice of \u00a78.3 (blur at native resolution is rejected because it loses aliasing), it multiplies render cost by factor^2 (\u00a713.8), and a fill factor of 0.90 cannot be represented by an integer box at 3x or 4x (3x3 = 100%, 2x2 at 3x = 44%), so either the box ignores fill factor (w = p, matching the spec's worked numbers) or uses fractional edge weights. Affects MTF_det at Nyquist by 0.637 vs 0.669.",
+   "options": [
+    "4x supersample, box = full pitch (w = p, fill factor only in A_d); simplest, matches \u00a78.3 worked case",
+    "4x supersample, fractional-weight active-width box (w = sqrt(ff)*p); exact but costlier and unusual",
+    "Native-resolution blur with MTF_det included in the PSF (explicitly rejected by \u00a78.3; record why)"
+   ]
+  },
+  {
+   "title": "Band-representative wavelength and placement of the MTF convolution",
+   "why": "\u00a72 puts MTF * L inside the spectral integral (lambda-dependent diffraction), but the pipeline applies optics after band integration (\u00a713.4). Choosing lambda_ref = band centre vs response-weighted mean vs Wien peak at 300 K changes xi_c by up to 30% for 7.5-13.5 um and therefore MTF_diff at Nyquist; the error cannot be bounded per pixel without spectral rendering.",
+   "options": [
+    "R(lambda)-weighted mean wavelength computed at LUT generation time (data-driven, band-agnostic)",
+    "Fixed band-centre wavelength from the config (10.5 um for the Boson; the spec's worked case uses 10 um)",
+    "Per-temperature effective wavelength (overkill for an imaging camera; \u00a73.2(c) territory)"
+   ]
+  },
+  {
+   "title": "Aberration/defocus as one fitted Gaussian; MTF_elec omitted",
+   "why": "\u00a78.3 lists MTF_aberr, MTF_defocus and MTF_elec as separate cascade terms but defines a single Gaussian for aberration/defocus and nothing for MTF_elec. Fidelity deliberately skipped; the slant-edge fit (Tier 2 / Tier 4 ESF comparison) absorbs the difference.",
+   "options": [
+    "One Gaussian sigma (config mtf.aberration_sigma_um) fitted to a measured slant edge; MTF_elec = 1",
+    "Two Gaussians (aberration from datasheet, defocus from focus error) -- no data to populate them",
+    "Full wavefront/Zernike model (L4; out of scope)"
+   ]
+  },
+  {
+   "title": "Motion MTF vs bolometer thermal-time-constant smear: which detector types get which",
+   "why": "\u00a78.3 gives MTF_motion = |sinc(pi v t_int xi)| but bolometers have no t_int (config sets integration_time_ms null for type bolometer) and \u00a79.2 already models their smear as a frame-to-frame IIR. Applying both double-counts smear on LWIR; applying neither on photon cameras loses it. \u00a713.3 lists MotionVectors for 'motion MTF, bolometer smear' without resolving this.",
+   "options": [
+    "MTF_motion only for photon detectors (t_int from config); bolometers rely solely on the tau_th IIR",
+    "MTF_motion for both, with t_int = 1/frame_rate for bolometers (intra-frame smear) plus IIR (inter-frame)",
+    "Skip MTF_motion at L2; revisit at Tier 4 edge-spread comparison"
+   ]
+  },
+  {
+   "title": "Self-emission model: single-lens simplification vs N-element stack, rho_lens = 0, no cos^4 on the self term, and what T_housing physically denotes",
+   "why": "\u00a78.2 offers both forms; the simplification sets lens reflectance to zero (Kirchhoff eps = 1 - tau) and omits cos^4 on the self term, which makes the model not enclosure-consistent off-axis. The spec never says whether T_housing is the lens, the barrel, or the FPA (\u00a79.2 has a separate T_FPA). Consequence: the magnitude of simulated shutterless drift (87 mK/K at tau 0.92) depends entirely on this choice and on transmittance, which is marked ESTIMATED.",
+   "options": [
+    "Single lens, rho = 0, T_housing = one lumped camera-body node distinct from T_FPA (recommended L2)",
+    "Two-element stack (window + lens) with independent temperatures, rho from AR-coat datasheet",
+    "T_housing := T_FPA (one node for drift of both self-emission and bolometer gain/offset)"
+   ]
+  },
+  {
+   "title": "Housing thermal model and its config fields (fixed | ambient | coupled)",
+   "why": "\u00a712.2 names the three modes but provides no fields for the fixed value, the node time constant or self-heating, and no solver. The choice couples optics to the thermal area and to non-negotiable #6 (single WeatherSeries). Whether the node lives in irsim.optics or irsim.thermal outlives the commit.",
+   "options": [
+    "Lumped first-order node in irsim.thermal reused by optics (housing) and detector (T_FPA), fields housing_temp_k / housing_tau_s / housing_self_heating_k",
+    "Housing tracks T_air with a fixed offset (no dynamics)",
+    "Fixed housing temperature only at L1/L2, coupled deferred"
+   ]
+  },
+  {
+   "title": "Cold-shield efficiency formula and ownership (optics block vs detector model)",
+   "why": "\u00a79.1 describes the physics and \u00a712.2 puts the knob in optics.cold_shield_efficiency, but no equation exists for how eta_cs < 1 raises background flux. Any formula is an approximation whose error is unbounded without a cold-stop geometry.",
+   "options": [
+    "Out-of-cone leakage: Phi_bg = A_d (pi - Omega_eff) (1 - eta_cs) Lb(T_housing), applied in the optics stage",
+    "Effective f-number for background: F_bg = F / sqrt(eta_cs), applied in the detector's background term",
+    "Defer entirely until the first cooled band; keep the field validated but unused (document)"
+   ]
+  },
+  {
+   "title": "Narcissus: model or skip at L2",
+   "why": "\u00a78.2 calls it 'worth modelling if you care about realism' but gives no equation and no parameters; any implementation is invented. It adds a slowly drifting multiplicative artefact that Tier 4 flat-field PSD comparisons will see.",
+   "options": [
+    "Skip at L2 (config field absent; document)",
+    "Radial Gaussian dip with OU-drifting amplitude, disabled by default (O11)",
+    "Physically derived from lens reflectance and cold-detector temperature (cooled cameras only)"
+   ]
+  },
+  {
+   "title": "Distortion delegated to the engine; cos^4 computed from undistorted pinhole geometry; vignetting_cos4 forbidden for non-rectilinear models",
+   "why": "\u00a78.4 says use the engine's distortion, while CLAUDE.md lists 'distortion' under the engine-free optics package. Also cos^4 is a rectilinear-lens result; an f-theta/fisheye lens does not follow it and the engine's warp changes the pixel-to-field-angle mapping. The Unreal port must reproduce whatever is chosen.",
+   "options": [
+    "Core stores and validates the distortion schema only; engine warps all AOVs; cos^4 from pinhole intrinsics (recommended)",
+    "Core implements the pixel->angle mapping per model (Brown-Conrady inverse, f-theta) so cos^4 follows the true field angle",
+    "Core implements distortion warp itself (rejected by \u00a78.4)"
+   ]
+  },
+  {
+   "title": "Vignetting and NUC consistency: two-point NUC gain must include cos^4 so output DN is flat like a real camera",
+   "why": "A real camera's two-point NUC (\u00a711.2) calibrates the cos^4 falloff out of the DN image because it is a per-pixel gain. If optics applies cos^4 and the ISP's NUC does not include it in G_ij, the simulated output shows a 21% corner vignette the real Boson does not. Spans optics, noise and isp; the decision (calibrate NUC on a simulated flat-field that includes vignetting, and model the residual) must be recorded so nobody 'fixes' the vignette by deleting O2.",
+   "options": [
+    "NUC coefficients derived from simulated blackbody frames through the full optics stage (vignetting removed to residual level)",
+    "Apply cos^4 only in the radiance-linear output and not in the DN path (physically wrong but simple)",
+    "Disable cos^4 by default (vignetting_cos4 false) and document"
+   ]
+  },
+  {
+   "title": "Ordering of the optics stage and float64-internal / float32-boundary numerics",
+   "why": "The order PSF -> box -> aperture*cos^4*A_d -> +self is a modelling choice (blur before vignetting; self-emission after downsample) and FFT convolution precision affects mK-level round trips; both outlive the commit and must match in the GPU kernel.",
+   "options": [
+    "Fixed order as in O9, float64 inside apply_psf, float32 at every stage boundary",
+    "Apply vignetting at supersampled resolution before the blur (marginally more physical, more memory)"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "Whether MTF_det/box width w is the pixel pitch p or the active width sqrt(fill_factor)*p. \u00a78.3's worked numbers (0.64) assume w = p; the config's fill_factor 0.90 gives 0.669. Also whether fill factor should reduce A_d only or both A_d and w.",
+   "how_to_verify": "Decide in the supersampling ADR; the O7 sinusoid-attenuation test and the O8 derived-quantity test pin whichever value is chosen; compare against a Boson slant-edge measurement (Tier 4 ESF) later."
+  },
+  {
+   "description": "Which wavelength MTF_diff uses once radiance is band-integrated (7.5-13.5 um spans xi_c = 74-133 cyc/mm at F/1).",
+   "how_to_verify": "Compute R(lambda)-weighted mean lambda from the spectral response at LUT-generation time and compare the slant-edge MTF from O6 against a spectrally resolved reference (sum of per-lambda PSFs weighted by R*B(300 K)) -- assert agreement at xi_N within 2%; record the residual in the ADR."
+  },
+  {
+   "description": "Definition of T_housing and its dynamics: spec offers fixed|ambient|coupled with no fields, no solver, and never says whether T_housing equals T_FPA (\u00a79.2). The shutterless-drift magnitude the simulator produces depends entirely on this and on tau_opt = 0.92 marked ESTIMATED.",
+   "how_to_verify": "Add the fields (O8), implement O4, and check against a real Boson warm-up: apparent temperature of a stable blackbody should drift by tens of mK per K of core temperature (FLIR reports drift in the same order); tune housing_self_heating_k and tau_h to a measured warm-up curve."
+  },
+  {
+   "description": "Isaac Sim 6.0 may apply its own effects to the emission AOV: depth of field driven by the prim's fStop, or renderer-side vignetting/exposure on PtSelfIllumination/HdrColor, which would double-count MTF_defocus or cos^4.",
+   "how_to_verify": "O12 integration tests: uniform emission plane -> AOV flat to 1e-4; sharp edge with fStop set -> raw slant-edge MTF >= 0.98 up to xi_N. If either fails, disable DoF/post-processing settings on the render product and document the settings in the ADR."
+  },
+  {
+   "description": "Whether Isaac Sim 6.0's camera distortion models (OpenCV fisheye, f-theta, Kannala-Brandt) are applied to all AOVs (PtSelfIllumination, DistanceToCamera, Normal, MotionVectors) or only to the colour output; and whether `isaacsim.sensors.experimental.rtx.RtxCamera` exposes those attributes in 6.0 as [R23] describes for the USD camera.",
+   "how_to_verify": "Render a checkerboard emission target with k1 = -0.28 and compare the displacement measured in each AOV against the analytic Brown-Conrady prediction (0.5 px tolerance); inspect the prim's attribute list at runtime and record the exact attribute names in the ADR rather than assuming them."
+  },
+  {
+   "description": "Supersampled render product feasibility: 4x means 2560x2048 float32 for several AOVs (\u00a713.8); memory, frame time and whether the path-traced PtSelfIllumination AOV converges per sub-pixel are unverified for 6.0.",
+   "how_to_verify": "Benchmark O12 at 2x/3x/4x, record ms/frame and VRAM; confirm AOV noise floor of a uniform emission plane is < 1 mK equivalent (path-tracer sample noise must not masquerade as sensor noise)."
+  },
+  {
+   "description": "MotionVectors AOV units (pixels/frame vs NDC vs m/s) and sign convention, needed for MTF_motion and the bolometer smear.",
+   "how_to_verify": "O12 test: move a target at a known image-plane speed and compare reported vectors to the expected px/frame within 5%; fix the unit conversion in the glue."
+  },
+  {
+   "description": "np.sinc convention: NumPy's sinc already includes pi. Writing np.sinc(pi*w*xi) to mirror the spec's notation gives MTF_det(xi_N) = 0.198 instead of 0.637.",
+   "how_to_verify": "O5 known-answer test at the worked-case Nyquist (0.6366 +/- 0.1%) and first zero exactly at 1/w."
+  },
+  {
+   "description": "Field-angle map with distortion enabled: cos^4 from pinhole geometry is only correct for rectilinear lenses; for kannala_brandt/ftheta the natural falloff is different and the engine's warp changes which field angle lands on which pixel.",
+   "how_to_verify": "Schema rule in O8 (vignetting_cos4 only with brown_conrady/pinhole) and a test; for wide lenses require a measured vignetting map instead."
+  },
+  {
+   "description": "Config data quality: focal_length_mm 14.0 with 640x12 um gives 30.7 deg HFOV, while the YAML comment and \u00a716.1 say 32 deg; transmittance, fill factor and distortion coefficients are all ESTIMATED.",
+   "how_to_verify": "O8 test documents the computed HFOV; obtain the Boson 14 mm lens datasheet (effective focal length may be 13.4 mm for 32 deg) and correct the YAML in a config commit."
+  },
+  {
+   "description": "Cold-shield efficiency has no formula in the spec and is located in the optics block although \u00a79.1 treats it as detector physics.",
+   "how_to_verify": "ADR + O10 limit tests (eta = 1 -> 0 extra flux; eta = 0 -> full-hemisphere isothermal identity A_d*pi*Lb(T)); validate against a published cooled-MWIR NETD vs cold-shield-efficiency curve when MWIR is added."
+  },
+  {
+   "description": "Kirchhoff closure for optical elements: the spec's simplification silently sets lens reflectance to zero; AR-coated germanium has rho ~ 1-3%, which also feeds narcissus.",
+   "how_to_verify": "O3 OpticalElement enforces eps + tau + rho = 1 to 1e-6 with rho authored (default 0); sensitivity test shows a 2% rho changes Phi_self by < 3% at equal temperatures so the approximation is bounded and recorded."
+  },
+  {
+   "description": "Vignetting/NUC interaction: applying cos^4 in optics without including it in the ISP's NUC gain produces a 21% corner vignette in DN that real NUC'd cameras do not show.",
+   "how_to_verify": "Cross-area test once isp lands: simulate a flat blackbody through optics -> detector -> NUC and assert DN corner/centre ratio within the configured residual_gain (not 0.79)."
+  },
+  {
+   "description": "Sub-pixel/aliasing behaviour depends on the renderer's own anti-aliasing and denoiser settings; RTX denoising or TAA on the supersampled AOV would pre-blur and destroy the aliasing \u00a78.3 wants.",
+   "how_to_verify": "O12: render a 1.5/p sinusoidal emission grating at 4x and confirm after box_downsample the aliased 0.5/p component has amplitude |sinc(1.5 w/p)| within 5%; disable denoiser/AA on the render product if not."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: every optics module (aperture, vignetting, self_emission, housing, mtf, psf, sampling, stage, narcissus) is pure NumPy/SciPy under src/irsim/optics and is auto-covered by tests/unit/test_layering.py (rglob). Distortion is delegated to the engine (\u00a78.4) precisely so no engine import is needed; O12/O13 live in src/irsim_isaac.",
+  "#2 float32 or better: every optics function asserts input dtype in {float32, float64}, raises on float16, and returns float32 minimum (tests in O1, O6, O7); apply_psf computes in float64 and casts at the boundary; the cos^4 and narcissus maps are float32; O12 asserts the supersampled AOV and MotionVectors-derived quantities used for radiance are float32.",
+  "#3 Noise in radiance/electron space: optics adds no noise, and its slow effects (self-emission drift, narcissus drift) are applied to power/radiance, never to a temperature buffer -- O3/O11 tests assert the induced apparent-temperature shift equals dL/(dL/dT), which fails if anyone adds the term in Kelvin.",
+  "#4 Kirchhoff closure: OpticalElement authors tau (and optional rho) and derives eps = 1 - tau - rho with a 1e-6 closure assertion (O3), so the N-element self-emission stack can never violate energy conservation; the material-library walk test does not cover optics, so this is a dedicated test.",
+  "#5 Aperture factor pi/(4F^2+1): defined once in irsim/optics/aperture.py (O1), verified by the analytic identity vs pi*sin^2(atan(1/(2F))) and the cone integral, and enforced repo-wide by a source-scan test that fails if any other src/irsim file writes 4*F**2 by hand; detector (\u00a79.1, \u00a79.4) must import it, and its NETD-vs-F test should assert the 1.768 ratio, not 1.96.",
+  "#6 One WeatherSeries: housing_temp_mode 'ambient'/'coupled' (O4) takes the injected WeatherSeries instance shared with the thermal solver and atmosphere; a test asserts object identity / raises on mismatch, so summer housing temperature with winter atmosphere is impossible."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a78.1 line 525 says 'NETD scales as F^2' while \u00a72 line 112 and \u00a78.1 line 520 mandate the exact (4F^2+1) aperture factor, giving NETD proportional to (4F^2+1): F/1.0 -> F/1.4 is a factor 1.768, not 1.96. \u00a79.4 line 661 further quotes the datasheet form with 4F^2 (paraxial) two paragraphs before line 671 uses 4F^2+1. Implementation must use the \u00a79.4 photon-count form via irsim.optics.aperture_factor; the 4F^2 form is literature context only.",
+  "\u00a78.3 line 578 worked case gives MTF_det(xi_N) ~ 0.64, which requires w = pitch = 12 um (fill factor 1), while \u00a712.2 line 851 and configs/sensors/flir_boson_640_lwir.yaml line 32 set fill_factor 0.90 (active width 11.38 um -> 0.669). The spec never states whether w in MTF_det (line 565) is the pitch or the active width, nor whether the 'box filter matching the pixel footprint' (line 580) is pitch-wide or active-width-wide.",
+  "\u00a78.3 line 552 lists MTF_aberr, MTF_defocus and MTF_elec as three separate cascade factors, but line 572 defines a single Gaussian for 'Aberration / defocus' and MTF_elec is defined nowhere in the document.",
+  "\u00a78.3 line 570 defines MTF_motion over an integration time t_int, but \u00a712.2 lines 857-860 mark integration_time_ms as photon-only (null for bolometers) and \u00a79.2 lines 634-640 model bolometer motion smear as a frame IIR; \u00a713.3 line 975 assigns MotionVectors to both 'motion MTF, bolometer smear'. Applying both to a bolometer double-counts smear; the spec does not resolve which detector types get which.",
+  "\u00a78.2 line 534 (general stack) treats eps_i and tau_j as independent per element, and line 540 (simplification) sets eps_lens = 1 - tau_opt with no reflectance term and no cos^4 on the self term, which contradicts non-negotiable #4's 'never author two independently' unless rho_i = 0 is stated; the simplification is also not enclosure-consistent off-axis (scene term has cos^4, self term does not).",
+  "\u00a78.4 line 586 says to use the engine's distortion 'rather than reimplementing it', while CLAUDE.md line 75 lists 'distortion' among the contents of the engine-free src/irsim/optics package. Reconcile as: core = schema + validation only, engine = warp.",
+  "\u00a712.2 line 839 defines housing_temp_mode: fixed | ambient | coupled, but the schema has no field for the fixed value, the coupled node's time constant, or self-heating, and \u00a78.2 gives no T_housing model; \u00a79.2 line 644 gives a lumped model for T_FPA without saying whether T_housing is the same node.",
+  "\u00a712.2 line 840 places cold_shield_efficiency in the optics block (comment 'cooled systems only'), while \u00a79.1 line 613 describes it as detector/background physics; no equation is given in either place.",
+  "\u00a72 line 77 puts the MTF convolution inside the spectral integral (wavelength-dependent), while \u00a713.4 line 1030 applies MTF/box filtering in SPG#0/SPG#3 on band-integrated radiance; no band-representative wavelength is specified (the worked case at line 574 uses 10 um for a 7.5-13.5 um band).",
+  "\u00a78.3 line 580 and \u00a713.8 line 1137 require 3-4x supersampling, but \u00a712.2 defines no supersample_factor field; similarly \u00a72 line 110 mentions measured mechanical vignetting and \u00a78.2 line 545 narcissus with no corresponding config fields.",
+  "configs/sensors/flir_boson_640_lwir.yaml line 18 comments '32 deg HFOV variant' (matching \u00a716.1 line 1253) but 640 x 12 um / 14 mm gives 30.7 deg; either the focal length or the FOV comment is off, which shifts the corner cos^4 (0.792 vs ~0.78).",
+  "\u00a713.3 AOV table lists no field-angle AOV, yet \u00a72's cos^4(theta_ij) and \u00a713.4 SPG#3 need theta per pixel; the spec is silent that it must be derived from intrinsics (focal_length_mm, pitch_um, principal point) and on how that interacts with engine-side distortion.",
+  "ir-sim-testing skill line 96 requires 'a step edge for MTF work' among the synthetic G-buffer fixtures; tests/conftest.py provides only gbuffer_ramp and gbuffer_uniform, and neither carries the pixel-coordinate/supersample metadata the optics stage needs."
+ ]
+}

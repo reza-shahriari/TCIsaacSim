@@ -7,6 +7,10 @@ rewrite of the glue only.
 **Physics specification:** [`docs/physics-model.md`](docs/physics-model.md) — the source of truth for
 every equation here. Code cites it by section.
 
+**Plan:** [`docs/roadmap.md`](docs/roadmap.md) — milestones, one-commit steps, risks, ADR backlog. Phase 1
+targets objects in the sky against a sky background, validated against public anti-UAV thermal video;
+phase 2 is ground scenes and automotive (ADR 0003).
+
 ---
 
 ## Status
@@ -78,6 +82,12 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
 - No polarisation, no atmospheric turbulence.
 - NETD is anchored to datasheet values, not predicted from first principles.
 - Weather is prescribed; there is no coupling back from the scene to the atmosphere.
+- No IR camera is available: validation uses public datasets (8-bit, lossy-coded, some through an
+  unknown ISP), so absolute radiometry (SITF, NETD) is checked for self-consistency only, and the
+  target-vs-range behaviour is validated by data only to ~200 m — 0.5–5 km is modelled, not measured
+  (ADR 0003).
+- Clouds, slant-path atmosphere beyond 500 m and point-target radiometry are additions the physics
+  specification does not cover; each carries its own ADR and error statement.
 
 ## Contributing
 

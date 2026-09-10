@@ -1,0 +1,807 @@
+{
+ "area": "validation",
+ "existing_state": "Verified by reading every file and running the suite (system /usr/bin/python3 3.10.12, pytest 6.2.5, numpy 1.26.0; miniconda base has no pytest).\n\nTEST FILES (only 4 real files):\n- /home/hunter/irsim-scaffold/tests/conftest.py \u2014 three fixtures: `rng` (np.random.default_rng(20260910)); `gbuffer_ramp` (256x256 dict: temperature_k float32 linear 250-450 K across columns, normal_dot_view float32 ones, distance_m float32 50, material_id int32 zeros, sky_view_factor float32 0.5); `gbuffer_uniform` (64x64, 300 K, distance 10 m, sky_view_factor 0). No two-material split, no grazing-angle sphere, no step edge, no motion sequence (ir-sim-testing SKILL.md line 96 requires at least five). No `pytest_addoption`, no golden helper, no dtype guard.\n- /home/hunter/irsim-scaffold/tests/unit/test_layering.py \u2014 AST scan of src/irsim/**/*.py for top-level imports of {omni, pxr, isaacsim, warp, carb} (superset of CLAUDE.md's list, which omits carb). Parametrised over 13 files; does NOT forbid `irsim` importing `irsim_isaac`, and does not scan tests/unit for engine imports.\n- /home/hunter/irsim-scaffold/tests/unit/test_planck.py \u2014 12 tests (14 cases): photon/energy identity 1e-12 rel; integral vs sigma T^4/pi at 2e-5 (spec \u00a715 says 1e-6, skill says 1e-12; loosened with a comment, no ADR); Wien 1e-3; spectral dL/dT vs central FD rtol 1e-6; dL/dT(373)>1.5*dL/dT(300) in 8-12 um; fractional_exitance bounds/monotonic; band_radiance_tophat vs trapezoid 1e-4; Lb strictly increasing 200-1000 K; known value 9.925 W/m2/sr/um and 4.996e20 ph at 10 um/300 K rel 1e-3; overflow sweep 200-2000 K x 0.4-20 um finite and >=0; unit-mistake ValueError (metres, celsius, 1e5 K).\n- /home/hunter/irsim-scaffold/tests/golden/.gitkeep and /home/hunter/irsim-scaffold/tests/integration/.gitkeep \u2014 empty directories.\n\nSUITE STATE: `PYTHONPATH=src python3 -m pytest tests/unit` -> 22 passed, 3 FAILED (test_integral_equals_stefan_boltzmann, test_thermal_derivative_rises_with_temperature, test_band_radiance_matches_quadrature) with AttributeError: numpy has no attribute 'trapezoid' \u2014 `np.trapezoid` exists only in NumPy >= 2.0 while pyproject.toml declares `numpy>=1.24`. CHANGELOG.md line \"Analytic identity tests passing\" is therefore only true on NumPy 2.x.\n\nMAKEFILE / PYTEST CONFIG: /home/hunter/irsim-scaffold/Makefile: `test` = `pytest tests/unit -q` (tests/golden is NOT in the default gate nor in `make check`); `test-all` = `pytest tests -q -m \"\"`; `golden-update` = `pytest tests/golden -q --update-golden` \u2014 FAILS today with \"unrecognized arguments: --update-golden\" (verified) because no conftest registers the option. pyproject.toml: testpaths=[\"tests\"], addopts `-m 'not isaac and not gpu'`, markers isaac/gpu/slow (slow is never deselected), pytest>=7.4 declared (6.2.5 ran fine).\n\nCODE THE TESTS CAN CALL: src/irsim/radiometry/constants.py (H_PLANCK, C_LIGHT, K_BOLTZMANN, Q_E, C1L, C1Q, C2, SIGMA_SB, WIEN_B, EXP_ARG_MAX, plausibility bounds) and src/irsim/radiometry/planck.py (spectral_radiance, spectral_photon_radiance, d_spectral_radiance_dT, fractional_exitance, band_radiance_tophat) \u2014 all float64 reference implementations. Every other src/irsim subpackage (materials, thermal, atmosphere, optics, detector, noise, isp, config) is an empty `__init__.py`. No `irsim.validation` package, no benches, no metrics, no encode/decode function. src/irsim_isaac/ contains only `__init__.py`, pipeline/__init__.py and spg/README.md. scripts/generate_luts.py is a stub that prints its docstring and exits 1.\n\nDATA/CONFIG: configs/sensors/flir_boson_640_lwir.yaml exists (F/1.0, 14 mm, 640x512, 12 um, 60 Hz, 16-bit, tau_th 10 ms, netd_mk_at_300k 50, ratios_3d tvh 1.0/vh 0.30/h 0.15/v 0.08/tv 0.05/th 0.05/t 0.02, fpn_drift_tau_s 120, bad_pixel_fraction 0.0015, nuc shuttered ffc_interval_s 180 ffc_freeze_ms 700, agc plateau_equalization plateau 0.012 clip [0.005,0.995], outputs all four). configs/materials/, configs/atmospheres/, data/spectra/, data/nk/, data/lut/, data/weather/ hold only .gitkeep. No real-camera SITF, NETD, 3D-noise or MTF measurements, and no Tier 4 dataset are in the repo. .gitignore ignores data/lut/*.npy, data/lut/*.json and outputs/.\n\nDOCS: README.md status table has a Tier column (radiometry \"partial, T1\"; all else not started; irsim_isaac note: encoding round trip is first task). docs/decisions/ has only ADR 0001 (template). No validation report, no Tier 3 checklist document.",
+ "key_equations_and_data": [
+  "Tier 1 identity: B_q(\u03bb,T)\u00b7h\u00b7c/\u03bb = B(\u03bb,T) to 1e-12 relative (\u00a73.1 line 142; \u00a715 line 1177). Exists in test_planck.py.",
+  "Tier 1 identity: \u222b\u2080^\u221e B(\u03bb,T)d\u03bb = \u03c3T\u2074/\u03c0, spec tolerance 1e-6 (\u00a73.1 line 144; \u00a715 line 1178). Existing test uses trapezoid on 0.1-1000 \u00b5m and 2e-5. To hit 1e-6 use the closed-form tail: \u222b\u2080^\u03bbmax B d\u03bb + (\u03c3T\u2074/\u03c0)(1\u2212F_{0\u2192\u03bbmax T}).",
+  "Known-answer anchors: B(10 \u00b5m, 300 K) = 9.925 W\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7\u00b5m\u207b\u00b9 and B_q = 4.996e20 ph\u00b7s\u207b\u00b9\u00b7m\u207b\u00b2\u00b7sr\u207b\u00b9\u00b7\u00b5m\u207b\u00b9 (\u00a73.1 line 142); Wien \u03bbmax\u00b7T = 2897.77 \u00b5m\u00b7K (\u00a73.1 line 144, \u00a716.3).",
+  "Fractional exitance series F_{0\u2192\u03bbT} = (15/\u03c0\u2074) \u03a3 e^{-nx}/n (x\u00b3 + 3x\u00b2/n + 6x/n\u00b2 + 6/n\u00b3), x = c\u2082/(\u03bbT); Lb(T) = (\u03c3T\u2074/\u03c0)[F(\u03bb\u2082T) \u2212 F(\u03bb\u2081T)] (\u00a73.2(a) lines 153-159) \u2014 the independent oracle for LUT and quadrature tests; top-hat closed form vs quadrature must agree to 0.1% (ir-radiometry skill line 76).",
+  "LUT specification the LUT test must assert: T \u2208 [200, 1000] K, 0.05 K spacing (16001 entries), Simpson quadrature on a 0.01 \u00b5m grid against R(\u03bb) normalised to peak 1.0, float32, one table each for Lb, Lb_q, dLb_dT, JSON sidecar with SHA-256 of config + spectral file (\u00a73.2(b) line 164; ir-radiometry skill lines 61-66; scripts/generate_luts.py docstring). Tolerance: max |Lb_lut \u2212 Lb_quad| / dLb_dT < 5 mK over 200-1000 K (\u00a715 line 1179).",
+  "Apparent temperature T_app = Lb\u207b\u00b9(L) by binary search on the monotonic LUT (\u00a73.3 line 177); round trip Lb\u207b\u00b9(Lb(T)) = T to < 1 mK over 200-1000 K (\u00a715 line 1180); Lb strictly increasing in T (ir-radiometry skill line 112).",
+  "Thermal derivative \u2202B/\u2202T = B\u00b7(c\u2082/\u03bbT\u00b2)\u00b7e\u02e3/(e\u02e3\u22121) and in-band (\u2202L/\u2202T)_B = \u222bR \u2202B/\u2202T d\u03bb (\u00a73.4 lines 185-188); vs central finite difference < 1e-5 relative (\u00a715 line 1181; ir-radiometry skill line 111 specifies the in-band dLb_dT vs FD of Lb).",
+  "NETD known-answer ratio: a real uncooled core went from \u224839 mK at ambient to \u224823 mK against a 100 \u00b0C blackbody (\u00a73.4 line 190; \u00a715 line 1191 'must fall with scene temperature'). Since noise is added in radiance, NETD(T\u2082)/NETD(T\u2081) = dLb_dT(T\u2081)/dLb_dT(T\u2082) exactly \u2014 that ratio (~0.6 for 7.5-13.5 \u00b5m, 300\u2192373 K) is the assertion.",
+  "Kirchhoff closure \u03b5 + \u03c1 + \u03c4 = 1 per material per band (\u00a74.1 line 204; \u00a74.4 line 260), tolerance 1e-6 absolute (CLAUDE.md #4; ir-sim-testing skill line 57); \u00a715 line 1182 gives no tolerance.",
+  "Fresnel branch-safe form: Z = \u00f1\u00b2 \u2212 sin\u00b2\u03b8, A = \u221a((|Z|+Re Z)/2), B = sgn(Im Z)\u221a((|Z|\u2212Re Z)/2), r\u22a5, r\u2225, R = \u00bd(R\u22a5+R\u2225), \u03b5 = 1 \u2212 R (\u00a74.2 lines 218-233); known answer water at 10 \u00b5m n = 1.218, k = 0.0508 (\u00a74.2 line 236); 0 \u2264 R \u2264 1 for \u03b8 \u2208 [0\u00b0, 89.9\u00b0] and no TIR knee for lossy media (thermal-materials skill lines 91-94, 162-163); Level B \u03b5(\u03b8) = \u03b5\u2080[1 \u2212 a(1\u2212cos\u03b8)^p] vs Level A max error < 0.02 over 0-70\u00b0 (\u00a74.2 line 243; skill line 164).",
+  "Sky model for reflection/phenomenology tests: L\u2193 \u2248 V_s L_sky + (1\u2212V_s) L_ground; T_sky(\u03b8_el) = T_air \u2212 \u0394T_clear(1\u2212cloud)cos^q(\u03b8_el), \u0394T_clear \u2248 55-70 K clear dry, 5-10 K overcast, q \u2248 0.5-1.0 (\u00a75.3 lines 305-314); clear sky \u2248 \u221240 \u00b0C at 15\u00b0 elevation in LWIR vs > +10 \u00b0C in MWIR (\u00a75.3 line 298).",
+  "Energy balance C dT/dt = \u03b1_sol Q_sol + \u03b5 Q_LW\u2193 \u2212 \u03b5\u03c3T\u2074 \u2212 h(T\u2212T_air) \u2212 k\u2202T/\u2202z + q_int (\u00a76.1 line 354, written with \u03b1_sol Q_sol per line 363); two-node system with R\u2081\u2082 = \u03b4\u2081/(2k) + \u03b4\u2082/(2k) (\u00a76.4 lines 406-410); stability \u0394t < 2C\u2081/(h + 4\u03b5\u03c3T\u00b3 + 1/R\u2081\u2082) (\u00a76.4 line 412); h = max(c|Ts\u2212Tair|^{1/3}, a + b v^n), a\u22485, b\u22484, n\u22480.8, c\u22481.5 (\u00a76.2 lines 386-390); spin-up 24-48 h (\u00a76.4 line 414). Equilibrium test: analytic root of the steady balance vs solver < 0.1 K (\u00a715 line 1183); energy conservation per step 1e-6 (thermal-solver skill line 140).",
+  "Atmosphere: \u03c4(\u03bb,d) = exp(\u2212\u03b3d), L_path = (1\u2212\u03c4)B(T_air) (\u00a77.1 lines 451-458); band \u03c4 @ 200 m table \u2014 clear dry LWIR 0.90-0.96 / MWIR 0.92-0.97 / SWIR 0.93-0.98 / vis 0.95-0.98; humid 30 \u00b0C 80% RH LWIR 0.72-0.85 / SWIR 0.88-0.95; light fog 200 m vis LWIR 0.35-0.60 / MWIR 0.25-0.50 / SWIR 0.10-0.30 / vis 0.02-0.10; dense fog LWIR 0.02-0.10 (\u00a77.2 lines 475-481); \u03b3_LWIR \u2248 \u03b3\u2080 + \u03b2\u00b7w with Magnus e_s = 6.112 exp(17.67 T_C/(T_C+243.5)) hPa, w = 216.7\u00b7RH\u00b7e_s/T_K (\u00a77.3 lines 495-501).",
+  "Aperture factor E_FPA = \u03c0 L_B \u03c4_opt cos\u2074\u03b8 / (4F\u00b2 + 1) \u2014 never 4F\u00b2 (\u00a72 line 112; \u00a78.1 line 520; CLAUDE.md #5). Known answer: F = 1, \u03c4 = 1, \u03b8 = 0, L = 1 \u2192 E = \u03c0/5 = 0.628319 W\u00b7m\u207b\u00b2 (\u03c0/4 = 0.785 is the 20%-wrong value).",
+  "Optics self-emission \u03a6_self \u2248 A_d \u03a9_eff (1\u2212\u03c4_opt) Lb(T_housing), \u03a9_eff = \u03c0/(4F\u00b2+1) (\u00a78.2 line 540) \u2014 must use the same aperture function.",
+  "MTF cascade MTF_sys = MTF_diff\u00b7MTF_aberr\u00b7MTF_det\u00b7MTF_motion\u00b7MTF_defocus\u00b7MTF_elec (\u00a78.3 line 552); MTF_diff(\u03be) = (2/\u03c0)[arccos(\u03be/\u03be_c) \u2212 (\u03be/\u03be_c)\u221a(1\u2212(\u03be/\u03be_c)\u00b2)], \u03be_c = 1/(\u03bbF) (line 558); MTF_det = |sinc(\u03c0w\u03be)| (line 565); MTF_motion = |sinc(\u03c0 v t_int \u03be)| (line 570); Gaussian aberration exp(\u22122\u03c0\u00b2\u03c3\u00b2\u03be\u00b2) (line 572). Known answers for the Boson case (12 \u00b5m pitch, F/1.0, \u03bb = 10 \u00b5m): \u03be_c = 100 cyc/mm, \u03be_N = 41.7 cyc/mm, MTF_diff(\u03be_N) \u2248 0.49, MTF_det(\u03be_N) \u2248 0.64 (lines 574-578; recomputed here as 0.485 and 0.637). Slant-edge bench geometry: aluminium sheet at ~5.5\u00b0 tilt in front of a 100 \u00b0C hotplate with stray-flux enclosure (\u00a715 line 1193); render at 3-4\u00d7 and box-filter (\u00a78.3 line 580).",
+  "Photon detector N_e = \u03b7 A_d t_int \u03c0 \u03c4_opt/(4F\u00b2+1) \u222bR L_q d\u03bb + i_dark t_int/q; DN = min(DN_max, \u230a(N_e+n_e)/N_well \u00b7 2^bits\u230b) (\u00a79.1 lines 600-606); bolometer IIR S_n = S_{n\u22121} + (S_ideal \u2212 S_{n\u22121})(1 \u2212 e^{\u2212\u0394t/\u03c4_th}), \u03c4_th 8-12 ms, ~0.6 frames smear at 60 Hz (\u00a79.2 lines 634-640) \u2014 analytic trailing profile for the smear test.",
+  "NETD = \u03c3_N,total / (\u2202N_e/\u2202T), \u2202N_e/\u2202T = \u03b7 A_d t_int \u03c0 \u03c4_opt/(4F\u00b2+1) (\u2202L_q/\u2202T)_B, \u03c3\u00b2 = N_e + \u03c3_dark\u00b2 + \u03c3_read\u00b2 + \u03c3_1/f\u00b2 (\u00a79.4 lines 669-674); bench form NETD = \u0394T\u00b7\u03c3_noise/\u0394DN from two blackbodies a few K apart, must match config `netd_mk_at_300k` within 10% (\u00a715 line 1191); NETD is a calibration anchor, not a generator (\u00a79.4 lines 676-681; Appendix A item 7).",
+  "3D noise: \u03c3_total\u00b2 = \u03c3_T\u00b2 + \u03c3_V\u00b2 + \u03c3_H\u00b2 + \u03c3_TV\u00b2 + \u03c3_TH\u00b2 + \u03c3_VH\u00b2 + \u03c3_TVH\u00b2 with the synthesis recipe per component (\u00a710.2 lines 708-720); config `noise.ratios_3d` relative to \u03c3_TVH (\u00a712.2 lines 865-872, values 1.00/0.30/0.15/0.08/0.05/0.05/0.02 in flir_boson_640_lwir.yaml); bench: 100+ frames of a uniform blackbody, decompose (\u00a715 line 1192); round-trip recovery within 5% over 200 frames (sensor-noise-chain skill line 164); FPN random walk with `fpn_drift_tau_s` (\u00a710.3 line 731).",
+  "NUC: DN_corr = G_ij(DN_ij \u2212 O_ij), G from two blackbodies (\u00a711.2 lines 760-762); FFC event freezes image 0.5-1 s then resets pattern (\u00a711.2 line 770); config `nuc.ffc_interval_s` 180, `nuc.ffc_freeze_ms` 700, residual_gain_ppm_per_k 900, residual_offset_mk_per_k 45 (\u00a712.2 lines 877-882).",
+  "AGC: linear y = clip((x \u2212 x_plo)/(x_phi \u2212 x_plo), 0, 1)^{1/\u03b3} with 0.5%/99.5% (\u00a711.3 lines 780-782); plateau equalisation with per-bin clip P, low P \u2192 linear, high P \u2192 full HE (line 784); global AGC collapses contrast when a hot exhaust enters frame (line 786); config `isp.agc`, `plateau` 0.012, `clip_percentiles` [0.005, 0.995], `gamma`, `dde_gain` 0.35, `polarity`, `palette` (\u00a712.2 lines 884-891). Skill tests: plateau = 0 behaves like linear; entropy monotonic in plateau (sensor-noise-chain line 170).",
+  "Temperature encoding c = (T \u2212 T_ref)/T_span, T_ref = 200 K, T_span = 800 K, float32 AOV; ramp round trip < 10 mK before any other engine code (\u00a73.2 precision trap line 170; \u00a713.3 lines 978-984; \u00a716.4 line 1299; isaac-sim-spg skill lines 101-113). fp16 spacing at 300 K = 0.25 K, 8-bit unorm over 200-400 K = 0.78 K \u2014 the values the negative (sensitivity) test must reproduce.",
+  "GPU/Warp kernel vs irsim NumPy reference: 1e-4 relative on radiance or 5 mK on apparent temperature, on the synthetic G-buffer fixtures (isaac-sim-spg skill lines 168-174; ir-sim-testing skill line 55). Six stages: band_radiance, atmosphere, optics, detector, noise, isp (\u00a713.4 lines 997-1025); outputs IrRadiance f32, IrApparentT f32, IrDN16 u16, IrDisplay8 RGBA8 (line 1027).",
+  "Tier 3 checklist, 11 items (\u00a715 lines 1199-1209; ir-sim-testing skill lines 122-132): diurnal crossover at dawn/dusk; overcast flattens, clear night darkens roofs/glass; wet asphalt and shade read colder; departed vehicle leaves warm tyre trace and cool body shadow; fog kills visible and SWIR before LWIR; humid clear air degrades LWIR more than SWIR; MWIR solar glint by day, LWIR-like at night; SWIR usable at night from airglow alone; hot exhaust collapses global AGC; FFC freeze and pattern reset; lateral motion smears LWIR but not cooled MWIR. Automate the scalar ones (contrast ratio 0600 vs 1200, roof apparent T clear vs overcast) \u2014 skill lines 134-135.",
+  "Tier 4 acceptance (\u00a715 line 1224): apparent-temperature bias < 2 K per semantic class; radiometric contrast ratio within 25%; noise PSD shape within factor 2 across spatial frequency; plus edge spread function on real edges. Reference data: FLIR ADK (Boson 640) in Carmichael et al. 2024 'Novel Sensors for Autonomous Driving'; FLIR Hadron 640 (\u00a715 lines 1215-1216).",
+  "Tier 5 (\u00a715 lines 1226-1234): synthetic\u2192real and real\u2192synthetic detector gap; AGC must match at train and test time (same algorithm, plateau, palette).",
+  "Project tolerance table (ir-sim-testing skill lines 50-59): analytic identities 1e-12 rel; LUT vs quadrature < 5 mK; round trip < 1 mK; GPU vs CPU 1e-4 rel or 5 mK; AOV encode/decode < 10 mK; Kirchhoff 1e-6 abs; equilibrium 0.1 K; per-class bias vs real 2 K. Always express in mK/K/relative with dLb_dT conversion (lines 39-46).",
+  "Golden fixture rules (ir-sim-testing skill lines 98-109): store config hash alongside array; stale \u2260 failing and say which; stated tolerance never exact equality; on failure write actual next to expected and print both paths; regenerate only via `make golden-update` (Makefile line 29-30, currently broken).",
+  "Fixture minimum set (ir-sim-testing skill lines 82-96): uniform field, linear ramp, two-material split, grazing-angle sphere, step edge for MTF; all temperature/distance arrays float32; keys must match what the irsim_isaac annotator adapter produces so kernels and reference see identical inputs.",
+  "Reference camera constants used by benches (\u00a716.1 lines 1245-1256): VOx 640\u00d7512, 12 \u00b5m pitch, NETD < 60/50/40 mK by grade, 7.5-13.5 \u00b5m, 60 Hz, 14 mm/32\u00b0 HFOV, \u03c4_th 8-12 ms, TCR \u2248 \u22122 %/K. Material starting values (\u00a716.2) for facet-scene fixtures: asphalt \u03b5 0.94 \u03b1 0.90 \u03c1 2200 c_p 920 k 0.75; car paint \u03b5 0.90 (\u03b1 0.94 black / 0.28 white) 7800/470/45; bare aluminium \u03b5 0.09; glass \u03b5 0.88; water \u03b5 0.96; wet soil vs dry soil for the wet-asphalt analogue.",
+  "Physical constants (\u00a716.3; src/irsim/radiometry/constants.py): h, c, k_B, \u03c3 = 5.670374419e-8, c\u2081L = 1.19104297e8, c\u2081q = 5.995849e26, c\u2082 = 1.4387769e4, Wien 2897.77, q. Tests import these, never inline.",
+  "Test markers and gate (pyproject.toml; CLAUDE.md layout): `isaac` requires Isaac Sim, `gpu` requires CUDA, `slow` > 1 s; addopts deselects isaac and gpu; tests/unit must run < 30 s total (CLAUDE.md; ir-sim-testing skill line 67)."
+ ],
+ "work_items": [
+  {
+   "id": "VAL-01",
+   "title": "Make the existing unit gate actually green: NumPy floor vs np.trapezoid",
+   "spec_refs": [
+    "\u00a715 Tier 1 lines 1177-1181",
+    "CLAUDE.md 'make check must pass'",
+    "pyproject.toml dependencies"
+   ],
+   "description": "tests/unit/test_planck.py calls np.trapezoid (NumPy >= 2.0) but pyproject declares numpy>=1.24; on NumPy 1.26 three physics tests error out and the gate is red. Either raise the floor to numpy>=2.0 (and document it in README quick start) or add a one-line compat alias in tests/conftest.py. Also add a `make test` note on the < 30 s budget and `--durations=10` so slow tests are visible. One commit, chore(build).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/unit/test_planck.py::test_integral_equals_stefan_boltzmann (sigma T^4/pi identity, currently erroring)",
+    "tests/unit/test_planck.py::test_band_radiance_matches_quadrature (closed-form vs quadrature 1e-4 rel)",
+    "tests/unit/test_planck.py::test_thermal_derivative_rises_with_temperature (dL/dT(373) > 1.5 dL/dT(300) in 8-12 um)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-02",
+   "title": "Bring the Stefan-Boltzmann identity test to spec tolerance (1e-6) via analytic tail",
+   "spec_refs": [
+    "\u00a715 line 1178",
+    "\u00a73.1 line 144",
+    "\u00a73.2(a) lines 153-159",
+    "ir-sim-testing skill lines 52, 61-62"
+   ],
+   "description": "Replace the 0.1-1000 um trapezoid (2e-5, no ADR) with two independent routes that can reach the spec number: (a) Simpson on 0.1-200 um plus the closed-form tail (sigma T^4/pi)(1 - F_{0->200um*T}) from fractional_exitance, and (b) fractional_exitance(lambda->inf) == 1 to 1e-12. Assert |integral/(sigma T^4/pi) - 1| < 1e-6 at 250/300/800 K. If 1e-6 cannot be met, keep 2e-5 and write the ADR the skill requires for a loosened physics tolerance.",
+   "depends_on": [
+    "VAL-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_integral_equals_stefan_boltzmann at 1e-6 relative: a wrong C1L, dropped pi or wrong sigma fails by >= factor 3",
+    "test_fractional_exitance_converges_to_unity: F(5000 um, 300 K) == 1 to 1e-12 (a truncated series or wrong 15/pi^4 prefactor fails)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-03",
+   "title": "Complete the synthetic G-buffer fixture set and freeze its schema",
+   "spec_refs": [
+    "ir-sim-testing skill lines 82-96",
+    "\u00a713.3 AOV table lines 968-976",
+    "\u00a78.3 line 580",
+    "\u00a715 line 1193"
+   ],
+   "description": "Add to tests/conftest.py: `gbuffer_two_material` (left half material 0, right half material 1, uniform 300 K), `gbuffer_sphere` (disk with normal_dot_view = cos(theta) running 1 -> 0 at the rim, for angular-emissivity tests), `gbuffer_step_edge` (hot 373 K hotplate behind a 293 K aluminium sheet, edge at 5.5 deg tilt, generated at 4x supersample resolution 1024x1024 so the box-filter/aliasing path can be exercised), `gbuffer_moving_edge` (sequence of N frames with the edge translating v px/frame plus a motion_vectors key), and `weather_clear_day` (synthetic 48 h WeatherSeries-like table). Add a `test_gbuffer_schema.py` that asserts every fixture uses exactly the agreed key set and dtypes (temperature_k/distance_m float32, material_id int32, sky_view_factor/normal_dot_view float32) \u2014 this key set is the contract the irsim_isaac annotator adapter must emit.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_gbuffer_schema_dtypes: any fixture carrying temperature or distance in float16 fails (non-negotiable #2 at the fixture boundary)",
+    "test_sphere_fixture_cos_theta_range: rim cos(theta) < 0.02 and centre == 1.0 \u2014 a fixture that never reaches grazing incidence would let the angular-emissivity tests pass vacuously",
+    "test_step_edge_angle: fitted edge angle == 5.5 deg +/- 0.1 deg (the slant-edge MTF estimator needs the sub-pixel phase diversity that only a tilted edge provides)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-04",
+   "title": "Non-negotiable #2 guard: engine-free temperature encode/decode round trip and float32 boundary assertions",
+   "spec_refs": [
+    "\u00a73.2 line 170",
+    "\u00a713.3 lines 978-984",
+    "\u00a715 line 1184",
+    "\u00a716.4 line 1299",
+    "isaac-sim-spg skill lines 91-113",
+    "CLAUDE.md #2"
+   ],
+   "description": "Add `T_ENCODE_REF_K = 200.0` and `T_ENCODE_SPAN_K = 800.0` to irsim.radiometry.constants and `encode_temperature(T)->float32`, `decode_temperature(c)->float32` in an engine-free module (e.g. irsim/radiometry/encoding.py) so the CPU reference and the Warp/SPG kernels share one definition. tests/unit/test_temperature_encoding.py: a 200-1000 K ramp of 1e5 points encoded/decoded in float32 has max error < 10 mK; the same ramp forced through float16 has max error > 100 mK at 300 K (proves the test can detect the failure mode); assert encode/decode refuse float16 input/output dtypes. Add tests/unit/test_dtype_boundaries.py that walks every public callable in irsim returning temperature or radiance (discovered via a registry or __all__) and asserts float32-or-better output for float32 input.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_encode_decode_roundtrip_fp32_under_10mK: max |decode(encode(T)) - T| < 10 mK over 200-1000 K",
+    "test_fp16_path_is_detectably_wrong: max error through float16 >= 100 mK (0.25 K spacing at 300 K per \u00a713.3) \u2014 if this ever passes, the round-trip test has lost its sensitivity",
+    "test_public_api_never_returns_float16: any function returning T or L in float16 fails"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-05",
+   "title": "Golden/regression fixture infrastructure and a working `make golden-update`",
+   "spec_refs": [
+    "ir-sim-testing skill lines 98-109",
+    "Makefile lines 29-30",
+    "CLAUDE.md layout tests/golden"
+   ],
+   "description": "Add tests/golden/conftest.py with `pytest_addoption('--update-golden')` and an `assert_golden(name, array, config, rtol/atol, units)` helper: stores `<name>.npy` (float32 or uint16 only) plus `<name>.json` {sha256 of the producing config, dtype, shape, tolerance, irsim version}; classifies a mismatch as STALE (hash differs -> skip with an explicit message naming the changed config) vs FAILING (values differ beyond tolerance); on failure writes `outputs/golden/<name>.actual.npy` and prints both paths; never uses exact equality. Decide and document whether tests/golden joins `make test` (today it runs only under `make test-all`, i.e. never in `make check`). Ship with one seed golden: band-radiance stage on gbuffer_ramp once VAL-07 lands, or a self-test-only commit first.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_golden_helper_reports_stale_not_failing: hash mismatch produces the STALE outcome and names the config",
+    "test_golden_helper_dumps_actual_on_failure: a 1% perturbation beyond a 0.1% tolerance fails and both file paths appear in the message",
+    "test_golden_refuses_float16_arrays: storing a float16 golden raises (non-negotiable #2 applies to files on disk)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-06",
+   "title": "Harden the layering test (non-negotiable #1) for both leak directions",
+   "spec_refs": [
+    "CLAUDE.md #1",
+    "tests/unit/test_layering.py",
+    "ir-sim-testing skill line 153"
+   ],
+   "description": "Extend tests/unit/test_layering.py: add `irsim_isaac` to FORBIDDEN for src/irsim (the core must not depend on glue either); add a second parametrised scan asserting nothing under tests/unit imports omni/pxr/isaacsim/warp/carb/irsim_isaac, so the default gate stays runnable without a GPU; add a sensitivity self-test that writes a temp module importing `omni` and asserts `_imported_roots` catches it, plus a case for `from omni.replicator import x` and `import warp as wp`. Update CLAUDE.md #1 to list `carb` (the test already forbids it).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_core_has_no_engine_imports (existing): any engine import in src/irsim fails",
+    "test_core_does_not_import_glue: `import irsim_isaac` anywhere in src/irsim fails",
+    "test_unit_tests_are_engine_free: an `@pytest.mark.isaac`-less test importing warp in tests/unit fails",
+    "test_layering_scanner_detects_known_leaks: scanner self-test on a synthetic offending module"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-07",
+   "title": "Tier 1 LUT tests: LUT vs quadrature, inverse round trip, in-band derivative, staleness (lands with the radiometry LUT commit)",
+   "spec_refs": [
+    "\u00a73.2(b) line 164",
+    "\u00a73.3 line 177",
+    "\u00a73.4 line 188",
+    "\u00a715 lines 1179-1181",
+    "ir-radiometry skill lines 61-66, 108-112"
+   ],
+   "description": "tests/unit/test_band_lut.py against the radiometry area's LUT + inverse + generate_luts.py, for every YAML in configs/sensors: (1) max over 200-1000 K of |Lb_lut(T) - Lb_simpson(T)| / dLb_dT(T) < 5 mK, with the tolerance printed in mK; (2) for a top-hat R(lambda) the Simpson path agrees with band_radiance_tophat to 0.1% (two independent derivations); (3) Lb_inv(Lb(T)) == T to < 1 mK on a fine ramp including off-grid temperatures; (4) dLb_dT_lut vs central FD of Lb_simpson < 1e-5 relative; (5) Lb strictly increasing across all 16001 entries; (6) loading a LUT whose sidecar hash does not match the current config raises a stale-LUT error; (7) all LUT arrays are float32. Adds a `slow` marker if Simpson over 16001 temperatures exceeds 1 s (use a 200-point subsample for the gate and the full sweep under `slow`).",
+   "depends_on": [
+    "radiometry: band LUT (Lb, Lb_q, dLb_dT) with inverse lookup and generate_luts.py with hash sidecar",
+    "radiometry: spectral response loader asserting peak-normalised R(lambda)",
+    "VAL-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_lut_matches_quadrature_within_5mK",
+    "test_inverse_roundtrip_under_1mK",
+    "test_inband_derivative_matches_finite_difference_1e-5",
+    "test_tophat_simpson_matches_closed_form_0p1pct",
+    "test_stale_lut_is_detected"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-08",
+   "title": "Tier 1 Kirchhoff closure walk over the material library (non-negotiable #4) and Fresnel known-answer",
+   "spec_refs": [
+    "\u00a74.1 lines 204-211",
+    "\u00a74.2 lines 218-238",
+    "\u00a74.4 line 260",
+    "\u00a712.3",
+    "\u00a715 line 1182",
+    "thermal-materials skill lines 27-28, 159-165"
+   ],
+   "description": "tests/unit/test_material_closure.py: for every configs/materials/*.yaml and every band defined by configs/sensors/*.yaml (band-integrate epsilon(lambda) with R(lambda)), assert |eps + rho + tau - 1| <= 1e-6; assert the loader rejects a material that authors two of the three (fixture YAML in tests/unit/data). tests/unit/test_fresnel.py: R in [0,1] for theta in [0, 89.9] deg for water (lossy) and a lossless n=1.5 dielectric; water at 10 um (n=1.218, k=0.0508) normal-incidence R = |(n-1)^2+k^2|/|(n+1)^2+k^2| = 0.00966 to 1e-6 and emissivity at 60 deg within 0.01 of the published curve value recorded in the test; no reflectance discontinuity across a theta sweep (max |dR/dtheta| bounded); Level B fit vs Level A max error < 0.02 over 0-70 deg for car paint and glass.",
+   "depends_on": [
+    "materials: pydantic material schema + loader that derives the complement",
+    "materials: Fresnel A/B implementation and Level B fitter",
+    "materials: initial library YAML from \u00a716.2",
+    "radiometry: spectral response loader"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_every_material_closes_in_every_band_1e-6",
+    "test_loader_refuses_double_authoring",
+    "test_fresnel_water_10um_normal_incidence_known_answer",
+    "test_fresnel_reflectance_bounded_and_no_tir_knee_for_lossy_media",
+    "test_level_b_fit_within_0p02_of_fresnel"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-09",
+   "title": "Tier 1 thermal solver: analytic equilibrium, energy conservation, stability guard, spin-up convergence",
+   "spec_refs": [
+    "\u00a76.1 line 354",
+    "\u00a76.2 lines 386-390",
+    "\u00a76.4 lines 406-414",
+    "\u00a715 line 1183",
+    "thermal-solver skill lines 136-146"
+   ],
+   "description": "tests/unit/test_thermal_equilibrium.py: with constant forcing (Q_sol = 0 and Q_sol = 600 W/m^2 cases, Q_LW, T_air, wind fixed), solve alpha Q_sol + eps Q_LW - eps sigma T^4 - h(T)(T - T_air) - (T - T_deep)/(R12 + R2d) = 0 with scipy brentq and compare with the two-node solver after 10 tau of integration: |T_numeric - T_analytic| < 0.1 K for asphalt, painted steel and water parameters. Energy conservation: over one RK2 step, C1 dT1 + C2 dT2 equals net flux times dt to 1e-6 relative. Stability: constructing the solver with dt above 2C1/(h + 4 eps sigma T^3 + 1/R12) raises. Spin-up: 48 h vs 96 h spin-up agree at t=0 to < 0.5 K. Vehicle speed: hood T at 28 m/s vs 0 m/s differs by > 2 K under solar load (h changes from ~5 to ~5+4*28^0.8).",
+   "depends_on": [
+    "thermal: LumpedTwoNodeSolver with RK2 and stability assert",
+    "thermal: convection coefficient h(v, dT)",
+    "thermal: WeatherSeries with spin-up",
+    "VAL-03 (weather_clear_day fixture)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_steady_state_matches_analytic_root_0p1K",
+    "test_single_step_energy_conservation_1e-6",
+    "test_unstable_timestep_raises",
+    "test_spinup_48h_vs_96h_within_0p5K",
+    "test_vehicle_speed_changes_hood_temperature"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-10",
+   "title": "Aperture-factor guard (non-negotiable #5) and optics known answers",
+   "spec_refs": [
+    "\u00a72 line 112",
+    "\u00a78.1 line 520",
+    "\u00a78.2 line 540",
+    "\u00a79.1 line 600",
+    "\u00a79.4 line 671",
+    "CLAUDE.md #5"
+   ],
+   "description": "tests/unit/test_optics_aperture.py: irsim.optics.aperture_factor(F=1.0) == pi/5 to 1e-12 and differs from pi/4 by 20%; E_FPA(L=1, tau=1, F=1, theta=0) == 0.628319 W/m^2; cos^4 vignetting at 30 deg field == 0.5625; the photon-detector dN_e/dT (\u00a79.4) and the self-emission Omega_eff (\u00a78.2) are computed through the same function (test by monkeypatching aperture_factor and checking both outputs scale). Add an AST scan asserting the literal pattern `4 * F**2` / `4*f_number**2` (without `+ 1`) appears nowhere in src/ outside irsim/optics.",
+   "depends_on": [
+    "optics: aperture_factor and focal-plane irradiance",
+    "detector: photon model using irsim.optics",
+    "optics: self-emission term"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_aperture_factor_is_pi_over_4F2_plus_1 (pi/5 at F/1, not pi/4)",
+    "test_focal_plane_irradiance_known_answer_0p628",
+    "test_detector_and_self_emission_share_aperture_function",
+    "test_no_hand_written_4F2_outside_optics"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-11",
+   "title": "Single-weather-source guard (non-negotiable #6)",
+   "spec_refs": [
+    "CLAUDE.md #6",
+    "thermal-solver skill lines 91-95, 147-148",
+    "\u00a77.1 line 458",
+    "\u00a76.1 line 354"
+   ],
+   "description": "tests/unit/test_weather_coupling.py: the thermal solver and the atmosphere model constructors require a WeatherSeries instance (raw dict, path or None raises TypeError); a scene/pipeline assembly takes exactly one WeatherSeries and hands the same object identity to both (assert `solver.weather is atmosphere.weather`); neither irsim.thermal nor irsim.atmosphere contains a file-reading code path (AST scan for open()/yaml.safe_load outside irsim.thermal.weather loader). Physics coupling check: at any timestamp the T_air used in the path-radiance term (1 - tau) B(T_air) equals the T_air used in the convection term h(T - T_air) to 1e-9 K, and the RH used for gamma_LWIR equals the RH the solver sees.",
+   "depends_on": [
+    "thermal: WeatherSeries",
+    "atmosphere: Beer-Lambert model taking WeatherSeries",
+    "pipeline: engine-free scene/pipeline assembly"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_constructors_require_shared_weather_object",
+    "test_same_T_air_in_path_radiance_and_convection_1e-9K",
+    "test_no_file_io_in_thermal_or_atmosphere_models"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-12",
+   "title": "Tier 2 SITF bench on the engine-free CPU reference pipeline",
+   "spec_refs": [
+    "\u00a715 line 1190",
+    "\u00a716.4 step 3 line 1300",
+    "\u00a73.3 line 180",
+    "\u00a711.1 line 755",
+    "\u00a712.2 outputs"
+   ],
+   "description": "Add irsim/validation/bench.py with `sitf(pipeline_cfg, temps_k, frames)` that runs uniform blackbody G-buffers (eps=1, tau_atm=1, tau_opt from config, noise disabled) through the CPU reference pipeline and returns DN16 and apparent T per blackbody. tests/unit/test_tier2_sitf.py on flir_boson_640_lwir.yaml with 10 temperatures 253-453 K: DN strictly increasing; smooth (relative second difference of DN vs Lb(T) < 1e-3); DN linear in Lb(T) (least-squares residual < 0.5 LSB rms for a bolometer with linear response); radiometric branch returns T_app within 10 mK of T (with eps=1 and no atmosphere the gap must vanish) and, with eps=0.9 and a 250 K sky, T_app < T by the LUT-predicted amount to 20 mK (the emissivity gap is the product, \u00a73.3). A comparison hook against a measured SITF CSV (data/validation/<camera>_sitf.csv) is provided but skipped when the file is absent.",
+   "depends_on": [
+    "pipeline: engine-free CPU reference pipeline composing the six stages on the G-buffer dict",
+    "radiometry: LUT + inverse (VAL-07)",
+    "optics: irradiance",
+    "detector: bolometer response and 16-bit quantisation",
+    "isp: linear radiometric branch",
+    "VAL-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_sitf_monotonic_and_smooth",
+    "test_dn_linear_in_band_radiance_half_LSB",
+    "test_apparent_temperature_equals_kinetic_for_blackbody_10mK",
+    "test_emissivity_gap_matches_lut_prediction_20mK"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-13",
+   "title": "Tier 2 NETD bench: anchor within 10% and NETD falls with scene temperature (non-negotiable #3)",
+   "spec_refs": [
+    "\u00a715 line 1191",
+    "\u00a79.4 lines 669-681",
+    "\u00a73.4 lines 190-192",
+    "\u00a712.2 netd_mk_at_300k",
+    "sensor-noise-chain skill lines 54-67, 162-163"
+   ],
+   "description": "Extend irsim/validation/bench.py with `netd(pipeline_cfg, T_lo, T_hi, frames)`: two 64x64 uniform blackbodies at T and T+3 K, 100 frames each, NETD = dT * sigma_TVH(DN) / dDN. tests/unit/test_tier2_netd.py: at 300 K, NETD within 10% of config netd_mk_at_300k (50 mK); at 373 K NETD is lower and NETD(373)/NETD(300) equals dLb_dT(300)/dLb_dT(373) from the LUT within 5% (expected ~0.6; \u00a73.4 quotes 39->23 mK); the radiance-domain sigma is temperature-independent to 2% while the Kelvin-domain sigma is not; determinism: same (seed, frame_id) gives bit-identical frames. Seeded via the rng fixture. Mark `slow` if > 1 s.",
+   "depends_on": [
+    "noise: 3D noise synthesiser with NETD anchoring in radiance/electron space",
+    "detector: bolometer and photon models",
+    "VAL-12 (bench harness and pipeline)",
+    "VAL-07"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_netd_at_300K_within_10pct_of_datasheet",
+    "test_netd_ratio_373_over_300_matches_dLdT_ratio_5pct (flat NETD => noise added in Kelvin => fails)",
+    "test_radiance_sigma_independent_of_scene_temperature_2pct",
+    "test_noise_is_deterministic_for_seed_and_frame_id"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-14",
+   "title": "Tier 2 3D-noise decomposition (independent NVESD estimator) and ratio round trip",
+   "spec_refs": [
+    "\u00a715 line 1192",
+    "\u00a710.2 lines 704-727",
+    "\u00a710.3 line 731",
+    "\u00a712.2 ratios_3d",
+    "sensor-noise-chain skill lines 72-102, 164"
+   ],
+   "description": "Add irsim/noise/three_d.py `decompose_3d(cube[T,V,H]) -> dict(sigma_T, sigma_V, sigma_H, sigma_TV, sigma_TH, sigma_VH, sigma_TVH)` implementing the NVESD directional-mean operator decomposition (independent of the synthesiser's construction). tests/unit/test_tier2_3d_noise.py: synthesise 200 frames of 64x64 at 300 K with the Boson ratios and decompose \u2014 each component within 5% of the injected value for components >= 0.08 sigma_TVH and within 0.02 sigma_TVH absolute for the small ones; sum of squares of recovered components equals total cube variance to 1e-6 relative (algebraic identity of the decomposition); a pure i.i.d. cube yields all directional terms < 3% of sigma_TVH; fixed-pattern terms (VH, V, H) are stable frame to frame with correlation > 0.99 over 1 s and drift with fpn_drift_tau_s over 10 min. Also assert the decomposition works on real 16-bit data layout (uint16 input promoted to float64).",
+   "depends_on": [
+    "noise: 3D noise synthesiser (all seven components) with FPN random walk",
+    "VAL-13"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_recover_injected_3d_noise_ratios_within_5pct",
+    "test_decomposition_sum_of_squares_identity_1e-6",
+    "test_white_cube_has_no_directional_components",
+    "test_fixed_pattern_persists_and_drifts_with_configured_tau"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-15",
+   "title": "Slant-edge MTF estimator (ISO 12233-style) with Gaussian known-answer self-test",
+   "spec_refs": [
+    "\u00a715 line 1193",
+    "\u00a78.3 lines 552-580",
+    "ir-sim-testing skill line 96 (step edge fixture)"
+   ],
+   "description": "Add irsim/validation/mtf.py `slant_edge_mtf(image, roi, oversample=4)`: fit the edge line, project pixels to sub-pixel distance, bin into a 4x oversampled ESF, differentiate to LSF, Hann window, FFT, normalise at DC; returns xi (cycles/pixel and cycles/mm given pitch) and MTF. tests/unit/test_mtf_estimator.py: a synthetic 5.5-deg edge convolved with a known Gaussian sigma = 0.8 px recovers MTF within 0.02 absolute of exp(-2 pi^2 sigma^2 xi^2) up to Nyquist; an unblurred edge box-sampled at 1 px recovers |sinc(pi xi)| within 0.03 up to Nyquist; estimator is insensitive to edge polarity and to added noise at SNR 100 (within 0.03).",
+   "depends_on": [
+    "VAL-03 (step-edge fixture)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_slant_edge_recovers_gaussian_mtf_0p02",
+    "test_slant_edge_recovers_detector_sinc_0p03",
+    "test_estimator_polarity_and_noise_invariance"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-16",
+   "title": "Tier 2 MTF bench: simulated hotplate/aluminium slant edge vs the analytic MTF cascade",
+   "spec_refs": [
+    "\u00a715 line 1193",
+    "\u00a78.3 lines 556-580",
+    "\u00a716.1 (12 um, F/1.0)",
+    "isaac-sim-spg skill lines 145-148"
+   ],
+   "description": "Run the 4x-supersampled step-edge G-buffer (373 K hotplate behind 293 K aluminium eps=0.09 reflecting a 293 K enclosure) through optics (diffraction + aberration Gaussian from config) and the box-filter downsample to 640x512, then VAL-15. tests/unit/test_tier2_mtf.py: measured MTF at xi_N = 41.7 cyc/mm equals MTF_diff(xi_N) * MTF_det(xi_N) = 0.485 * 0.637 = 0.31 within 0.05 absolute, and matches the full cascade curve within 0.05 from 0 to xi_N; rendering at native resolution and blurring (the wrong path) produces no aliasing energy above xi_N while the supersampled path does (assert the ratio, which is what \u00a78.3 says distinguishes them); the edge contrast equals eps_hotplate*Lb(373) - (eps_Al*Lb(293) + (1-eps_Al)*Lb(293)) within 1%.",
+   "depends_on": [
+    "optics: MTF cascade (diffraction, detector, motion, Gaussian aberration) and 3-4x supersample + box-filter downsample",
+    "VAL-15",
+    "VAL-12"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_measured_mtf_at_nyquist_matches_cascade_0p05 (0.31 for the Boson case)",
+    "test_supersampled_path_aliases_and_native_blur_does_not",
+    "test_edge_contrast_matches_radiometry_1pct"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-17",
+   "title": "Tier 3 automated thermal phenomenology on an engine-free facet scene",
+   "spec_refs": [
+    "\u00a715 lines 1199, 1201-1202",
+    "\u00a76.3 line 399",
+    "\u00a76.4 line 414",
+    "\u00a76.6 lines 438-441",
+    "ir-sim-testing skill lines 119-135",
+    "thermal-solver skill lines 84-89, 125-134"
+   ],
+   "description": "Add tests/unit/scene_fixtures.py: a facet scene (asphalt dry, asphalt wet, concrete, black car roof, white car roof, glass, shaded asphalt) with normals, sky-view factors and \u00a716.2 properties, driven by weather_clear_day through the thermal solver with 48 h spin-up, producing kinetic and apparent T per facet per hour. tests/unit/test_tier3_thermal.py: (a) crossover \u2014 |T_asphalt - T_car_roof| within 1 h of 0600 and 1900 is < 20% of its 1400 value and changes sign between 1400 and 0300; (b) wet asphalt colder than dry by >= 1 K at 1400 (evaporative/inertia proxy per material parameters); (c) shaded facet colder than sunlit by >= 3 K at 1400 and within 1 K at 0300; (d) departed-vehicle overlay: tyre trace +3..+10 K and body shadow -3..-8 K at t=0, decaying to < 0.5 K within 20 min. Document the non-automatable items as a manual checklist in docs/validation/tier3-checklist.md.",
+   "depends_on": [
+    "thermal: LumpedTwoNodeSolver, WeatherSeries, spin-up, solar/shadow term",
+    "thermal: heat-trace overlay model",
+    "materials: library",
+    "VAL-09"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_contrast_collapses_at_dawn_and_dusk (no thermal solver running => contrast constant => fails)",
+    "test_wet_asphalt_reads_colder_than_dry",
+    "test_shade_colder_than_sun_by_day_not_by_night",
+    "test_departed_vehicle_traces_have_correct_sign_and_decay"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-18",
+   "title": "Tier 3 automated sky/reflection phenomenology: overcast flattens, clear night darkens roofs and glass",
+   "spec_refs": [
+    "\u00a715 line 1200",
+    "\u00a75.3 lines 298-314",
+    "\u00a74.2-4.3 lines 213-256",
+    "\u00a713.7 option 1",
+    "\u00a716.2 glass/aluminium rows"
+   ],
+   "description": "tests/unit/test_tier3_reflection.py on the facet scene at 0300: with cloud = 0 and dT_clear = 60 K, apparent T of a zenith-facing eps = 0.90 car roof is at least 3 K below its kinetic T and a zenith-facing glass facet (eps 0.88) similar, while a rough asphalt facet (eps 0.94, V_s 0.5) is within 1 K; with cloud = 1 every facet's apparent T is within 0.5 K of kinetic (T_sky -> T_air); the standard deviation of apparent T over the facet set under overcast is < 50% of the clear-sky value; a bare-aluminium facet (eps 0.09) tracks T_sky within 5 K on a clear night (it is a mirror); MWIR vs LWIR sky: T_sky,MWIR(15 deg) > T_sky,LWIR(15 deg) by > 40 K per \u00a75.3 line 298 once MWIR exists.",
+   "depends_on": [
+    "materials: angular emissivity Level B/A",
+    "atmosphere or sky: elevation-parameterised T_sky model",
+    "pipeline: band-radiance stage with sky-view blend",
+    "VAL-17 (facet scene fixture)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_clear_night_roof_and_glass_read_cold_by_at_least_3K",
+    "test_overcast_apparent_equals_kinetic_within_0p5K",
+    "test_overcast_scene_std_under_half_of_clear",
+    "test_bare_aluminium_tracks_sky_temperature"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-19",
+   "title": "Tier 3 automated atmosphere phenomenology: fog band ordering and humidity crossover",
+   "spec_refs": [
+    "\u00a715 lines 1203-1204",
+    "\u00a77.2 lines 473-488",
+    "\u00a77.3 lines 495-501",
+    "\u00a77.1 line 458"
+   ],
+   "description": "tests/unit/test_tier3_atmosphere.py: for each configured atmosphere preset at d = 200 m: light fog (200 m vis) gives tau_vis < tau_SWIR < tau_MWIR < tau_LWIR with each inside the \u00a77.2 ranges (LWIR 0.35-0.60, MWIR 0.25-0.50, SWIR 0.10-0.30, vis 0.02-0.10); humid clear (30 C, 80% RH) gives tau_LWIR < tau_SWIR (0.72-0.85 vs 0.88-0.95); clear dry LWIR in 0.90-0.96; Magnus: e_s(20 C) = 23.4 hPa within 0.5%, w(20 C, 50% RH) = 8.65 g/m^3 within 1%; path radiance at tau = 0 equals Lb(T_air) exactly and total sensor radiance for a target at T_air is independent of d to 1e-9 (the three-term model's invariant, \u00a72).",
+   "depends_on": [
+    "atmosphere: gamma table per (band, atmosphere, humidity, visibility) + humidity model",
+    "radiometry: LUT (Lb(T_air))"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_fog_band_ordering_and_ranges_at_200m",
+    "test_humid_air_degrades_lwir_more_than_swir",
+    "test_magnus_known_values",
+    "test_target_at_air_temperature_is_distance_invariant_1e-9"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "VAL-20",
+   "title": "Tier 3 automated sensor-chain phenomenology: AGC collapse, FFC freeze/reset, bolometer smear",
+   "spec_refs": [
+    "\u00a715 lines 1207-1209",
+    "\u00a711.3 line 786",
+    "\u00a711.2 line 770",
+    "\u00a79.2 lines 634-640",
+    "\u00a712.2 nuc/isp fields",
+    "sensor-noise-chain skill lines 165-172"
+   ],
+   "description": "tests/unit/test_tier3_sensor_chain.py: (a) AGC \u2014 an image with a 300/303 K pair has 8-bit contrast C0 under global plateau AGC; inserting a 450 K patch covering 5% of pixels reduces it to < 0.5 C0, and a locally-adaptive variant keeps > 0.8 C0; plateau = 0 reproduces linear percentile AGC to 1 DN; entropy is monotonic in plateau. (b) FFC \u2014 at ffc_interval_s = 180 with ffc_freeze_ms = 700 at 60 Hz, exactly 42 consecutive identical frames occur, and the fixed-pattern residual std immediately after is < 10% of the value immediately before; between events residual grows monotonically. (c) Smear \u2014 a step edge moving at 2 px/frame through the bolometer IIR (tau_th = 10 ms, 60 Hz) produces a trailing profile equal to the analytic geometric series with ratio exp(-dt/tau) to 1e-4 relative, and the same input through the photon-detector path (MWIR config) produces no trail (< 1e-6). (d) Well saturation: 1000 K source clips at 2^16 - 1, never wraps.",
+   "depends_on": [
+    "isp: plateau equalisation, linear AGC, DDE, locally-adaptive option",
+    "isp/noise: NUC residual model and FFC scheduler",
+    "detector: bolometer IIR and photon well/ADC",
+    "VAL-03 (moving edge fixture)",
+    "VAL-12"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_hot_exhaust_collapses_global_agc_contrast",
+    "test_ffc_freeze_length_and_pattern_reset",
+    "test_bolometer_trailing_profile_matches_iir_1e-4_and_mwir_has_none",
+    "test_well_saturation_clips_without_wrap"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-21",
+   "title": "Tier 3 automated multi-band phenomenology: MWIR solar glint and SWIR airglow (proves the second band)",
+   "spec_refs": [
+    "\u00a715 lines 1205-1206",
+    "\u00a75.2 lines 283-294",
+    "\u00a75.4 line 323-326",
+    "\u00a75.5 lines 330-340",
+    "\u00a712.1",
+    "\u00a716.4 step 10 line 1307"
+   ],
+   "description": "tests/unit/test_tier3_multiband.py with a SWIR (InGaAs, photon) and MWIR (InSb, photon) sensor YAML alongside the LWIR one: (a) MWIR at 1200 with sun at 45 deg, a specular glass facet oriented for glint saturates DN16 while the same facet in LWIR does not; at 0300 the per-class apparent-T ordering in MWIR matches LWIR (rank correlation > 0.9). (b) SWIR at night, moonless, airglow at 10 nW/cm^2, no artificial light: the mean signal over a reflectance-0.5 facet exceeds 5x the read-noise floor (SNR > 5), and scales linearly with the airglow level 3.5 -> 39 nW/cm^2 (r > 0.999); with airglow = 0 and no moon the SWIR SNR < 1. (c) Architecture assertion: adding the SWIR/MWIR configs changed no file under src/irsim/radiometry (git-tracked path check in the test or CI script).",
+   "depends_on": [
+    "radiometry: second and third band configs/spectra/LUTs (no core changes)",
+    "pipeline: solar term with specular lobe and night-illumination model",
+    "materials: transmittance_per_band handling",
+    "detector: photon model",
+    "VAL-18"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_mwir_glint_saturates_by_day_and_looks_like_lwir_at_night",
+    "test_swir_night_snr_from_airglow_alone_and_linear_scaling",
+    "test_adding_a_band_touches_no_radiometry_code"
+   ],
+   "engine_free": true,
+   "size": "L"
+  },
+  {
+   "id": "VAL-22",
+   "title": "Tier 4 comparison metrics library and validation report script (engine-free analysis)",
+   "spec_refs": [
+    "\u00a715 lines 1218-1224, 1232",
+    "\u00a710.2 line 727",
+    "CLAUDE.md scripts/ 'validation reports'"
+   ],
+   "description": "Add irsim/validation/metrics.py: per-class apparent-temperature histogram (bias, spread, earth-mover distance), class-vs-local-background radiometric contrast ratio, 2-D noise PSD of a flat region (Welch, plus row and column marginal spectra so striping ratios show), and ESF on labelled real edges; scripts/validation_report.py that reads a synthetic and a real frame set with class masks and prints the \u00a715 acceptance checks (2 K bias, 25% contrast, factor-2 PSD shape). tests/unit/test_tier4_metrics.py: the PSD of a synthesised 3D-noise cube matches the analytic PSD implied by the injected ratios (white floor + row/column line energy) within factor 1.2 at every frequency; contrast ratio on two known patches is exact; histogram bias of a shifted copy equals the shift to 10 mK; the report exits non-zero when any acceptance target is exceeded.",
+   "depends_on": [
+    "VAL-14 (3D noise synthesiser and decomposition as ground truth for the PSD test)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_psd_of_synthetic_3d_noise_matches_analytic_within_factor_1p2",
+    "test_contrast_ratio_known_patches_exact",
+    "test_histogram_bias_of_shifted_copy_10mK",
+    "test_report_fails_when_targets_exceeded"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "VAL-23",
+   "title": "Integration: temperature encode/decode round trip through an Isaac Sim AOV (< 10 mK)",
+   "spec_refs": [
+    "\u00a713.3 lines 978-984",
+    "\u00a716.4 step 2 line 1299",
+    "\u00a715 line 1184",
+    "isaac-sim-spg skill lines 91-113"
+   ],
+   "description": "tests/integration/test_temperature_encoding.py, @pytest.mark.isaac: author a stage with N planes whose emissive value is encode_temperature(T_i) for T_i spanning 200-1000 K (including 300.000, 300.050 and 300.100 K), capture the PtSelfIllumination (or custom) AOV via isaacsim.sensors.experimental.rtx CameraSensor, assert the returned array dtype is float32, decode with irsim's decode_temperature (VAL-04) and assert max |T_out - T_in| < 10 mK; assert bounces do not contaminate (a bright neighbour plane changes the reading by < 1 mK); assert no tone-mapping/clamp (c = 0.999 decodes to 999.2 K). Owned jointly with the isaac area; listed here because it is the Tier 1 line item that cannot be engine-free.",
+   "depends_on": [
+    "VAL-04",
+    "isaac: RtxCamera/CameraSensor annotator adapter producing the G-buffer dict"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_aov_roundtrip_under_10mK (an fp16 or unorm channel fails at 0.25 K / 0.78 K)",
+    "test_aov_dtype_is_float32",
+    "test_no_bounce_contamination_1mK",
+    "test_no_tonemap_or_clamp_at_top_of_range"
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "VAL-24",
+   "title": "Kernel-vs-reference harness for the six Warp/SPG stages",
+   "spec_refs": [
+    "\u00a713.4 lines 997-1030",
+    "isaac-sim-spg skill lines 131-143, 168-174",
+    "ir-sim-testing skill line 55"
+   ],
+   "description": "tests/integration/test_kernels_vs_reference.py parametrised over (stage, fixture) for stages band_radiance, atmosphere, optics, detector, noise, isp and fixtures ramp/uniform/two-material/sphere/step-edge: run the irsim NumPy reference and the irsim_isaac Warp kernel on identical inputs; assert 1e-4 relative on radiance outputs, 5 mK on apparent temperature (converted via dLb_dT), exact equality on DN16 for the deterministic stages, and identical noise for identical (seed, frame_id). Marker: `gpu` (Warp CUDA) with an option to run on Warp's CPU device under a new `warp` marker if the team wants it in CI without a GPU. Later the same harness targets the SPG .cu path via FileCapture output.",
+   "depends_on": [
+    "isaac: Warp kernels for the six stages",
+    "pipeline: engine-free CPU reference pipeline",
+    "VAL-03",
+    "VAL-12"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_stage_matches_reference_1e-4_relative[band_radiance-sphere] (angular emissivity sign/branch errors in the kernel)",
+    "test_stage_matches_reference_5mK[isp-ramp] (apparent-temperature inversion drift)",
+    "test_noise_kernel_bit_identical_for_seed_and_frame_id"
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "VAL-25",
+   "title": "Tier 4 scene recreation and first real-data comparison run",
+   "spec_refs": [
+    "\u00a715 lines 1211-1224",
+    "\u00a716.4 step 11 line 1308",
+    "Appendix A"
+   ],
+   "description": "Acquire the FLIR ADK / Carmichael et al. 2024 frames (or Hadron 640), determine whether 16-bit radiometric or 8-bit AGC frames are available, recreate one scene's geometry/materials/weather/time in Isaac Sim, render with the full pipeline, run scripts/validation_report.py (VAL-22) and record per-class bias, contrast ratio and PSD shape in docs/validation/tier4-<date>.md with an ADR stating the reference dataset and any metric adjusted for non-radiometric data. Mark the README status column for every component that passes at T4.",
+   "depends_on": [
+    "VAL-22",
+    "VAL-23",
+    "VAL-24",
+    "isaac: full six-stage pipeline with reflection option and material mapping layer",
+    "thermal: vehicle regimes"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/integration/test_tier4_reference_scene.py::test_per_class_apparent_T_bias_under_2K",
+    "test_class_contrast_ratio_within_25pct",
+    "test_flat_region_noise_psd_within_factor_2 (wrong 3D-noise ratios fail here first, per \u00a715 line 1221)"
+   ],
+   "engine_free": false,
+   "size": "L"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Golden fixture format, staleness policy and whether tests/golden is in the default gate",
+   "why": "Outlives every commit: file format (.npy + JSON sidecar with config SHA-256), tolerance semantics, where actual outputs are dumped (outputs/ is gitignored), how `make golden-update` is authorised, and the fact that today `make test`/`make check` never run tests/golden. Reviewers must know that a golden mismatch can mean STALE rather than FAILING.",
+   "options": [
+    "npy + json sidecar with config hash; tests/golden added to `make test` (engine-free goldens only) and Isaac goldens marked isaac",
+    "npy + json sidecar; tests/golden remains outside the default gate and runs only in `make test-all`",
+    "Single HDF5/NPZ bundle per golden with embedded config text instead of a hash"
+   ]
+  },
+  {
+   "title": "Stefan-Boltzmann identity tolerance: spec 1e-6 vs skill 1e-12 vs existing 2e-5",
+   "why": "The ir-sim-testing skill (lines 61-62) says loosening a physics tolerance needs an ADR; the existing test silently sits at 2e-5 with a code comment. The number chosen documents how tight the reference Planck path is believed to be and what error classes the test guarantees to catch.",
+   "options": [
+    "Analytic-tail quadrature reaching 1e-6 (spec), keep 1e-12 only for the F(inf)=1 series check",
+    "Keep trapezoid at 2e-5 and record why 1e-6 is not worth the runtime",
+    "Gauss-Laguerre / substitution quadrature reaching 1e-10"
+   ]
+  },
+  {
+   "title": "Temperature-encoding constants and functions live engine-free (irsim.radiometry) and Tier 1 encode/decode is split into CPU fp32 (unit) + AOV (integration)",
+   "why": "\u00a715 lists encode/decode as Tier 1 'no renderer' while \u00a713.3/\u00a716.4 make it an Isaac AOV test; CPU reference and Warp/SPG kernels must share one definition of T_ref/T_span or the two encodings will diverge silently. Also fixes the fallback if float32 AOVs are unavailable (coarse/fine fp16 split).",
+   "options": [
+    "Constants in irsim.radiometry.constants, encode/decode in irsim.radiometry.encoding, unit test in fp32 + integration test through the AOV",
+    "Constants defined only in irsim_isaac and mirrored by hand in tests (rejected: duplicate source of truth)",
+    "Coarse/fine two-channel fp16 encoding as the default from day one"
+   ]
+  },
+  {
+   "title": "3D-noise decomposition estimator and its acceptance (200 frames, 5% / 0.02 sigma_TVH absolute)",
+   "why": "The NVESD decomposition has several published estimators with different small-sample bias; the choice fixes what 'component-by-component match' means for Tier 2 and Tier 4 and how many frames a bench needs (\u00a715 says 100+, the skill says 200).",
+   "options": [
+    "Directional-mean operator decomposition (NVESD/D'Agostino-Webb) with unbiased variance estimates",
+    "ANOVA-style random-effects estimator",
+    "FFT-based separation of row/column line energy from white floor"
+   ]
+  },
+  {
+   "title": "Slant-edge MTF estimator and Tier 2 MTF acceptance tolerance",
+   "why": "The spec gives the bench geometry (5.5 deg, 100 C hotplate) but no pass criterion; the estimator (ISO 12233 e-SFR style, 4x oversampling, windowing) and the 0.05 absolute tolerance at Nyquist decide whether optics work is 'verified'. Also fixes that the sim must supersample 3-4x and box-filter to reproduce detector MTF and aliasing.",
+   "options": [
+    "ISO 12233-style e-SFR with 4x binning, 0.05 absolute up to Nyquist",
+    "Direct LSF from a knife-edge without oversampling (cheaper, aliasing-blind)",
+    "Compare only MTF(xi_N) against the 0.31 known answer"
+   ]
+  },
+  {
+   "title": "Which Tier 3 phenomenology items are automated, on which scene fixture, and which remain a manual checklist",
+   "why": "Tier 3 is 'qualitative but decisive'; automating on an engine-free facet scene means the checks never see a rendered image, while a rendered demo stage needs Isaac. The choice determines what the README Tier column can claim.",
+   "options": [
+    "Automate scalar checks on an engine-free facet scene in tests/unit; manual checklist doc for the rest; optional Isaac demo-stage duplicates under @isaac",
+    "Automate everything on an Isaac demo stage only (integration)",
+    "Manual checklist only (rejected by the skill)"
+   ]
+  },
+  {
+   "title": "Tier 4 reference dataset and metric definitions for non-radiometric real data",
+   "why": "FLIR ADK Boson cores are typically non-radiometric; \u00a715 Tier 4(a) assumes apparent-temperature histograms. The dataset choice, licence, whether 16-bit or 8-bit frames exist, and how 'contrast ratio' and PSD are defined outlive the code.",
+   "options": [
+    "Carmichael et al. 2024 (ADK/Boson 640) with DN-space metrics if only AGC frames exist",
+    "FLIR Hadron 640 data with radiometric 16-bit frames",
+    "In-house capture with a radiometric Boson and the \u00a715 hotplate bench for SITF/NETD/MTF ground truth"
+   ]
+  },
+  {
+   "title": "Test dependency floor and test-runtime environment (numpy >= 2.0 for np.trapezoid; pytest >= 7.4)",
+   "why": "A dependency floor is a decision the skill says needs an ADR; today the gate is red on NumPy 1.x, and no project interpreter with pytest exists on the dev machine.",
+   "options": [
+    "Raise numpy floor to >= 2.0 and document a project venv",
+    "Keep numpy >= 1.24 with a trapz/trapezoid compat shim in conftest",
+    "Vendor a tiny integrate helper in irsim and never call numpy's directly"
+   ]
+  },
+  {
+   "title": "Placement and marker for Warp kernel-vs-reference tests",
+   "why": "Warp can run on a CPU device without CUDA or Isaac Sim, which would let kernel tests into CI, but warp is not a declared dependency and must never be imported from src/irsim or tests/unit. The marker/location decision fixes what the default gate covers.",
+   "options": [
+    "tests/integration with @gpu, CUDA only",
+    "New @warp marker, Warp CPU device in CI, GPU optional",
+    "Skip Warp entirely and validate only SPG .cu output via FileCapture under @isaac"
+   ]
+  },
+  {
+   "title": "Tier 5 scope",
+   "why": "Train/eval of a detector needs an ML stack outside this repo; deciding that Tier 5 is an external protocol (documented, not tested here) prevents an unbounded work item and states plainly what the README's T5 column can never claim from this repo alone.",
+   "options": [
+    "Document protocol + AGC-matching requirements only; results recorded as docs/validation reports",
+    "Add a minimal training script and dataset export under scripts/ with a heavy optional dependency",
+    "Out of scope entirely"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "\u00a715 Tier 1 lists 'Temperature encode/decode round trip < 10 mK' under 'no scene, no renderer', but \u00a713.3 line 984, \u00a716.4 line 1299 and the isaac-sim-spg skill (line 111-113) define it as an Isaac AOV test in tests/integration. As written it cannot be both.",
+   "how_to_verify": "Adopt the split in VAL-04/VAL-23: an engine-free fp32 numeric round trip in tests/unit and the AOV round trip under @isaac; confirm both exist and both report < 10 mK before any pipeline stage is built."
+  },
+  {
+   "description": "Isaac Sim 6.0: it is not established that `PtSelfIllumination` (or any custom RenderVar) can be requested as a float32 texture through `isaacsim.sensors.experimental.rtx` annotators, nor that its values are free of exposure/tone-mapping or clamping at 1.0, nor that bounces are excluded. The skill asserts this from partial docs.",
+   "how_to_verify": "Run VAL-23 as the first engine experiment: N emissive planes at known encoded values including c = 0.999 and c = 0.125 +/- 6.25e-5 (300 K +/- 50 mK); print the annotator dtype and decode; add a bright neighbour plane to detect bounce contamination. If dtype is fp16, switch to the coarse/fine two-channel encoding and record an ADR."
+  },
+  {
+   "description": "Tier 2 SITF says DN vs T 'must match the real camera's measured curve' and NETD 'must match datasheet within 10%', but the repo has no measured SITF/NETD/3D-noise/MTF data and the Boson values in the YAML are marked ESTIMATED. The engine-free benches can only prove self-consistency with the LUT until measurements exist.",
+   "how_to_verify": "Obtain a Boson 640 (or the ADK module) and perform the \u00a715 bench (two blackbodies or the hotplate/aluminium edge); store CSVs under data/validation/ with provenance; VAL-12/13/16 have skip-if-absent hooks that turn into real comparisons once the files exist."
+  },
+  {
+   "description": "Tier 4 assumes radiometric real data (apparent-temperature histograms). FLIR ADK Boson units are commonly non-radiometric and public datasets may ship only 8-bit AGC frames, which makes bias-in-K and PSD-in-radiance comparisons impossible as specified.",
+   "how_to_verify": "Before VAL-25, inspect the Carmichael et al. 2024 dataset documentation and a sample file for bit depth, AGC state and any radiometric calibration; if only AGC frames exist, redefine the Tier 4 metrics in DN/8-bit space in an ADR and match the AGC algorithm exactly (\u00a715 caution 2)."
+  },
+  {
+   "description": "`make golden-update` is broken today (`--update-golden` unregistered) and tests/golden is outside `make test`/`make check`, so the golden mechanism the skills describe does not exist and would never run in the commit gate.",
+   "how_to_verify": "After VAL-05, run `make golden-update` and `make check` and confirm the option is accepted and (if decided) engine-free goldens execute; add a self-test that the STALE path is reported."
+  },
+  {
+   "description": "The unit suite is red on NumPy < 2.0 (np.trapezoid); pyproject says numpy>=1.24. CHANGELOG claims 'Analytic identity tests passing', which is version-dependent.",
+   "how_to_verify": "Run `PYTHONPATH=src python3 -m pytest tests/unit` on NumPy 1.26 (3 errors) and on NumPy 2.x; fix per VAL-01 and add the interpreter/venv to README quick start."
+  },
+  {
+   "description": "The 3D-noise round-trip tolerance (5%) is statistically tight for the small components (t = 0.02, tv/th = 0.05 of sigma_TVH) at 100-200 frames; a purely relative tolerance may fail on estimator noise rather than physics.",
+   "how_to_verify": "Monte-Carlo the estimator on synthetic cubes to measure its standard error per component at 64x64x200; set relative 5% for components >= 0.08 and an absolute 0.02 sigma_TVH floor for smaller ones, recorded in the ADR."
+  },
+  {
+   "description": "Warp kernel tests: Warp runs on CPU without CUDA, but warp is not in pyproject dependencies and must never be imported from tests/unit (VAL-06 will enforce this). Where those tests live and what marker gates them is undecided.",
+   "how_to_verify": "Prototype one kernel test under Warp's 'cpu' device in a scratch venv; if it works without CUDA, define a `warp` marker and CI job; otherwise keep `gpu`."
+  },
+  {
+   "description": "The unit suite must stay under 30 s (CLAUDE.md). Tier 2 benches (100-200 frames x 64x64 through six stages, Simpson over 16001 temperatures, slant-edge at 1024x1024 supersample) can blow the budget; the `slow` marker exists but is never deselected by `make test`.",
+   "how_to_verify": "Run `pytest tests/unit --durations=15` after each Tier 2 item; mark > 1 s tests `slow` and decide whether `make test` deselects `slow` (it currently does not) \u2014 record in VAL-01 or VAL-05."
+  },
+  {
+   "description": "\u00a715 line 1181 says 'dL/dT vs finite difference < 1e-5 relative' without saying spectral or in-band; the existing test covers the spectral derivative at 1e-6, the ir-radiometry skill (line 111) wants the in-band dLb_dT vs FD of Lb. Only the in-band version validates the LUT's derivative table that NETD divides by.",
+   "how_to_verify": "Keep the spectral test and add the in-band test in VAL-07; both at <= 1e-5."
+  },
+  {
+   "description": "The G-buffer key set in tests/conftest.py (temperature_k, normal_dot_view, distance_m, material_id, sky_view_factor) is narrower than the \u00a713.3 AOV table (full Normal vector, MotionVectors, SemanticSegmentation). If the Isaac adapter emits a different schema, kernel-vs-reference tests will compare different inputs.",
+   "how_to_verify": "Freeze the schema in VAL-03 with a test, and make the irsim_isaac annotator adapter's output pass the same schema test (import the checker from tests or from irsim.validation)."
+  },
+  {
+   "description": "\u00a76.1's displayed equation has (1 - alpha_sol)^c Q_sol while the prose (line 363) and \u00a76.4 use alpha_sol Q_sol. The Tier 1 equilibrium test's analytic root depends on which is used.",
+   "how_to_verify": "Use alpha_sol Q_sol (spec prose, thermal-solver skill line 26) in VAL-09 and cite the line; ask the spec owner to fix the displayed equation."
+  },
+  {
+   "description": "Tier 3 'departed vehicle leaves a warm tyre trace and cool body shadow' and 'FFC freezes the image' require scene-level scripting (overlay model, scheduler) that no area has clearly claimed; without an owner the checklist item cannot be automated.",
+   "how_to_verify": "Assign the heat-trace overlay to the thermal area and the FFC scheduler to isp/noise in the roadmap; VAL-17 and VAL-20 depend on them explicitly."
+  },
+  {
+   "description": "Tier 5 (train a detector) is outside what this repo can test; the README Tier column has a T5 that nothing here can ever mark green.",
+   "how_to_verify": "Decide via ADR that T5 is an external protocol documented under docs/validation/, and reserve the README column for reports, not tests."
+  },
+  {
+   "description": "ir-radiometry skill (line 65-66) says LUTs are checked into data/lut with a hash, but .gitignore ignores data/lut/*.npy and *.json. Either every developer must run `make luts` (and the hash-staleness path becomes the norm) or the ignore rules are wrong. Affects the staleness tests in VAL-07.",
+   "how_to_verify": "Decide (radiometry ADR) and make VAL-07's stale-LUT test exercise the real workflow: delete data/lut, run `make luts`, run the suite."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core \u2014 enforced today by tests/unit/test_layering.py (AST scan for omni/pxr/isaacsim/warp/carb over src/irsim); VAL-06 extends it to forbid irsim -> irsim_isaac and to keep tests/unit free of engine imports so `make test` never needs a GPU.",
+  "#2 float32 or better wherever temperature/radiance flows \u2014 no test exists today (CLAUDE.md claims one). VAL-04 adds the fp32 encode/decode round trip (< 10 mK) with an fp16 sensitivity proof and a public-API dtype walk; VAL-03 asserts fixture dtypes; VAL-05 refuses float16 golden files; VAL-07 asserts LUT .npy dtype float32; VAL-23 asserts the AOV dtype and round trip in Isaac.",
+  "#3 Noise in radiance/electron space, never Kelvin \u2014 enforced by VAL-13: NETD(373 K)/NETD(300 K) must equal dLb_dT(300)/dLb_dT(373) within 5% (a flat NETD fails), and radiance-domain sigma must be scene-temperature independent to 2%.",
+  "#4 Kirchhoff closure for every material in every band to 1e-6 \u2014 no test exists today (CLAUDE.md claims one). VAL-08 walks configs/materials x configs/sensors bands and also asserts the loader refuses double-authored properties.",
+  "#5 Aperture factor pi/(4F^2+1) defined once in irsim.optics \u2014 VAL-10: aperture_factor(1.0) == pi/5 to 1e-12, focal-plane irradiance known answer 0.628319 W/m^2, detector and self-emission proven to route through the same function, AST scan for hand-written 4F^2 outside irsim.optics.",
+  "#6 One WeatherSeries feeds thermal and atmosphere \u2014 VAL-11: constructors require the shared object (identity-checked), no file I/O inside the thermal/atmosphere models, and T_air/RH used by path radiance and convection agree to 1e-9 at every timestamp."
+ ],
+ "spec_internal_inconsistencies": [
+  "Stefan-Boltzmann tolerance is stated three ways: docs/physics-model.md \u00a715 line 1178 says 1e-6; .claude/skills/ir-sim-testing/SKILL.md line 52 says 1e-12 relative for 'Analytic identities (Planck forms, Stefan-Boltzmann)'; tests/unit/test_planck.py line 42 asserts 2e-5 with a comment but no ADR, although SKILL.md lines 61-62 require an ADR for a loosened physics tolerance.",
+  "\u00a715 line 1184 places 'Temperature encode/decode round trip < 10 mK' in Tier 1 ('no scene, no renderer'), but \u00a713.3 line 984, \u00a716.4 line 1299 and isaac-sim-spg SKILL.md lines 111-113 define it as an Isaac AOV test in tests/integration/test_temperature_encoding.py.",
+  "CLAUDE.md non-negotiable #2 says 'There is a test for the encode/decode round trip; keep it passing' and #4 says 'There is a test that walks the whole material library; keep it passing' \u2014 neither test exists (tests/ contains only conftest.py, test_layering.py, test_planck.py).",
+  "Makefile line 30 runs `pytest tests/golden -q --update-golden` but no conftest registers `--update-golden`; verified to error with 'unrecognized arguments'. ir-sim-testing SKILL.md line 108 tells people to use it.",
+  "CLAUDE.md layout says tests/golden holds regression fixtures and the step rule says `make check` must be green, but Makefile `test` runs only tests/unit, so tests/golden is never executed by `make check`; it runs only under `make test-all`, which CLAUDE.md says needs Isaac Sim.",
+  "pyproject.toml declares numpy>=1.24 but tests/unit/test_planck.py lines 37, 64-65, 80 use np.trapezoid (NumPy >= 2.0 only); on NumPy 1.26 three tests error. CHANGELOG.md 'Analytic identity tests passing' is untrue on the declared floor.",
+  "ir-sim-testing SKILL.md line 96 requires at least five G-buffer fixtures (uniform, ramp, two-material split, grazing-angle sphere, step edge); tests/conftest.py provides only gbuffer_ramp and gbuffer_uniform.",
+  "tests/unit/test_layering.py FORBIDDEN includes `carb`; CLAUDE.md #1 and src/irsim/__init__.py list only omni, pxr, isaacsim, warp. Neither forbids `irsim` importing `irsim_isaac`.",
+  "\u00a715 line 1181 'dL/dT vs finite difference < 1e-5 relative' does not say spectral or in-band; test_planck.py line 57 tests the spectral form at 1e-6; ir-radiometry SKILL.md line 111 specifies the in-band dLb_dT vs FD of Lb, which is the one NETD depends on and is untested.",
+  "\u00a715 line 1192 says decompose '100+ frames'; sensor-noise-chain SKILL.md line 164 says 200 frames and adds a 5% tolerance the spec does not state. \u00a715 line 1182 gives no Kirchhoff tolerance; CLAUDE.md #4 and ir-sim-testing line 57 give 1e-6.",
+  "\u00a76.1 line 355 displays absorbed solar as (1 - alpha_sol)^c Q_sol while line 363 and \u00a76.4 line 406 (and thermal-solver SKILL.md line 26) use alpha_sol Q_sol; the equilibrium test must pick one.",
+  "ir-radiometry SKILL.md lines 65-66 say generated LUTs are 'checked into data/lut/' with a config hash, but .gitignore ignores data/lut/*.npy and data/lut/*.json.",
+  "\u00a715 Tier 2 SITF/NETD/MTF require comparison with 'the real camera's measured curve' and 'datasheet within 10%', but every Boson noise/optics value in configs/sensors/flir_boson_640_lwir.yaml is marked ESTIMATED and data/ holds no measurements, so the spec's Tier 2 pass criteria cannot currently be evaluated against reality.",
+  "README.md status table shows a Tier column including T5, and the ir-sim-testing skill says smoke tests must not count toward it; nothing in the repo defines what evidence promotes a component to T2-T5, and Tier 5 cannot be tested inside this repo at all.",
+  "\u00a715 line 1191 NETD bench formula NETD = dT*sigma_noise/dDN implicitly assumes a linear DN(T) over dT; \u00a79.4 line 669 defines it via the derivative. Consistent only if dT is small (few K) \u2014 the bench must state dT and check linearity (VAL-12 does)."
+ ]
+}

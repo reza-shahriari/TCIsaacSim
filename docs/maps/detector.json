@@ -1,0 +1,551 @@
+{
+ "area": "detector",
+ "existing_state": "Code: /home/hunter/irsim-scaffold/src/irsim/detector/__init__.py contains only the docstring `\"\"\"See docs/physics-model.md.\"\"\"` \u2014 no classes, functions, or submodules. No file anywhere in src/, tests/, or scripts/ references a detector (grep for 'detector|Detector' hits only two docstring mentions in src/irsim/radiometry/planck.py lines 71 and 90). The neighbouring packages the detector depends on are equally empty: src/irsim/optics/__init__.py, src/irsim/noise/__init__.py, src/irsim/config/__init__.py, src/irsim/isp/__init__.py, src/irsim/thermal/__init__.py are all the same one-line docstring; there is no `aperture_factor`, no pydantic sensor schema, no WeatherSeries. Radiometry primitives that exist and the detector can consume today: src/irsim/radiometry/constants.py (H_PLANCK, C_LIGHT, K_BOLTZMANN, Q_E, C1L, C1Q, C2, SIGMA_SB, WIEN_B, EXP_ARG_MAX, plausibility bounds) and src/irsim/radiometry/planck.py (`spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT` [ENERGY form only \u2014 there is no photon-form derivative], `fractional_exitance`, `band_radiance_tophat`; all float64, top-hat only, no R(\u03bb) quadrature, no LUT, no inverse). scripts/generate_luts.py is a stub that prints its plan and exits 1; its plan (lines 8-11) generates Lb, Lb_q, dLb_dT but NOT dLb_q_dT. Tests: tests/unit/test_planck.py (11 analytic Planck tests incl. `test_thermal_derivative_rises_with_temperature`, which asserts the 373 K/300 K in-band derivative ratio > 1.5 \u2014 the physical basis for NETD falling with T) and tests/unit/test_layering.py (AST scan of every src/irsim/**/*.py for omni/pxr/isaacsim/warp/carb imports \u2014 will automatically cover any new detector file). tests/conftest.py provides fixtures `rng` (default_rng(20260910)), `gbuffer_ramp` (256x256 float32 250-450 K ramp) and `gbuffer_uniform` (64x64 float32 300 K, documented 'for noise-decomposition tests'). tests/golden/, tests/integration/ contain only .gitkeep. Data: data/spectra/, data/lut/ contain only .gitkeep \u2014 no R(\u03bb) file exists, so `spectra/boson_vox.csv` referenced by the config is missing. Config: configs/sensors/flir_boson_640_lwir.yaml is the only sensor file; detector-relevant fields present: fpa.type=bolometer, width=640, height=512, pitch_um=12.0, fill_factor=0.90 (ESTIMATED), frame_rate_hz=60, bit_depth=16, thermal_time_constant_ms=10.0 (ESTIMATED), tcr_per_k=-0.021 (ESTIMATED); optics.f_number=1.0, transmittance=0.92, housing_temp_mode=coupled, cold_shield_efficiency=1.0 ('n/a for uncooled'); noise.netd_mk_at_300k=50.0. The YAML OMITS the four photon-detector keys (quantum_efficiency, well_capacity_e, integration_time_ms, dark_current_model) that \u00a712.2 shows as `null`; there is no photon/MWIR/SWIR sensor config at all. README.md status table row: `detector | \u2b1c not started | \u2014 |`. CHANGELOG.md has no detector entry. pyproject.toml: deps numpy>=1.24, scipy>=1.11, pydantic>=2.5, pyyaml; mypy --strict on src/irsim; ruff with N803/N806 ignored for physics names; pytest addopts deselect `isaac` and `gpu` markers. Environment on this machine: `irsim` is not installed and `pytest` is absent from every interpreter found (miniconda3 and /usr/bin), so `make install` has never been run here and the existing suite could not be executed to confirm it is green. Git: single commit 3b653b3 'Project Structure Created' on branch master; tree clean.",
+ "key_equations_and_data": [
+  "\u00a79.1 photon-detector signal: N_e = \u03b7\u00b7A_d\u00b7t_int\u00b7(\u03c0\u00b7\u03c4_opt/(4F\u00b2+1))\u00b7\u222bR(\u03bb)\u00b7L_q,sensor(\u03bb)d\u03bb + i_dark\u00b7t_int/q  [photoelectrons per frame; L_q from the PHOTON form of Planck, C1Q]",
+  "\u00a79.1 quantisation: DN = min(DN_max, floor((N_e + n_e)/N_well \u00b7 2^N_bits)), DN_max = 2^N_bits \u2212 1; must clip, never wrap or go negative",
+  "\u00a79.1 dark current Arrhenius: i_dark(T_FPA) \u221d T^{3/2}\u00b7exp(\u2212E_g/(2k_B T)); implement as i_dark(T) = i_ref\u00b7(T/T_ref)^{3/2}\u00b7exp(\u2212(E_g/2k_B)(1/T \u2212 1/T_ref)); dark electrons = i_dark\u00b7t_int/q; dark shot \u03c3\u00b2 = i_dark\u00b7t_int/q (\u00a710.1)",
+  "\u00a79.1 cold_shield_efficiency \u2208 [0,1] (config key lives under optics: in \u00a712.2 line 840): background flux from warm surroundings is set by the cold-shield f-number, not the lens; mismatch raises N_bg and degrades NETD. NO formula is given in the spec \u2014 must be defined by ADR",
+  "\u00a79.1 key parameters (must be config fields): \u03b7 (quantum_efficiency), N_well (well_capacity_e), i_dark(T_FPA) (dark_current_model), \u03c3_read (NOT in \u00a712.2 schema \u2014 must be added), t_int (integration_time_ms), N_bits (bit_depth)",
+  "\u00a79.2 bolometer membrane balance: C_th\u00b7d\u0394T/dt = \u03b1_abs\u00b7\u03a6(t) \u2212 G_th\u00b7\u0394T; \u03c4_th = C_th/G_th (config thermal_time_constant_ms, typical 8-12 ms); \u03a6 from the ENERGY form of Planck (W)",
+  "\u00a79.2 bolometer responsivity: R(f) = R_0/\u221a(1+(2\u03c0f\u00b7\u03c4_th)\u00b2), R_0 = \u03b1_abs\u00b7\u03b2\u00b7I_bias\u00b7R_0/G_th [V/W] (note R_0 appears on both sides: responsivity vs bolometer resistance), \u03b2 = (1/R)(dR/dT) = TCR \u2248 \u22120.02/K (config tcr_per_k = \u22120.021)",
+  "\u00a79.2 per-pixel exponential IIR across frames: S_n = S_{n\u22121} + (S_ideal_n \u2212 S_{n\u22121})\u00b7(1 \u2212 exp(\u2212\u0394t/\u03c4_th)); \u0394t = 1/frame_rate_hz; state S_{n\u22121} must persist across frames and be float32 or better",
+  "\u00a79.2 FPA-temperature coupling: gain(T_FPA), offset(T_FPA) as low-order polynomials; T_FPA driven by its own lumped thermal model from ambient plus power dissipation: C_FPA\u00b7dT_FPA/dt = P_diss \u2212 h_FPA\u00b7(T_FPA \u2212 T_amb)",
+  "\u00a79.3 figures of merit: responsivity R = V_out/\u03a6 [V/W]; NEP = V_n/R [W]; D* = \u221a(A_d\u00b7\u0394f)/NEP [cm\u00b7Hz^{1/2}\u00b7W^{-1}] (A_d in cm\u00b2 for this unit)",
+  "\u00a79.4 datasheet NETD form: NETD = 4F\u00b2\u00b7V_n/(R\u00b7A_d\u00b7L') = 4F\u00b2\u00b7NEP/(A_d\u00b7L') \u2014 uses the PARAXIAL 4F\u00b2 factor; keep only as a documented conversion, never as the implemented formula",
+  "\u00a79.4 photon-count NETD (the implemented form): NETD = \u03c3_N,total/(\u2202N_e/\u2202T), \u2202N_e/\u2202T = \u03b7\u00b7A_d\u00b7t_int\u00b7(\u03c0\u00b7\u03c4_opt/(4F\u00b2+1))\u00b7(\u2202L_q/\u2202T)_B; \u03c3\u00b2_N,total = N_e + \u03c3\u00b2_dark + \u03c3\u00b2_read + \u03c3\u00b2_1/f",
+  "\u00a79.4 anchoring workflow: (1) full chain with best estimates, (2) predict NETD at 300 K, (3) scale noise terms so predicted NETD = noise.netd_mk_at_300k, (4) structure physical, magnitude matched. Appendix A #7: NETD is anchored, not predicted",
+  "\u00a73.4 thermal derivative: \u2202B/\u2202T = B\u00b7(c\u2082/(\u03bbT\u00b2))\u00b7e^x/(e^x\u22121); in-band (\u2202L/\u2202T)_B = \u222bR(\u03bb)\u2202B/\u2202T d\u03bb tabulated alongside L_B \u2014 needed in BOTH energy form (bolometer) and photon form (photon detector). Known behaviour: NETD 39 mK at ambient \u2192 23 mK at 100 \u00b0C [R9], ratio \u2248 0.59",
+  "\u00a73.2(b) band LUTs consumed by the detector: Lb(T), Lb_q(T), dLb_dT(T) [and dLb_q_dT(T), missing from the plan] over 200-1000 K at 0.05 K, float32, per band, with config hash sidecar",
+  "\u00a78.1 irradiance at FPA: E_FPA = \u03c0\u00b7L_B\u00b7\u03c4_opt/(4F\u00b2+1)\u00b7cos\u2074\u03b8; \u03a6 = E_FPA\u00b7A_d (photon rate when L_q,B is used). Aperture factor \u03c0/(4F\u00b2+1) defined ONCE in irsim.optics (CLAUDE.md non-negotiable #5); at F/1.0 it is \u03c0/5 = 0.6283 vs paraxial \u03c0/4 (20% error)",
+  "\u00a78.2 optics self-emission reaching the pixel: \u03a6_self \u2248 A_d\u00b7\u03a9_eff\u00b7(1\u2212\u03c4_opt)\u00b7L_B(T_housing), \u03a9_eff = \u03c0/(4F\u00b2+1) \u2014 enters the detector as an additive flux term; origin of shutterless drift",
+  "\u00a72 master equation: DN_ij = Q[g_ij\u00b7S(\u03a6_ij) + o_ij + n_ij]; S is the detector transfer (photoelectrons or bolometer response), Q quantisation; A_d = detector active area [m\u00b2] \u2014 implied A_d = (pitch_um\u00b71e-6)\u00b2\u00b7fill_factor = 1.296e-10 m\u00b2 for the Boson (not stated explicitly anywhere)",
+  "\u00a710.1 detector-originating noise terms: photon shot \u03c3=\u221aN_e (Poisson), dark shot \u03c3=\u221a(i_d\u00b7t_int/q), Johnson \u03c3=\u221a(4k_B\u00b7T\u00b7R\u00b7\u0394f) (bolometer, dominant), temperature fluctuation \u03c3=\u221a(4k_B\u00b7T\u00b2\u00b7G_th\u00b7\u0394f) (bolometer physical floor), read/ROIC constant Gaussian, 1/f pink",
+  "\u00a712.2 config fields owned/consumed by this area: fpa.type (bolometer|photon), fpa.width, fpa.height, fpa.pitch_um, fpa.fill_factor, fpa.frame_rate_hz, fpa.bit_depth, fpa.thermal_time_constant_ms, fpa.tcr_per_k, fpa.quantum_efficiency, fpa.well_capacity_e, fpa.integration_time_ms, fpa.dark_current_model (shape undefined \u2014 null placeholder), optics.f_number, optics.transmittance, optics.cold_shield_efficiency, optics.housing_temp_mode, noise.netd_mk_at_300k; outputs.dn_16",
+  "\u00a716.1 Boson 640 reference values: VOx, 640x512, 12 \u00b5m, NETD <60/<50/<40 mK by grade, 7.5-13.5 \u00b5m, 60 Hz, \u03c4_th 8-12 ms, TCR \u2248 \u22122 %/K, operating \u221240\u2026+80 \u00b0C",
+  "\u00a716.3 constants (already in irsim.radiometry.constants): q = 1.602176634e-19 C (Q_E), k_B = 1.380649e-23 J/K (K_BOLTZMANN); new constants needed for dark current: band-gap energies E_g per material (InSb \u2248 0.23 eV, InGaAs \u2248 0.75 eV, MCT composition-dependent) with sources \u2014 must be added to constants.py, not inlined",
+  "\u00a713.4 SPG#4 detector stage: 'bolometer IIR (\u03c4_th) or photon \u2192 e\u207b \u2192 well \u2192 ADC', output DN_ideal = S(\u03a6); \u00a713.3 MotionVectors AOV listed for 'motion MTF, bolometer smear' (fp16 ok); \u00a713.2 rtx.frameId for reproducible per-frame seeding",
+  "\u00a715 Tier 2 bench tests: SITF (DN vs T for 10 blackbodies, smooth, matches measured curve); NETD = \u0394T\u00b7\u03c3_noise/\u0394DN from two blackbodies a few K apart, within 10% of datasheet, and must FALL with scene temperature; 3D noise decomposition of 100+ frames of a uniform blackbody",
+  "sensor-noise-chain skill interface: Detector.response(band_power_or_photons, dt) -> counts, two implementations (PhotonDetector, MicrobolometerDetector); seed all noise deterministically from (frame_id, sensor_id); tests: NETD anchor within 10%, NETD-vs-T slope negative, bolometer smear analytic trailing profile, determinism bit-identical, well saturation clips at 2^bits\u22121"
+ ],
+ "work_items": [
+  {
+   "id": "DET-01",
+   "title": "Detector parameter model: fpa block schema, derived A_d, photon/bolometer discriminated validation",
+   "spec_refs": [
+    "\u00a712.2",
+    "\u00a79.1",
+    "\u00a79.2",
+    "\u00a716.1",
+    "\u00a72 (A_d)"
+   ],
+   "description": "Create irsim/detector/params.py: a typed `FpaParams` (pydantic or frozen dataclass) mirroring \u00a712.2 `fpa:` plus the \u00a79.1 parameters the schema omits (read_noise_e, dark current model {i_ref_a_per_pixel, t_ref_k, band_gap_ev}, bolometer alpha_abs, g_th_w_per_k or c_th, and FPA thermal-model constants). Discriminate on fpa.type: photon requires quantum_efficiency, well_capacity_e, integration_time_ms (\u2264 1/frame_rate_hz), read noise; bolometer requires thermal_time_constant_ms, tcr_per_k. Derive `active_area_m2 = (pitch_um\u00b71e-6)\u00b2\u00b7fill_factor`, `frame_dt_s = 1/frame_rate_hz`, `dn_max = 2**bit_depth \u2212 1`. Load from the sensor YAML via the config area's SensorConfig when it exists; until then parse the `fpa:` sub-dict directly. Decide (and document in the loader docstring) that R(\u03bb) is peak-normalised and \u03b7 is a separate scalar, never folded into R(\u03bb) \u2014 assert it is applied exactly once.",
+   "depends_on": [
+    "config: pydantic SensorConfig for configs/sensors/*.yaml (\u00a712.2) \u2014 can be co-developed; DET-01 owns only the fpa sub-model"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known-answer: loading configs/sensors/flir_boson_640_lwir.yaml gives active_area_m2 == 1.296e-10 m\u00b2 to 1e-12 relative and frame_dt_s == 16.6667 ms",
+    "fpa.type=photon with quantum_efficiency missing, or integration_time_ms > 1000/frame_rate_hz, raises ValueError (a silently-defaulted t_int is a factor-of-N signal error)",
+    "bit_depth outside [8,16] or fill_factor outside (0,1] raises; dn_max == 65535 for bit_depth 16",
+    "The Boson YAML (which omits the four photon `null` keys) loads without error \u2014 guards against the \u00a712.2-vs-YAML mismatch"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "DET-02",
+   "title": "Ideal photon-detector transfer: band photon radiance \u2192 photoelectrons \u2192 clipped DN",
+   "spec_refs": [
+    "\u00a79.1",
+    "\u00a78.1",
+    "\u00a72",
+    "\u00a73.1 photon form"
+   ],
+   "description": "irsim/detector/photon.py: `photoelectrons(Lb_q_sensor, params, optics) -> N_e` implementing N_e = \u03b7\u00b7A_d\u00b7t_int\u00b7aperture_factor(F)\u00b7\u03c4_opt\u00b7Lb_q + dark electrons (dark term from DET-03; zero until then), where aperture_factor is imported from irsim.optics (never written by hand). `electrons_to_dn(N_e, params) -> uint16` implementing DN = min(2^bits\u22121, floor(N_e/N_well\u00b72^bits)), clipped at 0. Reference NumPy implementation, float64 internally, asserts input radiance dtype is float32 or float64 and output DN dtype is uint16. Input is band-integrated photon radiance at the sensor (already through atmosphere and optics stages), shape (H,W).",
+   "depends_on": [
+    "optics: aperture_factor(F) = \u03c0/(4F\u00b2+1) defined once in irsim.optics (non-negotiable #5)",
+    "radiometry: band photon radiance Lb_q(T) via LUT or quadrature against R(\u03bb) (\u00a73.2b)",
+    "DET-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Independent implementation: for a 300 K blackbody in 3-5 \u00b5m (top-hat R), \u03b7=0.7, F/2, \u03c4_opt=0.9, 15 \u00b5m pitch, fill 1.0, t_int=5 ms, N_e from the function equals a test-local trapezoid of spectral_photon_radiance(\u03bb,300)\u00b7(\u03c0/17)\u00b70.9\u00b70.7\u00b7A_d\u00b7t_int to 1e-4 relative (LUT path) / 1e-9 (quadrature path)",
+    "Aperture-factor identity: N_e(F=1)/N_e(F=2) == 17/5 = 3.4 to 1e-9 relative (a hand-written 4F\u00b2 gives 4.0)",
+    "Saturation: a 1500 K source yields DN == 2^bits\u22121 exactly, DN dtype uint16, no wrap, no negative value for zero radiance; DN is monotone non-decreasing in N_e over a 200-1000 K sweep",
+    "Quantisation: DN(N_e = N_well/2) == 2^(bits\u22121) exactly; DN(N_e = N_well\u00b7(1\u22121e\u22129)) == 2^bits\u22121",
+    "Order-of-magnitude known-answer: MWIR 300 K scene at F/2, 5 ms, 15 \u00b5m InSb-like \u03b7=0.8 gives N_e in [1e6, 1e8] e\u207b (catches per-\u00b5m/per-m and per-sr errors, factor 1e6)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-03",
+   "title": "Dark current Arrhenius model with FPA-temperature dependence and dark shot noise",
+   "spec_refs": [
+    "\u00a79.1",
+    "\u00a710.1",
+    "\u00a716.3"
+   ],
+   "description": "irsim/detector/dark_current.py: `dark_current_a(T_fpa, model) = i_ref\u00b7(T/T_ref)^{3/2}\u00b7exp(\u2212(E_g/(2k_B))\u00b7(1/T \u2212 1/T_ref))` using K_BOLTZMANN and Q_E from constants; add band-gap constants (InSb, InGaAs, MCT-as-parameter) to irsim.radiometry.constants with sources. `dark_electrons(T_fpa, t_int)` = i\u00b7t_int/q, and \u03c3_dark = \u221a(dark electrons). Optional cooldown transient: T_fpa(t) = T_amb + (T_set \u2212 T_amb)\u00b7\u2026 exponential approach with configurable \u03c4_cool \u2014 behind a flag, default off (see ADR list).",
+   "depends_on": [
+    "DET-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Identity: dark_current_a(T_ref) == i_ref exactly; dark_current_a(T1)/dark_current_a(T2) equals the test-local closed-form ratio (T1/T2)^1.5\u00b7exp(\u2212E_g/(2k_B)(1/T1\u22121/T2)) to 1e-12 relative",
+    "Known trend: InSb (E_g=0.23 eV) from 77 K to 150 K increases i_dark by more than 1e3\u00d7 (analytic value \u2248 (150/77)^1.5\u00b7exp(0.23/(2\u00b78.617e-5)\u00b7(1/77\u22121/150)) \u2014 assert ratio matches to 1e-9 relative, and > 1e3)",
+    "Dark shot: variance of 1e5 Poisson draws of dark electrons equals the mean to 3% (Poisson, not Gaussian-with-fixed-\u03c3)",
+    "Units: passing T in Celsius (e.g. \u2212196) raises ValueError"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "DET-04",
+   "title": "Cold-shield efficiency background flux term",
+   "spec_refs": [
+    "\u00a79.1",
+    "\u00a78.2",
+    "\u00a712.2 optics.cold_shield_efficiency"
+   ],
+   "description": "irsim/detector/cold_shield.py: model the extra background photon flux admitted when the cold stop does not match the lens cone. Proposed (ADR required, formula absent from spec): the admitted solid angle is \u03a9_admit = \u03a9_lens/\u03b7_cs with \u03a9_lens = \u03c0/(4F\u00b2+1); background N_bg = \u03b7\u00b7A_d\u00b7t_int\u00b7(\u03a9_admit \u2212 \u03a9_lens)\u00b7Lb_q(T_housing); \u03b7_cs = 1 gives exactly zero. Adds to N_e and to shot variance. T_housing comes from the optics area's housing temperature model (housing_temp_mode).",
+   "depends_on": [
+    "DET-02",
+    "optics: housing temperature (housing_temp_mode fixed|ambient|coupled) and self-emission \u03a6_self (\u00a78.2)",
+    "radiometry: Lb_q(T) photon band LUT"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Identity: cold_shield_efficiency = 1.0 gives N_bg == 0 exactly and NETD unchanged to 1e-12 relative",
+    "Monotonicity: NETD(\u03b7_cs) is strictly increasing as \u03b7_cs decreases over {1.0, 0.9, 0.7, 0.5}; N_bg at \u03b7_cs=0.5 equals the test-local closed form \u03b7\u00b7A_d\u00b7t_int\u00b7\u03a9_lens\u00b7Lb_q(T_housing) to 1e-9 relative",
+    "Physical scale: for an F/2 MWIR core at T_housing = 300 K, \u03b7_cs = 0.8 raises shot-noise-limited NETD by a computable factor \u221a((N_e+N_bg)/N_e) \u2014 assert to 1e-6 relative"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "DET-05",
+   "title": "Ideal microbolometer static transfer: absorbed power \u2192 membrane \u0394T \u2192 resistance \u2192 signal",
+   "spec_refs": [
+    "\u00a79.2",
+    "\u00a78.1",
+    "\u00a72",
+    "\u00a73.1 energy form"
+   ],
+   "description": "irsim/detector/bolometer.py: `absorbed_power_w(Lb_sensor, params, optics) = \u03b1_abs\u00b7A_d\u00b7aperture_factor(F)\u00b7\u03c4_opt\u00b7Lb` (energy form, W) [+ \u03a6_self from optics]; steady-state `membrane_delta_t = \u03b1_abs\u00b7\u03a6/G_th`; fractional resistance change `\u0394R/R = \u03b2\u00b7\u0394T`; static responsivity R_0 = \u03b1_abs\u00b7\u03b2\u00b7I_bias\u00b7R_bolo/G_th [V/W]. Map to DN through a single documented gain path (V/W \u00d7 ADC volts-per-DN, or an effective DN-per-W gain sized so the configured scene range spans the ADC \u2014 ADR). Reference float64 NumPy; asserts float32-or-better inputs; returns a float32 `signal` map plus uint16 DN via a shared quantiser with DET-02.",
+   "depends_on": [
+    "optics: aperture_factor (non-negotiable #5)",
+    "radiometry: energy-form band LUT Lb(T) against R(\u03bb)",
+    "DET-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Linearity: DN vs \u03a6 is linear to 1e-9 relative below saturation (a bolometer is linear in absorbed power; a photon-form or T-linear implementation is not)",
+    "Independent implementation: \u03a6 for a 300 K blackbody, 7.5-13.5 \u00b5m top-hat, F/1, \u03c4=0.92, 12 \u00b5m/0.90 fill equals test-local trapezoid of spectral_radiance \u00d7 (\u03c0/5) \u00d7 0.92 \u00d7 1.296e-10 to 1e-4 relative; magnitude \u2248 1e-8 W (catches per-\u00b5m/\u03c0 errors)",
+    "Steady-state identity: \u03b1_abs\u00b7\u03a6/G_th equals \u0394T of the ODE C\u00b7d\u0394T/dt = \u03b1\u00b7\u03a6 \u2212 G\u00b7\u0394T integrated to convergence (RK4, 20 \u03c4) to 1e-9 relative",
+    "Responsivity known-answer: \u03b1=0.8, \u03b2=\u22120.021/K, I_bias=50 \u00b5A, R=100 k\u03a9, G_th=1e-7 W/K gives R_0 = \u22128.4e5 V/W to 1e-12 relative; sign follows sign of tcr_per_k",
+    "Energy-vs-photon form guard: feeding Lb_q (photon) instead of Lb (energy) changes the result by ~1e20, so assert an input-magnitude plausibility check raises"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-06",
+   "title": "Bolometer thermal time constant: stateful per-pixel exponential IIR across frames",
+   "spec_refs": [
+    "\u00a79.2 (IIR)",
+    "\u00a79.2 R(f)",
+    "\u00a715 Tier 3 'fast lateral motion smears edges in LWIR'"
+   ],
+   "description": "irsim/detector/bolometer_dynamics.py: `class BolometerLowPass` holding float32 state S_{n\u22121} (H,W); `step(S_ideal, dt) -> S_n` implementing S_n = S_{n\u22121} + (S_ideal \u2212 S_{n\u22121})\u00b7(1 \u2212 exp(\u2212dt/\u03c4_th)); `reset(S0)`; first frame initialises state to S_ideal (documented) \u2014 applied in absorbed-power/signal space BEFORE noise and quantisation (ADR). Also expose `responsivity_rolloff(f, tau)` = 1/\u221a(1+(2\u03c0f\u03c4)\u00b2) for tests and MTF_elec use.",
+   "depends_on": [
+    "DET-05"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Analytic step response: after k frames at \u0394t=16.667 ms, \u03c4=10 ms, (S_k \u2212 S_0)/(S_ideal \u2212 S_0) == 1 \u2212 exp(\u2212k\u00b71.6667) to 1e-6 relative for k = 1..10 (k=1 \u2192 0.8111)",
+    "Independent implementation: IIR output for a piecewise-constant random input sequence matches RK4 integration of C\u00b7d\u0394T/dt = \u03b1\u00b7\u03a6 \u2212 G\u00b7\u0394T (with C/G = \u03c4) sampled at frame times to 1e-4 relative over 100 frames",
+    "Moving step edge: an edge translating at v px/frame produces a trailing profile whose decay length equals v\u00b7\u03c4/\u0394t pixels; fit of the exponential tail agrees with \u03c4 to 2% (analytic trailing profile from the sensor-noise-chain skill)",
+    "Limits: \u03c4 \u2192 1e-9 s reduces to identity (max abs diff < 1e-6 of the signal); a static scene converges to S_ideal within 1e-6 after 20 \u03c4",
+    "Phenomenology automation: the same moving edge through the photon detector path (no IIR) has zero trailing tail (edge width unchanged) while the bolometer path widens it \u2014 asserts \u00a715 Tier 3 'smears in LWIR but not cooled MWIR'",
+    "dtype: state is float32 and stays float32 after 1000 steps; float16 input raises"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-07",
+   "title": "FPA temperature: lumped thermal node plus gain(T_FPA)/offset(T_FPA) polynomials",
+   "spec_refs": [
+    "\u00a79.2 FPA temperature coupling",
+    "\u00a76.4 (lumped node form)",
+    "\u00a78.2 (housing drift analogue)",
+    "\u00a711.2 (NUC consumes T_FPA)"
+   ],
+   "description": "irsim/detector/fpa_thermal.py: `FpaThermalModel` with C_fpa\u00b7dT/dt = P_diss \u2212 h\u00b7(T \u2212 T_amb), explicit RK2 at the thermal tick (decoupled from frame rate, interpolated), T_amb taken from the shared WeatherSeries (or an injected callable in tests), plus `gain_of_t(T_fpa)` and `offset_of_t(T_fpa)` low-order polynomials normalised to gain=1, offset=0 at T_cal. The bolometer signal is multiplied by gain and offset added BEFORE noise. Publishes T_fpa for the ISP/NUC residual model (which owns the calibrated-at-T_cal residual). Photon detectors use T_fpa for dark current (DET-03).",
+   "depends_on": [
+    "DET-05",
+    "thermal: WeatherSeries air temperature (non-negotiable #6 \u2014 one weather object)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Analytic steady state: T_fpa(\u221e) == T_amb + P_diss/h to 1 mK after 20 time constants; time constant C/h recovered from the 63.2% crossing to 1%",
+    "Identity: gain_of_t(T_cal) == 1.0 and offset_of_t(T_cal) == 0.0 exactly; for a linear coefficient g1 the response at T_cal+10 K equals (1+10\u00b7g1)\u00b7S to 1e-12 relative",
+    "Spec behaviour: a 5 K ambient rise produces a nonzero uniform offset shift in a static-scene DN image (shutterless drift), and zero shift when T_fpa is pinned (TEC-stabilised mode)",
+    "Energy conservation of the node over one RK2 step: P_in\u00b7\u0394t \u2212 h(T\u2212T_amb)\u0394t == C\u00b7\u0394T to 1e-6 relative",
+    "Coupling guard: constructing the model with an ambient source that is not the shared WeatherSeries/injected provider raises TypeError"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-08",
+   "title": "Datasheet figures of merit: responsivity, NEP, D*, and the two NETD forms as documented conversions",
+   "spec_refs": [
+    "\u00a79.3",
+    "\u00a79.4 datasheet form",
+    "\u00a78.1",
+    "\u00a72 convention warning"
+   ],
+   "description": "irsim/detector/figures_of_merit.py: `responsivity_v_per_w`, `nep_w(V_n, R)`, `d_star(A_d_m2, delta_f_hz, nep_w)` returning cm\u00b7Hz^\u00bd/W with explicit m\u00b2\u2192cm\u00b2 conversion, and `netd_datasheet_form(F, NEP, A_d, L_prime)` = 4F\u00b2\u00b7NEP/(A_d\u00b7L') tagged in the docstring as the paraxial form that differs from the +1 form by (4F\u00b2+1)/(4F\u00b2) \u2014 provided only for comparing against published numbers, never used by the noise chain.",
+   "depends_on": [
+    "DET-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known-answer: NEP = 1e-12 W, A_d = (12 \u00b5m)\u00b2 = 1.44e-6 cm\u00b2, \u0394f = 30 Hz gives D* = 6.573e9 cm\u00b7Hz^\u00bd/W to 1e-9 relative (a missing m\u00b2\u2192cm\u00b2 conversion is a factor 1e2)",
+    "Identity: NEP == V_n/R and D*\u00b7NEP/\u221a\u0394f == \u221aA_d [cm] to 1e-12 relative",
+    "Convention identity: netd_datasheet_form / netd_photon_count_form for the same idealised read-limited system equals (4F\u00b2+1)/(4F\u00b2) = 1.25 at F/1.0 to 1e-9 relative \u2014 documents that the two spec forms disagree and pins which one the chain uses"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "DET-09",
+   "title": "NETD predictor (photon-count form) for both detector classes, including \u2202N_e/\u2202T from the tabulated thermal derivative",
+   "spec_refs": [
+    "\u00a79.4 photon-count form",
+    "\u00a73.4",
+    "\u00a710.1",
+    "\u00a79.2"
+   ],
+   "description": "irsim/detector/netd.py: `dNe_dT(T, params, optics, band)` = \u03b7\u00b7A_d\u00b7t_int\u00b7aperture_factor\u00b7\u03c4_opt\u00b7(\u2202L_q/\u2202T)_B (photon) and `dS_dT` = responsivity_gain\u00b7\u03b1_abs\u00b7A_d\u00b7aperture_factor\u00b7\u03c4_opt\u00b7(\u2202L/\u2202T)_B (bolometer, energy form); `sigma_total(T)` with \u03c3\u00b2 = N_e(T) + \u03c3\u00b2_dark + \u03c3\u00b2_read + \u03c3\u00b2_1/f for photon, and \u03c3\u00b2 = \u03c3\u00b2_johnson + \u03c3\u00b2_tempfluct + \u03c3\u00b2_read (+ 1/f) with \u0394f = 1/(2\u00b7\u03c4_th) or frame-rate-based (ADR) for bolometer; `predict_netd_k(T)` = \u03c3_total/(\u2202signal/\u2202T). Requires the PHOTON-form band derivative dLb_q_dT, which the radiometry area must add (planck.py has only the energy form; generate_luts.py's plan omits it).",
+   "depends_on": [
+    "radiometry: band LUTs Lb, Lb_q, dLb_dT AND dLb_q_dT (photon-form thermal derivative \u2014 currently missing) with config hash",
+    "DET-02",
+    "DET-03",
+    "DET-05",
+    "DET-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Derivative identity: dNe_dT(T) vs central finite difference of photoelectrons(Lb_q(T\u00b11 mK)) agrees to 1e-5 relative at 250, 300, 373, 500 K",
+    "NETD falls with T: predict_netd_k(373)/predict_netd_k(300) < 1 for both classes; for a scene-independent-noise bolometer the ratio equals dLb_dT(300)/dLb_dT(373) to 1e-9 relative, and for the 7.5-13.5 \u00b5m band that ratio is within 15% of the published 23/39 = 0.59 [R9]",
+    "Shot-limited scaling: with \u03c3_read = \u03c3_dark = 0, predict_netd_k == \u221aN_e/dNe_dT to 1e-12 relative, and doubling t_int reduces NETD by exactly 1/\u221a2",
+    "Aperture convention: read-noise-limited NETD(F=2)/NETD(F=1) == 17/5 = 3.4 to 1e-9 (4F\u00b2 would give 4.0); shot-limited ratio == \u221a(17/5) = 1.844",
+    "Units: NETD for the Boson-like config with unscaled best-estimate parameters is finite, positive, in [5, 500] mK (catches W vs mW, K vs mK)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-10",
+   "title": "NETD anchoring: scale Gaussian noise terms so predicted NETD at 300 K matches noise.netd_mk_at_300k",
+   "spec_refs": [
+    "\u00a79.4 workflow steps 1-4",
+    "\u00a712.2 noise.netd_mk_at_300k",
+    "\u00a716.1 NETD grades",
+    "Appendix A #7"
+   ],
+   "description": "irsim/detector/netd.py: `anchor_noise(params, netd_target_k, T_ref=300 K) -> NoiseBudget` solving for the scale k on the scene-independent Gaussian terms (read/Johnson/1/f) such that \u03c3_total(T_ref)/(\u2202S/\u2202T)(T_ref) == target; Poisson shot terms are never scaled (ADR). Raises with a clear message if shot noise alone already exceeds the target (the config is physically unattainable). Exposes the anchored per-pixel temporal sigma map \u03c3_TVH(T) (signal-dependent) in electron/signal units for the noise area to distribute across the 3D components by the configured ratios.",
+   "depends_on": [
+    "DET-09"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Identity: after anchoring, predict_netd_k(300) == netd_mk_at_300k/1000 to 1e-9 relative for the Boson config (50 mK) and for a photon MWIR config",
+    "Structure preserved: anchoring changes only the Gaussian terms; shot variance at 300 K before and after is bit-identical; the anchored NETD at 373 K is lower than at 300 K (slope negative)",
+    "Unattainable target: a photon config whose shot-noise NETD is 30 mK with target 20 mK raises ValueError rather than producing a negative variance",
+    "Grade sweep known-answer: editing only netd_mk_at_300k to 60/50/40 mK scales \u03c3_read by the ratio predicted analytically (\u221a((NETD\u00b2\u00b7(\u2202S/\u2202T)\u00b2) \u2212 \u03c3\u00b2_shot)) to 1e-9 relative"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-11",
+   "title": "PhotonDetector.response(): full noisy frame path with deterministic seeding, SITF and two-blackbody NETD bench",
+   "spec_refs": [
+    "\u00a79.1",
+    "\u00a79.4",
+    "\u00a710.1",
+    "\u00a715 Tier 2 (SITF, NETD)",
+    "CLAUDE.md #2, #3"
+   ],
+   "description": "irsim/detector/photon.py: `PhotonDetector(params, optics, band, noise_budget).response(Lb_q_frame, frame_id, sensor_id) -> DetectorFrame(electrons: float32, dn: uint16, sigma_e: float32)`. Adds Poisson shot (signal+dark+background) and Gaussian read noise IN ELECTRON SPACE, then quantises; RNG = np.random.default_rng(SeedSequence([sensor_id, frame_id])). Uniform interface shared with DET-12 (a `Detector` Protocol). The per-pixel TVH term lives here; the correlated 3D terms are applied by the noise area on the returned sigma map (ADR on boundary).",
+   "depends_on": [
+    "DET-02",
+    "DET-03",
+    "DET-04",
+    "DET-10",
+    "radiometry: Lb_q LUT"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Tier 2 NETD bench: uniform 64x64 fields at 300 K and 303 K, 8 frames each, NETD = \u0394T\u00b7\u03c3/\u0394DN (\u03c3 from the temporal std of the 300 K stack) equals the anchored netd_mk_at_300k within 10%; same measurement at 373 K vs 376 K gives a lower NETD (slope assertion) \u2014 fails if noise were added in Kelvin",
+    "Poisson statistics: with read noise zero, temporal variance of electrons at a uniform 300 K equals the mean electrons to 3% over 65k samples",
+    "SITF: mean DN over 10 blackbody temperatures 250-450 K is strictly increasing and smooth (max |second difference| below 3\u03c3 of the mean estimate); the noiseless DN curve equals electrons_to_dn(photoelectrons(Lb_q(T))) exactly",
+    "Determinism: same (frame_id, sensor_id) \u2192 bit-identical dn and electrons across two instances; different frame_id \u2192 different noise",
+    "Saturation with noise: a 1500 K target gives dn == 65535 everywhere, no wrap, electrons \u2265 0",
+    "dtype gates: float16 radiance input raises; outputs are float32/uint16 (non-negotiable #2)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-12",
+   "title": "MicrobolometerDetector.response(): full LWIR frame path (static transfer + IIR + FPA coupling + anchored Johnson/read noise) with SITF/NETD bench and golden fixture",
+   "spec_refs": [
+    "\u00a79.2",
+    "\u00a79.4",
+    "\u00a710.1 (Johnson, temperature fluctuation)",
+    "\u00a715 Tier 2",
+    "\u00a716.1",
+    "CLAUDE.md #2, #3"
+   ],
+   "description": "irsim/detector/bolometer.py: `MicrobolometerDetector(params, optics, band, noise_budget, fpa_thermal).response(Lb_frame, frame_id, sensor_id, dt) -> DetectorFrame`. Order: \u03a6 (energy) \u2192 gain(T_FPA)\u00b7S + offset(T_FPA) \u2192 BolometerLowPass.step \u2192 add anchored Gaussian noise in signal space \u2192 quantise to uint16. Add a golden regression fixture tests/golden/boson_sitf.npz (DN vs T, config hash sidecar) generated via make golden-update. Update README status row for `detector` to T2 and CHANGELOG.",
+   "depends_on": [
+    "DET-05",
+    "DET-06",
+    "DET-07",
+    "DET-10",
+    "radiometry: Lb and dLb_dT LUTs for the configured R(\u03bb) (needs data/spectra/boson_vox.csv or a top-hat fallback)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Tier 2 NETD bench on the Boson config: two-blackbody NETD at 300 K within 10% of 50 mK; at 373 K within 15% of 50\u00b7(dLb_dT(300)/dLb_dT(373)) mK and strictly lower than at 300 K",
+    "Noise domain: the temporal noise std in DN is scene-independent while NETD in K falls with T \u2014 the pair of assertions distinguishes signal-space noise from Kelvin-space noise",
+    "SITF: noiseless DN(T) for 10 blackbodies is strictly increasing and linear in Lb(T) to 1e-6 relative (bolometer linear in power); golden fixture matches to 1 DN with the config hash checked",
+    "Motion smear end-to-end: a step edge moving 4 px/frame through 10 frames produces the DET-06 analytic trailing profile within 2% in DN space",
+    "Determinism bit-identical for same seed; float32 state and float32/uint16 outputs asserted; float16 anywhere raises"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "DET-13",
+   "title": "Warp detector stage (pipeline stage 4) in irsim_isaac with CPU-reference companion test",
+   "spec_refs": [
+    "\u00a713.4 SPG#4",
+    "\u00a713.6 Path B",
+    "\u00a713.3 (MotionVectors)",
+    "isaac-sim-spg skill 'Verification discipline'"
+   ],
+   "description": "src/irsim_isaac/pipeline/detector_stage.py: Warp kernels reproducing DET-02/05/06 transfer (photon \u2192 e\u207b \u2192 well \u2192 ADC, or bolometer static + IIR with a persistent warp array as S_{n\u22121}) on the stage-3 optics output; per-frame seed from frame id. Companion test runs a synthetic G-buffer (gbuffer_ramp) through both the Warp kernel and irsim's CPU reference. Marked @pytest.mark.gpu (needs warp, not Isaac Sim).",
+   "depends_on": [
+    "DET-11",
+    "DET-12",
+    "isaac: Warp pipeline stages 1-3 (band_radiance, atmosphere, optics) producing \u03a6 or Lb_sensor as warp arrays",
+    "isaac: temperature encode/decode round trip < 10 mK (build-order step 2)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Kernel vs CPU reference: noiseless DN and electrons/signal agree to 1e-4 relative (fp32) \u2014 5 mK apparent-temperature equivalent \u2014 over the 250-450 K ramp",
+    "IIR state persistence: 10 consecutive kernel launches on a step input reproduce the CPU BolometerLowPass sequence to 1e-5 relative (fails if the state buffer is re-initialised per launch)",
+    "Noise statistics (not bit-identity \u2014 different RNG streams): temporal variance of the GPU frame stack equals the CPU stack's within 5% at 300 K"
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "DET-14",
+   "title": "SPG detector.cu port with cross-frame state verification experiment",
+   "spec_refs": [
+    "\u00a713.2",
+    "\u00a713.4 SPG#4",
+    "\u00a713.5",
+    "\u00a79.2 IIR"
+   ],
+   "description": "src/irsim_isaac/spg/detector.cu + .cu.lua + .usda implementing the same transfer as DET-13 inside omni.rtx.spg. Preceded by a minimal experiment (a counter kernel writing to a buffer that must survive between frames, read back with FileCapture) that establishes whether SPG can hold the IIR state S_{n\u22121} across frames; if it cannot, the bolometer IIR stays in the Warp path and the ADR records why. Integration test marked @pytest.mark.isaac.",
+   "depends_on": [
+    "DET-13",
+    "isaac: SPG band_radiance/atmosphere/optics stages wired through RenderVars",
+    "isaac: FileCapture of float32 AOVs"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Isaac integration: a rendered 300 K/305 K blackbody pair through the SPG chain gives DN matching the CPU reference to 1e-4 relative (noiseless) and IIR step response matching 1 \u2212 exp(\u2212k\u00b7\u0394t/\u03c4) to 1e-4 over 10 frames (fails if state does not persist)",
+    "Precision: DN from a 300.000 K vs 300.050 K blackbody differ by the CPU-predicted \u0394DN \u00b1 1 DN (fails if any fp16 buffer sits in the stage 3\u21924 path)"
+   ],
+   "engine_free": false,
+   "size": "L"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Which NETD form is implemented and how the paraxial datasheet form is treated",
+   "why": "\u00a79.4 gives two forms that disagree by (4F\u00b2+1)/(4F\u00b2) = 25% at F/1; CLAUDE.md #5 forbids 4F\u00b2. Comparing against published NETD numbers requires knowing which convention (and which reference temperature, cf. R27) a datasheet used. This choice fixes every noise magnitude in the simulator.",
+   "options": [
+    "Implement only the photon-count/+1 form; expose the 4F\u00b2 datasheet form as a labelled conversion helper for reading datasheets (recommended)",
+    "Implement both and let config choose",
+    "Implement the 4F\u00b2 form to match datasheets literally (violates non-negotiable #5)"
+   ]
+  },
+  {
+   "title": "NETD anchoring: which noise terms are scaled and what happens when the target is unattainable",
+   "why": "\u00a79.4 says 'scale the noise terms' without saying which; Poisson shot noise is physics and cannot be scaled without breaking Poisson statistics, while Gaussian read/Johnson/1/f terms are the unknowns. Appendix A #7 already commits to 'anchored, not predicted'.",
+   "options": [
+    "Scale only the scene-independent Gaussian terms; raise if shot noise alone exceeds the target",
+    "Scale every term by a common factor, including shot (simple but unphysical variance-vs-mean)",
+    "Scale read noise only and treat Johnson/1/f as fixed physical floors"
+   ]
+  },
+  {
+   "title": "Bolometer signal-transfer representation and ADC gain",
+   "why": "\u00a79.2 gives R_0 = \u03b1\u00b7\u03b2\u00b7I_bias\u00b7R/G_th in V/W but no ADC volts-per-DN or bias/ROIC parameters; a fully physical chain needs five unmeasured parameters, an effective DN-per-W gain needs one. Either choice changes what the config must author and how SITF is matched to a real core.",
+   "options": [
+    "Effective linear gain in DN per W sized so a configured scene range spans the ADC, with R_0 retained only as a reported figure of merit (L2, recommended)",
+    "Full physical chain V/W \u2192 ADC with I_bias, R_bolo, ADC range authored in config (L3)",
+    "Anchor gain from a measured SITF curve (L4, needs real data)"
+   ]
+  },
+  {
+   "title": "Cold-shield efficiency background-flux model",
+   "why": "\u00a79.1 mandates the parameter but gives no equation; the chosen solid-angle model determines how strongly NETD degrades with mismatch, which is precisely the trade-study output the knob exists for.",
+   "options": [
+    "\u03a9_admit = \u03a9_lens/\u03b7_cs with N_bg = \u03b7\u00b7A_d\u00b7t_int\u00b7(\u03a9_admit \u2212 \u03a9_lens)\u00b7Lb_q(T_housing)",
+    "Effective f-number F_cs authored directly, with \u03b7_cs derived",
+    "Background flux as a fixed fraction of scene flux (L1 approximation)"
+   ]
+  },
+  {
+   "title": "Detector/noise module boundary and the domain in which noise is added",
+   "why": "\u00a79.4 puts \u03c3\u00b2_total (shot+dark+read+1/f) in the detector, \u00a710 puts the 3D structure in noise, and \u00a713.4 SPG#5 adds noise after SPG#4 has already produced DN_ideal \u2014 i.e. after quantisation, contradicting \u00a79.1 where n_e is added before floor(). Shot noise is signal-dependent and must be generated pre-ADC in electron/signal space (non-negotiable #3).",
+   "options": [
+    "Detector generates per-pixel temporal (TVH) noise in electron/signal space and returns a sigma map; noise module applies the correlated VH/V/H/TV/TH/T terms in the same pre-quantisation domain; ISP quantises last",
+    "Detector returns noiseless signal plus sigma map; noise module generates all seven components pre-quantisation",
+    "Follow \u00a713.4 literally: quantise in stage 4, add all noise in DN in stage 5 (rejected: violates \u00a79.1 and #3 for shot noise)"
+   ]
+  },
+  {
+   "title": "Bolometer IIR placement and per-frame state ownership",
+   "why": "The IIR (\u00a79.2) needs S_{n\u22121} from the previous frame; where it sits (absorbed-power space before noise vs DN space after) changes whether temporal noise is low-passed too, and SPG's ability to persist a read-write buffer across frames is unverified.",
+   "options": [
+    "IIR on the ideal signal before noise (temporal noise stays white \u2014 matches the 3D-noise TVH model)",
+    "IIR after noise (temporal noise gets \u03c4_th-correlated, which is physically true for Johnson noise on the membrane but double-counts with the 3D model's temporal structure)",
+    "IIR in Warp (Path B) only, SPG path documented as stateless until the persistence experiment passes"
+   ]
+  },
+  {
+   "title": "Bolometer noise bandwidth and which physical floors are modelled",
+   "why": "\u00a79.4's photon-count form has no meaning for a bolometer (no \u03b7, t_int); \u00a710.1 gives Johnson \u221a(4kTR\u0394f) and temperature-fluctuation \u221a(4kT\u00b2G_th\u0394f) but \u0394f is undefined (1/(2\u03c4_th), frame-rate Nyquist, or ROIC integration). 1/f is listed but has no parameters anywhere.",
+   "options": [
+    "\u0394f = 1/(2\u00b7\u03c4_th), Johnson + temperature-fluctuation floors computed and reported, magnitude anchored; 1/f folded into the slowly-drifting VH term of the noise module (L2)",
+    "\u0394f from frame rate; single Gaussian term anchored (L1)",
+    "Explicit pink-noise generator per pixel with a 1/f knee frequency (L3)"
+   ]
+  },
+  {
+   "title": "Ownership split of FPA-temperature effects between detector (\u00a79.2 gain/offset polynomials) and NUC residual (\u00a711.2, config nuc.residual_gain_ppm_per_k / residual_offset_mk_per_k)",
+   "why": "Both sections describe response drift proportional to \u0394T_FPA; implementing both without a defined split double-counts shutterless drift, and the config only carries the NUC-side coefficients.",
+   "options": [
+    "Detector owns the physical gain(T_FPA)/offset(T_FPA) and the T_FPA node; NUC residual models only the calibrated-at-T_cal correction error using the nuc.* coefficients (recommended)",
+    "All T_FPA dependence lives in the NUC residual; detector gain is temperature-independent (simplest, loses the shutterless-drift physics)",
+    "Detector polynomials are the only model and nuc.residual_* are removed from the schema"
+   ]
+  },
+  {
+   "title": "Dark-current model schema and band-gap constants",
+   "why": "\u00a712.2 leaves dark_current_model as null; the Arrhenius law needs (i_ref, T_ref, E_g) per detector material, and E_g values are physical constants that CLAUDE.md requires to live in irsim.radiometry.constants with sources.",
+   "options": [
+    "{i_ref_a_per_pixel, t_ref_k, band_gap_ev} authored per sensor, E_g defaults per detector material in constants.py",
+    "Datasheet dark-current density (A/cm\u00b2) at T_ref plus material name; area from A_d",
+    "Skip dark current at L2 (document; fine for cooled MWIR at 77 K, wrong for warm InGaAs/TEC-less)"
+   ]
+  },
+  {
+   "title": "Photon-form thermal derivative added to the radiometry LUT set",
+   "why": "\u00a79.4 \u2202N_e/\u2202T requires (\u2202L_q/\u2202T)_B; planck.py has only the energy derivative and generate_luts.py's plan lists Lb, Lb_q, dLb_dT only. Adding a fourth table (dLb_q_dT) changes the LUT file set, the sidecar hash contents, and the 'a band is a data file' contract.",
+   "options": [
+    "Add dLb_q_dT to the LUT set and to scripts/generate_luts.py (recommended)",
+    "Derive photon derivative at runtime by finite difference of Lb_q (loses the <1e-5 relative derivative guarantee)",
+    "Approximate \u2202L_q/\u2202T = \u2202L/\u2202T\u00b7\u03bb_eff/(hc) with a band-effective wavelength (introduces a band-dependent bias)"
+   ]
+  },
+  {
+   "title": "Fidelity deliberately skipped at L2: cooldown transient, narcissus, cold-shield spectral structure, 1/f spectrum",
+   "why": "\u00a79.1 offers the cooldown transient as optional and \u00a71 places 'bolometer dynamics' at L3 while \u00a716.4 step 9 builds it; a written record of what is in/out of the L2 detector keeps README limitations honest.",
+   "options": [
+    "Skip cooldown/narcissus at L2, include bolometer IIR and FPA coupling (build order \u00a716.4 steps 4 and 9)",
+    "Include cooldown as a simple exponential T_FPA approach behind a flag",
+    "Defer all bolometer dynamics to L3 as the \u00a71 table implies"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "A_d is never defined explicitly: \u00a72 says 'detector active area', \u00a712.2 gives pitch_um and fill_factor separately, and R(\u03bb) is peak-normalised (ir-radiometry skill) \u2014 so fill factor could be counted in A_d, in R(\u03bb), or both.",
+   "how_to_verify": "Fix A_d = pitch\u00b2\u00b7fill_factor in DET-01, assert in the R(\u03bb) loader that max(R) == 1.0 (so absolute responsivity cannot hide there), and add a test that N_e with fill_factor=0.5 is exactly half of fill_factor=1.0."
+  },
+  {
+   "description": "\u00a79.1 says \u03b7 may be 'folded into R(\u03bb) if you prefer'; if one config folds it and another does not, the same sensor gets counted twice or not at all.",
+   "how_to_verify": "Decide \u03b7 separate (DET-01 docstring); test that a config with \u03b7=0.5 and unit R equals a config with \u03b7=1 and R scaled by 0.5 only when the loader is told R is absolute \u2014 otherwise the loader rejects a non-peak-normalised R."
+  },
+  {
+   "description": "Cold-shield efficiency has no formula in the spec or skill; the natural solid-angle model is a guess.",
+   "how_to_verify": "Write the ADR with the \u03a9_admit = \u03a9_lens/\u03b7_cs model and check its NETD-vs-\u03b7_cs curve against a textbook cold-shield-efficiency plot (e.g. Vincent 'Fundamentals of Infrared Detector Operation and Testing' cold-shield chapter) for an F/2 MWIR case before accepting."
+  },
+  {
+   "description": "Bolometer NETD has no closed form in the spec: the 'recommended' photon-count form contains \u03b7 and t_int that a bolometer does not have, and the noise bandwidth \u0394f for the Johnson/temperature-fluctuation terms is undefined.",
+   "how_to_verify": "Define \u0394f = 1/(2\u03c4_th) in the ADR and cross-check: with the Boson-like defaults the un-anchored predicted NETD should land within a factor of ~3 of 50 mK; if it lands orders of magnitude off, the bandwidth or responsivity chain is wrong."
+  },
+  {
+   "description": "\u00a79.2 'smears over roughly 0.6 frames' is \u03c4_th/\u0394t (the time constant in frame units), but the IIR reaches 81% of a step in one frame at 60 Hz/10 ms; a test written to '0.6' would be wrong.",
+   "how_to_verify": "DET-06 tests use the closed form 1 \u2212 exp(\u2212k\u0394t/\u03c4) only; document the 0.6-frame phrase as \u03c4/\u0394t in the module docstring."
+  },
+  {
+   "description": "SPG per-frame mutable state: cuda.static caches by argument value and the stdlib notes say buffer-backed resources are unsupported; whether a kernel can read a buffer written by the previous frame is undocumented.",
+   "how_to_verify": "DET-14 experiment: a counter kernel incrementing a cuda.empty buffer each frame, captured with FileCapture over 10 frames; if the value does not increase, keep the IIR in the Warp path and record it in the ADR."
+  },
+  {
+   "description": "\u00a713.3 attributes bolometer smear to the MotionVectors AOV while \u00a79.2 specifies an IIR over frame history; they are different mechanisms (intra-frame motion MTF vs inter-frame thermal lag).",
+   "how_to_verify": "Implement the IIR (spec'd); treat MotionVectors as the input to optics MTF_motion (\u00a78.3) only; the DET-06 moving-edge test confirms the smear appears without any motion-vector input."
+  },
+  {
+   "description": "The NETD reference temperature convention: config anchors at 300 K, R38 Boson listings quote NETD without scene temperature (industry practice is often 25 or 30 \u00b0C), and R27 warns that target/atmosphere decoupling changes the number.",
+   "how_to_verify": "Record the assumed convention (300 K scene, no atmosphere, F as configured) in the ADR and in the YAML comment; when Tier 4 real-camera data arrives, measure NETD at the same convention before comparing."
+  },
+  {
+   "description": "dark_current_model is a null placeholder in \u00a712.2 with no schema; photon-detector configs cannot be written until it is defined, and no MWIR/SWIR YAML exists to exercise the photon path.",
+   "how_to_verify": "DET-01 defines the sub-schema; add a minimal configs/sensors/example_mwir_insb.yaml alongside DET-02 so the photon tests load from a real file and the 'adding a band touches only data' claim (\u00a712.2) is exercised."
+  },
+  {
+   "description": "Float32 precision at high well capacity: a 24-bit mantissa cannot resolve single electrons above 1.68e7 e\u207b, so a float32 electron buffer near a large N_well quantises electrons coarsely (harmless vs shot noise but silently breaks a Poisson-variance test).",
+   "how_to_verify": "Keep the CPU reference in float64 and cast outputs to float32; test that the float32 cast changes DN by \u2264 1 code for N_well \u2264 1e8 and that variance tests are run on float64."
+  },
+  {
+   "description": "Determinism across CPU and GPU: seeding from (frame_id, sensor_id) is bit-reproducible per implementation, but numpy Generator and Warp/cuRAND streams cannot be made bit-identical, so the 'same seed \u2192 identical output' test cannot apply across the CPU/GPU boundary.",
+   "how_to_verify": "DET-11/12 assert bit-identity within an implementation; DET-13 compares statistics (variance within 5%) across implementations and says so in the test docstring."
+  },
+  {
+   "description": "Unit-suite time budget (< 30 s total): the two-blackbody NETD bench and the 10-frame smear test are Monte-Carlo and can balloon.",
+   "how_to_verify": "Size the bench at 64\u00d764 \u00d7 8 frames (\u03c3 estimate error \u2248 0.3%, well inside the 10% gate) and mark anything above 1 s @pytest.mark.slow; time the suite in CI."
+  },
+  {
+   "description": "The existing test suite has never been run on this machine (irsim and pytest are not installed), so the baseline 'green' state is asserted by the CHANGELOG, not observed.",
+   "how_to_verify": "Run `make install && make check` before the first detector commit and record the runtime."
+  },
+  {
+   "description": "R(\u03bb) for the Boson (spectra/boson_vox.csv) does not exist, so every LWIR bench test must either ship a placeholder response or fall back to the 7.5-13.5 \u00b5m top-hat via band_radiance_tophat, and the two will not agree to the 5 mK LUT tolerance.",
+   "how_to_verify": "Radiometry area delivers a documented placeholder CSV marked ESTIMATED; detector tests parametrise over both and assert only quantities invariant to the response shape (NETD ratios, linearity, smear), leaving absolute-DN golden data flagged as placeholder-dependent."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: every DET-01..DET-12 module is pure NumPy under src/irsim/detector/; tests/unit/test_layering.py already rglobs src/irsim/**/*.py and will fail on any omni/pxr/isaacsim/warp/carb import. Warp/SPG code (DET-13/14) lives only in src/irsim_isaac/pipeline and src/irsim_isaac/spg.",
+  "#2 float32 or better: detector inputs (band radiance), IIR state S_{n\u22121}, electrons/signal, sigma maps and the FPA temperature are float32/float64; DN is uint16. Enforced by dtype assertions at response() boundaries and tests in DET-06/11/12 ('float16 input raises', 'state stays float32 after 1000 steps') plus the DET-14 0.050 K discrimination test that would fail if an fp16 buffer sat between optics and detector.",
+  "#3 Noise in radiance/electron space, never Kelvin: shot/dark/read noise are generated in electrons (photon) or absorbed-power/signal units (bolometer) before quantisation; enforced by the NETD-vs-scene-temperature slope tests in DET-09/11/12 (NETD at 373 K must be lower than at 300 K, ratio equal to dLb_dT(300)/dLb_dT(373) for scene-independent noise) \u2014 a Kelvin-space sigma yields a flat NETD and fails them.",
+  "#5 Aperture factor \u03c0/(4F\u00b2+1) defined once in irsim.optics: the detector imports aperture_factor and never writes the expression; enforced by the F/2-vs-F/1 ratio tests in DET-02 (17/5 = 3.4 for N_e) and DET-09 (3.4 read-limited, \u221a3.4 shot-limited), and by the DET-08 convention-identity test documenting the 1.25 factor between the two \u00a79.4 forms.",
+  "#6 One WeatherSeries: the FPA thermal node (DET-07) and the housing temperature that feeds cold-shield background (DET-04) take ambient from the shared WeatherSeries/injected provider; enforced by the DET-07 constructor TypeError test. Non-negotiable #4 (Kirchhoff) is not touched by this area."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a79.4 line 661 writes the datasheet NETD as 4F\u00b2\u00b7V_n/(R\u00b7A_d\u00b7L') (paraxial 4F\u00b2), while \u00a72 line 112 ('Use +1'), \u00a78.1 line 520 and CLAUDE.md non-negotiable #5 mandate \u03c0/(4F\u00b2+1); the two \u00a79.4 forms therefore disagree by (4F\u00b2+1)/(4F\u00b2) = 1.25 at the Boson's F/1.0.",
+  "\u00a79.2 line 629 uses R_0 for both the static responsivity (left-hand side, V/W) and the bolometer resistance (right-hand side, \u03a9) in the same equation.",
+  "\u00a79.2 line 634 says a moving object 'smears over roughly 0.6 frames' at 60 Hz/\u03c4_th = 10 ms; the IIR at line 637 reaches 81% of a step within one frame \u2014 0.6 is \u03c4_th/\u0394t, not the smear extent, and the sensor-noise-chain skill line 46 repeats the same phrasing.",
+  "\u00a79.4 line 666 recommends the photon-count NETD form 'for implementation' with \u03b7\u00b7A_d\u00b7t_int, but \u00a79.2 bolometers have neither \u03b7 nor t_int, and neither \u00a79 nor \u00a710 defines the noise bandwidth \u0394f needed for the bolometer Johnson/temperature-fluctuation terms at \u00a710.1 lines 696-697; sensor-noise-chain skill line 59 applies the same photon formula generically.",
+  "\u00a713.4 lines 1013-1019 have SPG#4 output 'DN_ideal = S(\u03a6)' and SPG#5 add the 3D noise afterwards (i.e. after quantisation), contradicting \u00a79.1 line 606 where noise n_e is added to N_e before floor()/clip and the intent of CLAUDE.md non-negotiable #3 (electron space); the isaac-sim-spg skill lines 138-139 repeat the \u00a713.4 ordering.",
+  "\u00a712.2 config schema (lines 846-861) lists no read noise, no dark-current parameters (dark_current_model: null), no \u03b1_abs/G_th/I_bias, and no FPA-thermal parameters, although \u00a79.1 line 609 names \u03c3_read and i_dark(T_FPA) as 'key parameters' and \u00a79.2 line 644 requires an FPA lumped model; configs/sensors/flir_boson_640_lwir.yaml additionally omits the four photon `null` keys shown at lines 858-861.",
+  "\u00a79.1 line 613 says to 'expose a cold_shield_efficiency parameter' as a detector knob, but \u00a712.2 line 840 places it under optics:, and the Boson YAML line 21 comments it 'n/a for uncooled' while the schema comment says 'cooled systems only' \u2014 ownership between optics and detector is undefined.",
+  "\u00a79.2 line 644 models FPA-temperature dependence as detector gain(T_FPA)/offset(T_FPA) polynomials, while \u00a711.2 line 768 and config nuc.residual_gain_ppm_per_k / residual_offset_mk_per_k (lines 881-882) model the same \u0394T_FPA drift inside NUC; without a split the effect is counted twice.",
+  "\u00a713.3 line 975 assigns 'bolometer smear' to the MotionVectors AOV, whereas \u00a79.2 lines 634-640 implement smear as an inter-frame IIR that needs previous-frame state, not motion vectors.",
+  "\u00a79.4 lines 669-672 need (\u2202L_q/\u2202T)_B (photon form), but src/irsim/radiometry/planck.py provides only the energy-form d_spectral_radiance_dT and scripts/generate_luts.py lines 8-11 plan only Lb, Lb_q, dLb_dT \u2014 no photon-form derivative table exists or is planned; the ir-radiometry skill (lines 64-65) likewise lists three tables.",
+  "\u00a71 fidelity table line 55 places 'bolometer dynamics' at L3 and declares L2 the target (line 54), while \u00a716.4 step 9 (line 1306) builds the bolometer time constant and \u00a715 Tier 3 line 1209 requires the smear as an L2 acceptance item.",
+  "sensor-noise-chain skill line 16 specifies `Detector.response(band_power_or_photons, dt) -> counts`, folding gain g, offset o, noise n and quantisation Q into the detector, whereas \u00a72 line 70 separates S(\u03a6) from g, o, n, Q and \u00a713.4 separates detector (stage 4) from noise (stage 5) \u2014 the detector/noise interface is defined three different ways.",
+  "\u00a79.2 line 642 (citing R25) discusses bolometer 'integration time' and bias as NETD drivers, but \u00a712.2 line 860 marks integration_time_ms as photon-only ('unused when type == bolometer'), leaving no config path for the bolometer ROIC parameters the text says matter."
+ ]
+}

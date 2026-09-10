@@ -1,0 +1,574 @@
+{
+ "area": "scene-radiance",
+ "existing_state": "Nothing of this area exists yet; only its inputs and its test harness are partially in place.\n\nWhat exists that this area consumes:\n- src/irsim/radiometry/planck.py (float64 reference): spectral_radiance, spectral_photon_radiance, d_spectral_radiance_dT, fractional_exitance, band_radiance_tophat (closed-form top-hat band radiance, \u00a73.2a). No LUT, no inverse (apparent temperature), no spectral-response loader \u2014 scripts/generate_luts.py is a stub that exits 1.\n- src/irsim/radiometry/constants.py: C1L, C1Q, C2, SIGMA_SB, WIEN_B, Q_E, EXP_ARG_MAX, plausibility bounds (T in [1, 6000] K, lambda in [0.1, 1000] um). No solar constant, no steradian of the solar disc, no airglow constants.\n- tests/conftest.py: fixtures gbuffer_ramp (256x256, T 250-450 K float32, normal_dot_view=1, distance_m=50, material_id=0 int32, sky_view_factor=0.5 float32) and gbuffer_uniform (64x64, 300 K, sky_view_factor=0.0). These fixtures already define the G-buffer contract the stage-1 kernel must accept, but they carry only normal_dot_view \u2014 no world normal / normal_dot_up, no shadow mask, no 'behind-surface' radiance, no sun/view vectors.\n- tests/unit/test_layering.py parametrises over every .py under src/irsim, so any new scene-radiance module is automatically covered by the engine-free guard.\n- configs/sensors/flir_boson_640_lwir.yaml: has band.regime: emissive (\u00a712.2) but no sky, environment, ground-temperature, solar or airglow fields. configs/atmospheres/ and configs/materials/ are empty (.gitkeep). data/spectra, data/nk, data/lut, data/weather are empty.\n- src/irsim/{materials,thermal,atmosphere,optics,config,detector,noise,isp}/__init__.py are one-line stubs. There is no src/irsim/scene/ package and CLAUDE.md's layout and commit-scope list contain no 'scene' entry.\n- src/irsim_isaac/pipeline/__init__.py and spg/README.md are stubs: no AOV setup, no Warp kernel, no band_radiance.cu/.cu.lua/.usda.\n- docs/decisions/ contains only ADR 0001 (the template). README status table: radiometry 'partial', everything else 'not started'. CHANGELOG has only the scaffold entry.\n- Tooling note: the default python on this machine (/home/hunter/miniconda3/bin/python) has neither numpy nor pytest installed, so `make install` must run before `make check` can be exercised here.",
+ "key_equations_and_data": [
+  "\u00a75.1 rendering equation with derived emission: L_o(x,w_o,lam) = eps(lam,w_o) B(lam,T_s) + integral_Omega f_r L_i cos(theta_i) dw_i. Band-integrated stage-1 form (\u00a713.4/\u00a713.5): L = eps(theta) * Lb(T_s) + (1 - eps(theta)) * L_env, output float32 W m^-2 sr^-1 (or ph s^-1 m^-2 sr^-1 for photon bands) BEFORE atmosphere; the aperture factor and cos^4 belong to optics and must not appear here.",
+  "\u00a72 (lines 84-88) three-term master equation: this area owns terms 1 and 2 evaluated at the surface, i.e. eps*B(T_s) + (1-eps)*L_down; atmosphere multiplies by tau and adds (1-tau)B(T_air) afterwards. Note \u00a72 writes the reflected weight as (1-eps) which is the opaque-diffuse (L2) special case; with \u00a74.4 it must be rho = 1 - eps - tau.",
+  "\u00a75.3a sky-view-factor blend: L_down ~= V_s * L_sky(theta_zen) + (1 - V_s) * L_ground, V_s in [0,1]. Geometric sky fraction of an unoccluded plane tilted beta from horizontal (cosine-weighted hemisphere) is (1 + cos beta)/2 = (1 + n.up)/2; multiply by an occlusion term for local blocking.",
+  "\u00a75.3a effective sky temperature: T_sky(theta_el) = T_air - dT_clear * (1 - cloud) * cos^q(angle). As written (line 311) the argument is theta_el, which puts the maximum depression at the HORIZON; physics and line 314 ('at zenith') require the argument to be theta_zen (equivalently sin^q theta_el). Parameters: dT_clear 55-70 K (clear dry, LWIR), 5-10 K (thick overcast / high humidity), q 0.5-1.0. dT_clear must be a per-band data field (LWIR ~-40 C vs MWIR ~+10 C at 15 deg elevation, [R13]).",
+  "\u00a75.3a band sky radiance: L_sky,B(theta) = Lb(T_sky(theta)) via band quadrature (planck.spectral_radiance against R(lambda)); for the scalar-L_sky kernel of \u00a713.5 the scalar must be the cosine-weighted hemispheric mean over the sky visible to the surface: L_sky,eff(beta=0) = 2 * integral_0^{pi/2} Lb(T_sky(theta_el)) sin(theta_el) cos(theta_el) dtheta_el. Overcast identity: cloud=1 -> T_sky = T_air -> L_sky,eff = Lb(T_air).",
+  "\u00a75.3a L_ground: undefined in the spec. Must be defined as Lb(T_ground) with T_ground a scene parameter (candidates: T_air, thermal-solver ground node, config scalar). Needs an ADR.",
+  "\u00a75.3b (L2.5) low-resolution irradiance cubemap: 32x32x6 (spec) or 64x64 per face (\u00a713.7 option 2) render of band radiance from probe positions, prefiltered to irradiance; \u00a713.7 options 1-4 are the reflection fidelity ladder.",
+  "\u00a75.2 two-regime table: NIR 0.75-1.0 um reflected; SWIR 1.0-1.7 (ext 2.5) reflected (sun/airglow); MWIR 3-5 both; LWIR 8-12 (7.5-13.5) self-emitted. Crossover where solar-reflected == self-emitted from a 300 K surface is 3.5-4.5 um in daylight. Config field sensor.band.regime: emissive | reflective | mixed (\u00a712.2 line 833) selects which illumination paths are evaluated.",
+  "\u00a75.4 solar term (band-integrated, diffuse): Lb_sun = (rho_B / pi) * E_B,sun * tau_B,sun * cos(theta_s) * S(x), with S in {0,1} the shadow term, E_sun the top-of-atmosphere spectral irradiance attenuated along the solar slant path. Required data: a TOA solar spectrum file (e.g. ASTM E-490, integral 1361 W m^-2) and/or a ground-level reference spectrum (ASTM G173 direct+circumsolar, 900 W m^-2) in data/spectra/. Photon form E_q,sun needed for photon detectors (\u00a79.1). Solar disc solid angle ~6.8e-5 sr is needed for the specular (glint) case: L_glint = R(theta_i) * E_sun,B * tau / Omega_sun.",
+  "\u00a75.4 glint: 'model it with the specular lobe, not a Lambertian albedo' \u2014 requires a BRDF lobe with per-band roughness (\u00a74.3, \u00a712.3 roughness_per_band) and Fresnel reflectance R(theta) (\u00a74.2 Level A); the spec gives no lobe model (choice needed).",
+  "\u00a75.5 night illumination: E_night(lam) = E_airglow(lam) * k_cloud + E_moon(lam, phi_moon) + E_star(lam) + E_artificial. Airglow: hemispherical, no directional shadow, OH-dominated spectrum peaking 1-1.8 um, configurable level default ~10 nW cm^-2 = 1.0e-4 W m^-2 (range 3.5-39 nW cm^-2 = 3.5e-5 to 3.9e-4 W m^-2), slow temporal variation, cloud attenuates but does not shadow. At full moon E_moon ~ E_airglow ('comparable'). Required data: airglow spectral shape file in data/spectra/ (none present); a lunar model (none specified).",
+  "\u00a74.1 Kirchhoff (consumed): rho = 1 - eps - tau, never authored independently; the kernel derives the reflected weight from eps (and tau) supplied by the material table. Isothermal-enclosure identity follows: if L_env = Lb(T_s) then L = Lb(T_s) for any eps.",
+  "\u00a74.2 Level B directional emissivity consumed per pixel: eps(theta) = eps0 * (1 - a (1 - cos theta)^p), cos theta = |n . v| from the Normal AOV (\u00a713.3 line 972, \u00a713.5 normalTex.w). Note \u00a713.5 hard-codes p = 4 and a float2 (eps0, a) table; \u00a74.2 says fit (a, p) per material class, p 4-6.",
+  "\u00a74.4 semi-transparent second ray (reflective bands): L = eps Lb(T_s) + rho L_env + tau L_behind with eps + rho + tau = 1 per band (1e-6). Glass: LWIR tau ~ 0, SWIR/NIR tau > 0.5.",
+  "\u00a713.3 G-buffer AOVs consumed by stage 1: encoded T float32 ((T - 200)/800), material id (uint8/float), Normal (fp16 ok; needed for n.v AND n.up), AmbientOcclusion-or-custom as V_s (fp16 ok). DistanceToCamera is passed through to atmosphere, not used here.",
+  "\u00a713.5 stage-1 kernel contract: inputs (T_ref, T_span, L_sky, L_ground, encT, matId, normalTex, skyView, planckLUT[N] over [T0,T1], matEps table), output float32 radiance; LUT linear interpolation with clamp; Level B emissivity. \u00a713.4: L_env from sky model + V_s computed host-side per frame.",
+  "\u00a73.2b LUT contract this area relies on: Lb(T), Lb_q(T), dLb/dT on 200-1000 K, 0.05-0.1 K, float32. Cold-sky temperatures (T_air - 70 K) fall below 200 K for T_air < 270 K, and mirror-like surfaces (eps 0.05-0.09, \u00a716.2 aluminium) produce apparent temperatures near the LUT floor; glint produces apparent temperatures above 1000 K. Range/clamping policy is a dependency on radiometry.",
+  "\u00a73.3 apparent temperature T_app = Lb^-1(L) is the primary test observable for every item here; tolerances are stated in mK/K via dLb/dT (ir-sim-testing skill).",
+  "\u00a76.1 / \u00a76.4 coupling: the thermal solver's absorbed sky term eps * Q_LW_down (broadband W m^-2) and this area's L_sky (band radiance) describe the same sky; both must be driven by the same WeatherSeries (T_air, cloud, RH) \u2014 non-negotiable 6 \u2014 and ideally by one SkyModel object evaluated broadband vs in-band.",
+  "\u00a712.2 line 900: adding SWIR must require only config + data (regime: reflective, photon LUT, InGaAs R(lambda), night-illumination enabled, glass transmission enabled) \u2014 no edits to the radiance kernel. This is the architecture acceptance criterion for the whole area.",
+  "Unit conventions to enforce at loaders (ir-radiometry skill): wavelength um; spectral irradiance W m^-2 um^-1; band irradiance W m^-2; band radiance W m^-2 sr^-1; Lambertian L = E * rho / pi; airglow nW cm^-2 converted at the config boundary (1 nW cm^-2 = 1e-5 W m^-2)."
+ ],
+ "work_items": [
+  {
+   "id": "SR-0",
+   "title": "Environment/illumination config schema and presets (sky, ground, solar, airglow)",
+   "spec_refs": [
+    "\u00a75.3",
+    "\u00a75.4",
+    "\u00a75.5",
+    "\u00a712.2"
+   ],
+   "description": "Add pydantic models in irsim.config for an EnvironmentConfig: sky {delta_t_clear_k per band, q, cloud coupling}, ground {t_ground_mode: air | solver | fixed, t_ground_k}, solar {spectrum_file, enabled}, night {airglow_level_w_m2 (accept nW/cm2 with explicit unit key), airglow_spectrum_file, k_cloud, moon_enabled}. Add YAML presets (clear_dry, overcast, humid) under configs/environments/ (or configs/atmospheres/ \u2014 decide, see ADR). Validate ranges against \u00a75.3 (dT_clear clear-dry 55-70 K, overcast 5-10 K, q 0.5-1.0) and reject out-of-range or unit-ambiguous values. Wire sensor.band.regime (already in the Boson YAML) into a typed enum shared with the kernel.",
+   "depends_on": [
+    "config: pydantic sensor schema loader (\u00a712.2) if it lands first; otherwise this item creates irsim.config's first model"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_airglow_unit_conversion: a preset authored as 10 nW/cm2 loads as 1.0e-4 W/m2 (rel 1e-12) \u2014 catches the 1e4/1e5 unit slip",
+    "test_sky_presets_match_spec_ranges: clear_dry dT_clear in [55,70] K, overcast in [5,10] K, q in [0.5,1.0]; a value of 700 K or q=5 raises",
+    "test_regime_enum_roundtrip: 'emissive','reflective','mixed' parse; anything else raises"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "SR-1",
+   "title": "Emission-only band-radiance kernel on the synthetic G-buffer (constant eps, no reflection, no atmosphere)",
+   "spec_refs": [
+    "\u00a75.1",
+    "\u00a716.4 step 3",
+    "\u00a713.5",
+    "\u00a73.2b",
+    "\u00a73.3"
+   ],
+   "description": "Create the scene-radiance module (see ADR on location) with a reference NumPy function band_radiance(gbuffer, material_table, lut, ...) -> float32 radiance implementing L = eps0 * Lb(T). Accept the tests/conftest.py G-buffer dict contract (temperature_k, material_id, normal_dot_view, sky_view_factor). Assert float32-or-better dtype on every input that carries temperature and on the output; reject float16. Extend conftest with a two-material split fixture and a grazing-angle sphere fixture (world normal + normal_dot_up) so later items have what they need. No aperture factor, no cos^4, no pi anywhere in this function.",
+   "depends_on": [
+    "radiometry: band LUT Lb(T) with linear interpolation and inverse Lb^-1 (\u00a73.2b, \u00a73.3)",
+    "radiometry: spectral response loader / band definition object"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_blackbody_matches_closed_form: eps=1 over the 250-450 K ramp, kernel output vs band_radiance_tophat (independent series) < 5 mK equivalent via dLb/dT \u2014 catches LUT/encoding errors and any stray pi or aperture factor",
+    "test_grey_body_apparent_temperature: eps=0.9, T=300 K, L_env=0 -> Lb^-1(L) equals Lb^-1(0.9*Lb_tophat(300)) within 5 mK and is strictly below 300 K",
+    "test_two_material_split_is_pixelwise: left half eps=0.95, right half eps=0.5 at the same T give radiance ratio 0.95/0.5 to 1e-6 rel (material lookup is per pixel, not global)",
+    "test_float16_input_rejected_and_output_is_float32: float16 temperature raises; output dtype is float32; no NaN/inf over 200-1000 K"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-2",
+   "title": "Sky radiance model: T_sky(elevation) from weather, band L_sky, hemispheric mean",
+   "spec_refs": [
+    "\u00a75.3a",
+    "\u00a76.1",
+    "\u00a77.1 (elevation-dependent path radiance note)"
+   ],
+   "description": "Implement SkyModel(weather: WeatherSeries, env: EnvironmentConfig, band) with T_sky(theta_el, t) = T_air(t) - dT_clear_band * (1 - cloud(t)) * cos^q(theta_zen) \u2014 i.e. the spec formula with the zenith-angle argument (requires a preceding docs(spec) fix commit for line 311; raise the disagreement before coding per CLAUDE.md). Provide L_sky_B(theta_el) by direct quadrature of planck.spectral_radiance against R(lambda) (not the 200 K-floored LUT), and L_sky_eff(beta) = cosine-weighted hemispheric mean over the sky visible to a plane tilted beta, tabulated on a small 1-D tilt grid. Optionally expose Q_LW_down broadband for the thermal solver from the same object. Constructor must take the WeatherSeries object, not a free T_air.",
+   "depends_on": [
+    "thermal: WeatherSeries with air temperature and cloud fraction (and RH) sampled at time t (non-negotiable 6)",
+    "SR-0",
+    "docs: spec fix for \u00a75.3a angle argument"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_overcast_sky_equals_air: cloud=1 -> T_sky(theta)=T_air for all theta (|dT| < 1e-9 K) and L_sky_eff = Lb(T_air) to 1e-9 rel",
+    "test_sky_coldest_at_zenith: T_sky non-decreasing from zenith to horizon; T_sky(horizon)=T_air; T_sky(zenith)=T_air - dT_clear(1-cloud) exactly \u2014 fails on the as-written cos(theta_el) form",
+    "test_hemispheric_mean_matches_independent_quadrature: L_sky_eff(0) vs scipy.integrate.quad of 2*Lb(T_sky(el))*sin*cos on a fine grid, 1e-6 rel; lies between Lb(T_sky_zenith) and Lb(T_air)",
+    "test_r13_profile_known_answer: with the calibrated clear-dry preset and a reference T_air, LWIR T_sky at 15 deg elevation reads -40 C within +/-5 K and MWIR preset reads about +10 C within +/-5 K [R13]",
+    "test_sky_requires_shared_weather: SkyModel cannot be built with a scalar T_air (API/type test enforcing non-negotiable 6)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-3",
+   "title": "Reflected environment term: sky-view factor V_s and (1-eps) L_env in the kernel",
+   "spec_refs": [
+    "\u00a75.3a",
+    "\u00a74.1",
+    "\u00a713.5",
+    "\u00a713.7 option 1",
+    "\u00a715 Tier 3 (overcast/clear roof)"
+   ],
+   "description": "Extend the kernel to L = eps * Lb(T) + (1 - eps) * L_env with L_env = V_s * L_sky_eff + (1 - V_s) * L_ground. Add sky_view_factor derivation sky_view_factor(normal_up, occlusion) = occlusion * (1 + n.up)/2 so V_s is correct for walls and undersides even when the occlusion AOV is 1. Define L_ground = Lb(T_ground) per the ADR. Reflected weight is derived from eps (never a second authored reflectance).",
+   "depends_on": [
+    "SR-1",
+    "SR-2",
+    "materials: material table exposing per-band eps (Kirchhoff-closed)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_isothermal_enclosure_identity: T_s = T_sky = T_ground for eps in {0.05, 0.5, 0.9, 1.0} -> apparent temperature = T_s within 1 mK for every V_s \u2014 fails if the reflected weight is not exactly (1-eps) or the sign is wrong",
+    "test_geometric_sky_view: (1+n.up)/2 gives 1.0 (up), 0.5 (vertical), 0.0 (down) to 1e-12, and matches a seeded Monte-Carlo cosine-weighted hemisphere sky fraction to 1e-3 over tilts 0-180 deg",
+    "test_cold_roof_clear_vs_overcast: eps=0.9 horizontal panel at 290 K, T_air 285 K: apparent-T drop under clear (dT_clear=60) vs overcast equals (1-eps)(Lb(T_air)-L_sky_eff)/dLb_dT within 0.05 K and is negative (clear reads colder); bare aluminium eps=0.09 reads > 10 K colder than paint under the same clear sky",
+    "test_linear_in_vs_and_reflectance: finite-difference slopes dL/dV_s = (1-eps)(L_sky-L_ground) and dL/d(1-eps) = L_env - Lb(T) to 1e-6 rel"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-4",
+   "title": "Directional emissivity in the kernel (Level B per pixel from n.v)",
+   "spec_refs": [
+    "\u00a74.2 Level B",
+    "\u00a713.5",
+    "\u00a716.4 step 7"
+   ],
+   "description": "Consume per-material (eps0, a, p) and per-pixel |n.v| to evaluate eps(theta) inside the kernel; carry p per material (do not hard-code p=4 as \u00a713.5 does, or record the deviation in an ADR). Use the grazing-angle sphere fixture. Materials area owns the eps(theta) functions and the Level A/B fit; this item owns their use in the radiance path.",
+   "depends_on": [
+    "SR-3",
+    "materials: Level B empirical angular emissivity (eps0, a, p) per material and Level A Fresnel for cross-check (\u00a74.2)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_normal_incidence_recovers_eps0: n.v=1 -> eps = eps0 to 1e-12; a=0 -> constant eps at all angles",
+    "test_sphere_rim_darkening_is_a_reflection_effect: uniform-T sphere, L_env = Lb(220 K): rim (theta=80 deg) apparent T below centre by the analytic (eps0-eps(theta))(Lb(T)-L_env)/dLb_dT within 10 mK; with L_env = Lb(T) the rim effect vanishes (< 1 mK)",
+    "test_eps_theta_bounded: 0 <= eps(theta) <= 1 for theta in [0, 89.9 deg] for every material in the table"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "SR-5",
+   "title": "Band-agnostic kernel: regime switch, photon-form LUT path, no band literals",
+   "spec_refs": [
+    "\u00a75.2",
+    "\u00a712.1",
+    "\u00a712.2 line 900",
+    "\u00a79.1",
+    "\u00a73.1 photon form"
+   ],
+   "description": "Make the kernel take an illumination bundle (L_env, Lb_sun, Lb_night \u2014 the latter two possibly zero) and a LUT object in either energy or photon units chosen by fpa.type, with sensor.band.regime selecting which illumination sources are evaluated at runtime (data-driven, not the compile-time flag wording of \u00a75.2). Emission is never culled (hot objects glow in SWIR). Add an architecture guard test that the scene-radiance package contains no band-name literals.",
+   "depends_on": [
+    "SR-1",
+    "SR-0",
+    "radiometry: photon-form band LUT Lb_q(T) (\u00a73.2b)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_energy_and_photon_paths_consistent: for eps=1 the ratio (energy output)/(photon output) equals the band-mean photon energy computed by independent quadrature of h c/lambda weighted by R(lambda)B(lambda,T), 1e-6 rel, at 250/300/500 K",
+    "test_regime_emissive_culls_illumination_bitwise: regime=emissive with nonzero Lb_sun/Lb_night gives output identical to zero illumination; regime=mixed adds exactly rho*Lb_sun (1e-12)",
+    "test_emission_never_culled: regime=reflective, 500 K exhaust in 0.9-1.7 um: output emission term exceeds the airglow-reflected term by > 100x (known-answer: hot exhausts are visible in night SWIR)",
+    "test_no_band_literals_in_kernel: AST/grep guard \u2014 'lwir','mwir','swir','nir' absent from the scene-radiance package source"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-6a",
+   "title": "Solar geometry: sun elevation/azimuth from latitude, longitude, UTC time",
+   "spec_refs": [
+    "\u00a75.4 (cos theta_s, S)",
+    "\u00a76.1 (psi illumination cosine)"
+   ],
+   "description": "Implement a compact solar-position algorithm (NOAA/Meeus-level, no new dependency) returning zenith/elevation/azimuth, shared by the thermal solver (Q_sol cosine) and the solar reflected term so both use identical geometry. Expose cos(theta_s) clipped at 0 for sun below horizon.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_equinox_noon_elevation: on 2026-03-20 at solar noon, elevation = 90 - |latitude| within 0.5 deg for latitudes 0, 45, 60",
+    "test_solstice_extremes: summer solstice noon elevation = 90 - |lat| + 23.44 within 0.5 deg; sun never rises at lat 80 N on the winter solstice",
+    "test_azimuth_symmetry: morning and afternoon azimuths at equal elevations are mirror images about solar noon within 0.5 deg"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "SR-6",
+   "title": "Solar reflected term (diffuse) with a solar spectrum data file and shadow mask",
+   "spec_refs": [
+    "\u00a75.4",
+    "\u00a75.2",
+    "\u00a712.1 solar glint row",
+    "\u00a77.1"
+   ],
+   "description": "Add data/spectra/solar_toa_astm_e490.csv (and optionally ASTM G173 ground-level direct as the default spectral shape for SWIR where H2O bands matter). Implement band solar irradiance E_B,sun (energy and photon forms) and Lb_sun = (rho_B/pi) E_B,sun tau_sun cos(theta_s) S. Decide (ADR) whether tau_sun comes from the atmosphere area's slant-path model or from WeatherSeries direct-normal irradiance scaling a reference shape. Add a shadow_mask key to the G-buffer fixtures.",
+   "depends_on": [
+    "SR-5",
+    "SR-6a",
+    "thermal: WeatherSeries direct/diffuse solar irradiance fields",
+    "atmosphere: solar slant-path transmittance tau_sun,B (optional if DNI scaling is chosen)",
+    "materials: per-band rho = 1 - eps - tau"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_solar_spectrum_integrates_to_solar_constant: integral of the TOA file over all lambda = 1361 W/m2 within 1% (G173 direct = 900 W/m2 within 0.5%) \u2014 catches per-nm vs per-um and W/cm2 errors",
+    "test_lambertian_identity: rho=1, S=1, cos=1, tau=1 -> Lb_sun = E_B/pi to 1e-12; S=0 or sun below horizon -> exactly 0, never negative",
+    "test_two_regime_split_known_answer: at 300 K, rho=0.3, sun at 45 deg, tau=0.7: SWIR 0.9-1.7 um reflected/emitted > 1e3; LWIR 8-12 um reflected/emitted < 1% (rho=0.1); spectral crossover (rho/pi E cos = eps B) lies in 3.0-5.0 um \u2014 fails if E_sun or Planck units are off by any decade",
+    "test_photon_form_consistency: E_q,sun,B times band-mean photon energy equals E_sun,B to 1e-6 rel"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-7",
+   "title": "Night illumination for SWIR/NIR: airglow hemisphere source, cloud coupling, moon",
+   "spec_refs": [
+    "\u00a75.5",
+    "\u00a75.2",
+    "\u00a712.1 night source row",
+    "\u00a715 Tier 3 (SWIR usable from airglow alone)"
+   ],
+   "description": "Add an airglow spectral-shape file (OH Meinel bands, 0.7-2.5 um) normalised so its in-band integral equals the configured level; E_airglow is hemispherical and isotropic (no shadow term), attenuated by k_cloud(cloud), with an optional slow temporal random walk seeded deterministically. Add a first-order lunar model E_moon(lambda, phase) = solar spectrum x lunar albedo x phase law x geometry (E_star and E_artificial deferred, record in ADR). Deliver Lb_night = (rho_B/pi) E_B,night to the kernel bundle.",
+   "depends_on": [
+    "SR-5",
+    "SR-0",
+    "SR-6 (solar spectrum shape reused for moonlight)",
+    "thermal: WeatherSeries cloud fraction"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_airglow_level_identity: integral of the shaped E_airglow(lambda) over the configured band equals the configured level to 1e-6 rel; 10 nW/cm2 -> 1.0e-4 W/m2",
+    "test_airglow_has_no_shadow_or_direction: output identical for S=0 and S=1 and for any sun/moon direction (bitwise); cloud=1 attenuates by k_cloud but does not zero it",
+    "test_full_moon_comparable_to_airglow: in 1.0-1.7 um, E_moon,B(full, zenith) / E_airglow,B in [0.3, 3] [R7]; full-moon broadband irradiance / solar ~ 2e-6 within a factor of 2",
+    "test_swir_night_reflected_dominates_300k_emission: rho=0.3 target under default airglow: reflected radiance > 10x the 300 K self-emission in 0.9-1.7 um, and a 500 K exhaust exceeds the reflected airglow by > 100x (the two regimes are both present)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "SR-8",
+   "title": "Semi-transparent second ray: tau L_behind with per-band Kirchhoff closure in the kernel",
+   "spec_refs": [
+    "\u00a74.4",
+    "\u00a74.1",
+    "\u00a712.3 transmittance_per_band"
+   ],
+   "description": "Extend the kernel to L = eps Lb(T_s) + rho L_env + tau L_behind with rho derived as 1 - eps - tau and closure asserted per pixel (1e-6). L_behind comes from a 'behind-surface' radiance buffer (engine second-hit AOV or, for tests, the fixture). Glass switches behaviour by band purely through material data.",
+   "depends_on": [
+    "SR-3",
+    "materials: per-band (eps, rho, tau) triple with closure test",
+    "isaac (later): second-hit/transmitted-surface AOV for real use"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_isothermal_enclosure_with_transmission: T_s = T_env = T_behind -> apparent T = T_s within 1 mK for triples (0.88,0.12,0), (0.1,0.2,0.7), (0.02,0.03,0.95) \u2014 fails if rho is not derived from closure",
+    "test_closure_violation_raises: a material with eps+rho+tau = 1.01 makes the kernel raise, not silently renormalise",
+    "test_glass_band_switch: LWIR glass (tau=0) output independent of L_behind (dL/dL_behind = 0 to 1e-12); SWIR glass tau=0.7 gives dL/dL_behind = 0.7 to 1e-6 \u2014 windshield shows the driver in SWIR and itself in LWIR"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "SR-9",
+   "title": "Specular reflection: mirror-direction sky lookup and per-band roughness lobe for sky reflection and solar glint",
+   "spec_refs": [
+    "\u00a74.3",
+    "\u00a75.4 (specular lobe)",
+    "\u00a75.3b",
+    "\u00a713.7 options 2/4",
+    "\u00a712.3 roughness_per_band"
+   ],
+   "description": "Add mirror-direction geometry (reflect(v, n), elevation of the reflected ray) and a normalised microfacet lobe (choose Beckmann or GGX, ADR) with per-band roughness; split (1-eps) into specular and diffuse weights that sum to (1-eps). Specular sky term samples the analytic L_sky(theta_el) of the mirror direction (below-horizon rays hit L_ground); specular solar term gives glint L_glint = R(theta_i) E_sun,B tau / Omega_sun spread by the lobe. This is L2.5 in engine-free form and the CPU oracle for the T-cubemap probe (SR-12).",
+   "depends_on": [
+    "SR-3",
+    "SR-6",
+    "materials: per-band roughness and Level A Fresnel R(theta)",
+    "radiometry: inverse LUT clamping policy above 1000 K (glint apparent temperatures)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_white_furnace: hemispherical integral of lobe x cos over 2pi equals the specular weight to 1e-3 for roughness 0.05/0.2/0.5 (an unnormalised lobe fails)",
+    "test_flat_mirror_sees_sky_at_reflected_elevation: eps=0.05, roughness->0 horizontal panel viewed from 30 deg elevation: apparent T equals Lb^-1(eps Lb(T_s) + (1-eps) Lb(T_sky(30 deg))) within 0.1 K; roughness->1 reproduces the V_s blend of SR-3 to 1e-6 rel",
+    "test_glint_saturates: smooth dielectric (n~1.5) at the mirror geometry in 3-5 um at midday: L_glint / Lb(300 K) > 1e3 (apparent T > 600 K); the same pixel at night (E_sun=0) reads within 1 K of the LWIR-like emissive answer \u2014 the \u00a715 'MWIR glint at midday, LWIR-like at night' phenomenology as a scalar assertion",
+    "test_specular_plus_diffuse_conserves: specular weight + diffuse weight = 1 - eps to 1e-12 for every roughness"
+   ],
+   "engine_free": true,
+   "size": "L"
+  },
+  {
+   "id": "SR-10",
+   "title": "Tier 3 reflection phenomenology suite (automated scalar assertions on synthetic scenes)",
+   "spec_refs": [
+    "\u00a715 Tier 3",
+    "\u00a716.4 step 7",
+    "\u00a75.3 (flat overcast image)",
+    "\u00a75.5"
+   ],
+   "description": "Collect the automatable Tier-3 reflection checks into tests/unit/test_phenomenology_reflection.py against synthetic G-buffer scenes (roof + wall + ground, two materials): overcast flattens (apparent-T spread across eps collapses), clear night darkens roofs and glass, SWIR night contrast from airglow alone, MWIR glint by day and none by night. Record the manual remainder in README.",
+   "depends_on": [
+    "SR-3",
+    "SR-4",
+    "SR-6",
+    "SR-7",
+    "SR-9"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_overcast_flattens: at T_s = T_air, apparent-T range across eps in {0.09..0.98} is < 0.05 K under cloud=1 and > 5 K under clear sky",
+    "test_clear_night_roof_colder_than_wall: horizontal roof (V_s=1) reads colder than a vertical wall (V_s=0.5) of the same material and T by (1-eps)*0.5*(Lb(T_ground)-L_sky_eff)/dLb_dT within 0.1 K",
+    "test_swir_night_contrast_from_airglow_only: no sun, no moon: rho=0.3 vs rho=0.1 targets differ in radiance by 0.2*E_airglow,B/pi to 1e-6 rel and both exceed 300 K emission"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "SR-11",
+   "title": "Isaac Sim: Normal/occlusion AOVs to V_s and n.v, Warp stage-1 band_radiance kernel validated against the CPU reference",
+   "spec_refs": [
+    "\u00a713.3",
+    "\u00a713.4",
+    "\u00a713.5",
+    "\u00a713.6",
+    "\u00a713.7 option 1"
+   ],
+   "description": "In src/irsim_isaac/pipeline: attach Normal and AmbientOcclusion (or custom sky-visibility) annotators alongside the encoded-T AOV; convert to the G-buffer contract (normal_dot_view, normal_dot_up, occlusion -> V_s via SR-3's formula); implement stage 1 as a Warp kernel taking the float32 LUT and material table; compare against irsim's CPU reference on the same buffers. Verify AOV semantics empirically (see risks) before trusting them. SPG .cu/.cu.lua/.usda port only after the Warp path agrees.",
+   "depends_on": [
+    "SR-3",
+    "SR-4",
+    "isaac: temperature encode/decode round trip through an AOV < 10 mK (\u00a713.3, \u00a716.4 step 2)",
+    "isaac: render product / annotator setup for the \u00a713.3 AOV set"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_warp_stage1_matches_cpu_reference (gpu marker): same G-buffer through Warp and NumPy: 1e-4 rel on radiance or 5 mK apparent-T, whichever is looser",
+    "test_aov_sky_view_planes (isaac marker): rendered up-facing plane -> V_s = 1.0 +/- 0.02, vertical wall -> 0.5 +/- 0.05, under-side -> 0.0 +/- 0.02 after the geometric correction; raw AO alone fails the wall case",
+    "test_normal_aov_frame (isaac marker): a plane of known orientation yields n.v and n.up within 0.01 of the analytic values (detects view-space vs world-space normals)"
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "SR-12",
+   "title": "Isaac Sim: low-resolution encoded-T cubemap reflection probe (L2.5)",
+   "spec_refs": [
+    "\u00a75.3b",
+    "\u00a713.7 option 2",
+    "\u00a713.8"
+   ],
+   "description": "Second small render product (64x64 per face) of the encoded-T field from a probe near the camera; decode to T, convert to band radiance with the same LUT, prefilter by per-band roughness, and use as the L_env / specular source in stage 1 in place of the analytic sky for pixels whose mirror direction hits scene geometry. The engine-free lobe and mirror geometry from SR-9 are the oracle. Record in the reflection ADR.",
+   "depends_on": [
+    "SR-11",
+    "SR-9",
+    "isaac: encoded-T AOV on a second render product without mixing encodings"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_cubemap_sky_pixels_match_analytic_sky (isaac marker): probe faces looking at open sky decode to T_sky(theta_el) within 1 K of SR-2's model when the engine sky is driven by the same SkyModel",
+    "test_probe_isothermal_box (isaac marker): camera inside a closed isothermal box at T: a mirror-like panel reads apparent T = T within 0.1 K using the cubemap (enclosure identity through the engine path)",
+    "test_cubemap_prefilter_matches_cpu_lobe (gpu marker): prefiltered probe lookup vs SR-9 CPU lobe on a synthetic cubemap, 1e-3 rel"
+   ],
+   "engine_free": false,
+   "size": "L"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Reflection fidelity level and upgrade path (\u00a713.7 ladder)",
+   "why": "The isaac-sim-spg skill requires the reflection strategy in use to be recorded; it is the largest remaining approximation (Appendix A item 4). Sky-view blend gets the mean right and the specular structure wrong; the error on painted metal/glass is unbounded without a specular term.",
+   "options": [
+    "Option 1: sky-view-factor blend with analytic sky only (L2)",
+    "Option 1 + engine-free mirror-direction analytic sky and roughness lobe (L2.5 without a second render)",
+    "Option 2: low-res encoded-T cubemap probe",
+    "Option 3: second render product with radiance-domain bounces (L3)",
+    "Option 4: Warp ray cast for flagged specular materials"
+   ]
+  },
+  {
+   "title": "Sky-view factor derivation: raw occlusion AOV vs occlusion x geometric (1 + n.up)/2",
+   "why": "AmbientOcclusion of an unoccluded vertical wall is ~1, but its cosine-weighted sky fraction is 0.5; using raw AO biases every vertical surface by ~(1-eps)*0.5*(Lb(T_ground)-L_sky) which is ~2 K for eps=0.9 in LWIR under a clear sky \u2014 the same magnitude as the Tier-4 per-class acceptance target.",
+   "options": [
+    "Raw AO AOV as V_s (spec \u00a713.3/\u00a713.7 wording)",
+    "occlusion x (1+n.up)/2 from the Normal AOV",
+    "Baked sky-visibility channel from a hemisphere ray cast"
+   ]
+  },
+  {
+   "title": "Definition of L_ground (the (1 - V_s) term)",
+   "why": "\u00a75.3a uses L_ground but never defines it; the choice changes wall and underside apparent temperatures by several K and couples this area to the thermal solver.",
+   "options": [
+    "Lb(T_air) from the shared WeatherSeries",
+    "Lb(mean ground-surface temperature) from the thermal solver's ground material node",
+    "Config scalar T_ground in the environment preset",
+    "Per-pixel from the cubemap probe (L2.5)"
+   ]
+  },
+  {
+   "title": "Directional sky in the blend: scalar hemispheric mean vs tilt-indexed L_sky_eff(beta)",
+   "why": "\u00a75.3a defines L_sky(theta_zen) directionally but \u00a713.5 passes one scalar L_sky; a scalar is only right for one surface orientation. A 1-D tilt LUT is cheap and exact for unoccluded planes.",
+   "options": [
+    "Single scalar = cosine-weighted mean for a horizontal surface (document error for walls)",
+    "1-D tilt LUT L_sky_eff(beta) indexed by n.up",
+    "Full mirror-direction lookup (SR-9)"
+   ]
+  },
+  {
+   "title": "Correction of the \u00a75.3a T_sky angle argument and per-band calibration of (dT_clear, q)",
+   "why": "Line 311 as written makes the sky coldest at the horizon; physics and line 314 require coldest at zenith. The quoted 55-70 K with q 0.5-1 also does not reproduce R13's -40 C at 15 deg elevation for a plausible T_air, and MWIR/SWIR values are absent. Deviating from the spec requires saying so first (CLAUDE.md).",
+   "options": [
+    "Fix the spec to cos^q(theta_zen) and calibrate (dT_clear, q) per band to the digitised R13 profiles",
+    "Replace with a path-length (air-mass) emissivity model eps_sky(theta) = 1 - (1 - eps_zen)^(sec theta_zen)",
+    "Keep the formula and treat dT_clear as a horizon value (rejected: contradicts line 314)"
+   ]
+  },
+  {
+   "title": "Whether one SkyModel feeds both the thermal solver's Q_LW_down and the radiometric L_sky",
+   "why": "Non-negotiable 6 is stated for weather; the same failure mode (summer sky in the solver, winter sky in the renderer) exists one level up if the sky is modelled twice. Unifying couples two areas and constrains the thermal solver's interface.",
+   "options": [
+    "One SkyModel exposing broadband Q_LW_down(beta) and in-band L_sky_eff(beta)",
+    "Separate models sharing only the WeatherSeries, with a consistency test",
+    "Thermal solver uses a Brunt/Swinbank sky emissivity independent of the radiometric sky"
+   ]
+  },
+  {
+   "title": "Solar irradiance source: TOA spectrum x atmospheric slant path vs weather DNI x ground-level reference shape",
+   "why": "\u00a75.4 says TOA attenuated along the solar path, but \u00a77's atmosphere is a horizontal Beer-Lambert model with no air-mass treatment, and the SWIR band contains strong H2O absorption that a TOA shape misses. The choice determines which area owns tau_sun and whether the WeatherSeries solar fields are used or ignored.",
+   "options": [
+    "ASTM E-490 TOA x atmosphere-area slant-path tau_B,sun",
+    "WeatherSeries DNI scaling an ASTM G173 direct+circumsolar shape (band fraction fixed)",
+    "MODTRAN-derived per-band solar irradiance table indexed by air mass"
+   ]
+  },
+  {
+   "title": "Airglow level definition, spectral shape source, and temporal model",
+   "why": "The spec quotes 3.5-39 nW/cm2 without saying whether that is in-band (1.0-1.7 um) or total, and gives no spectral shape file or variation timescale. The definition changes SWIR night SNR by up to the ratio of in-band to total OH emission.",
+   "options": [
+    "Level = in-band hemispherical irradiance on a horizontal surface over the configured band, shape from a published OH Meinel band model",
+    "Level = total 0.7-2.5 um irradiance, shape file normalised over that range",
+    "Grey (flat) airglow spectrum at the configured level (rejected for MWIR/NIR edge behaviour)"
+   ]
+  },
+  {
+   "title": "Night sources deferred at L2 (E_star, E_artificial) and the lunar model form",
+   "why": "\u00a75.5 lists four sources and defines none beyond airglow; implementing all is out of proportion to L2. Deferring must be documented as a limitation, and the lunar model choice (phase law, albedo) bounds night SWIR error.",
+   "options": [
+    "Airglow + first-order moon (solar shape x albedo x Lane-Irvine phase law); stars and artificial deferred",
+    "Airglow only",
+    "Full ROLO lunar model plus engine-authored artificial lights"
+   ]
+  },
+  {
+   "title": "Regime culling as a runtime, data-driven switch that never culls emission",
+   "why": "\u00a75.2 says 'compile-time flag'; \u00a712.2 says adding a band changes no code. A runtime switch is the only way both hold. Culling emission in 'reflective' would hide hot exhausts in night SWIR.",
+   "options": [
+    "Runtime enum from sensor.band.regime; emission always evaluated",
+    "Compile-time/static specialisation per band in SPG only, runtime in the reference",
+    "Cull emission in reflective bands (rejected)"
+   ]
+  },
+  {
+   "title": "Location and commit scope of scene-radiance code",
+   "why": "CLAUDE.md's layout has no scene/ package and its commit-scope list has no 'scene'; the pipeline calls the stage 'band_radiance'. The choice affects CLAUDE.md, the README layout, and every later commit's scope.",
+   "options": [
+    "New package src/irsim/scene/ {sky.py, illumination.py, radiance.py, geometry.py} with a new 'scene' scope and CLAUDE.md update",
+    "src/irsim/radiometry/scene_radiance.py under the existing 'radiometry' scope",
+    "Split: sky/illumination under thermal (environment), kernel under radiometry"
+   ]
+  },
+  {
+   "title": "LUT temperature range and inverse clamping policy for cold sky and glint",
+   "why": "T_sky reaches 180-200 K and glint apparent temperatures exceed 1000 K; the \u00a73.2b 200-1000 K LUT silently clamps both. Either radiometry extends the range or this area computes L_sky by direct quadrature and accepts clamped apparent temperatures with a flag.",
+   "options": [
+    "Extend LUT to 150-1200 K (radiometry area)",
+    "Direct quadrature for scalar sky/ground radiances; inverse LUT returns NaN/flag outside range",
+    "Clamp silently (rejected: hides physics)"
+   ]
+  },
+  {
+   "title": "Directional emissivity exponent p: per material vs fixed p=4 in the kernel",
+   "why": "\u00a74.2 says fit (a, p) per class with p 4-6; \u00a713.5 hard-codes p=4 with a float2 table. A fixed p changes the rim falloff shape and the Level-B-vs-Fresnel error budget (< 0.02 eps).",
+   "options": [
+    "Carry (eps0, a, p) per material (float4 table)",
+    "Fix p=4 and re-fit a per material, documenting the added error",
+    "Use Level A Fresnel directly via a per-material angle LUT"
+   ]
+  },
+  {
+   "title": "Specular lobe model for IR reflections and glint",
+   "why": "\u00a75.4 demands a specular lobe but names none; the lobe normalisation and its mapping from roughness_per_band determine whether glint magnitude and sky-mirror behaviour are physical. This choice must match the eventual engine-side BRDF for option 3 consistency.",
+   "options": [
+    "Beckmann (Cook-Torrance) with per-band alpha",
+    "GGX/Trowbridge-Reitz with per-band alpha",
+    "Ideal mirror + Gaussian slope blur only"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "\u00a75.3a T_sky formula (line 311) uses cos^q(theta_el), which places the maximum sky depression at the horizon and none at zenith \u2014 inverted relative to physics, to line 314 ('dT_clear at zenith'), and to R13.",
+   "how_to_verify": "Implement both forms, plot T_sky vs elevation, and compare to the R13 elevation profile; add test_sky_coldest_at_zenith. Raise the spec disagreement before coding and land a docs fix."
+  },
+  {
+   "description": "The quoted (dT_clear 55-70 K, q 0.5-1.0) do not reproduce R13's -40 C at 15 deg elevation for typical T_air (cos^0.5(75 deg)*70 K gives ~36 K depression, i.e. ~-20 C at T_air 15 C). MWIR (+10 C) and SWIR values are not given at all.",
+   "how_to_verify": "Digitise the R13 LWIR and MWIR profiles, least-squares fit (dT_clear, q) per band, and pin the fitted values as preset data with a known-answer test at 15/30/60/90 deg elevation (+/-5 K)."
+  },
+  {
+   "description": "L_ground is undefined in the spec.",
+   "how_to_verify": "Prototype the three candidates (T_air, solver ground node, config scalar) on the synthetic roof/wall scene and quantify the wall apparent-T spread; choose in the ADR and add the enclosure identity test so any choice remains closed."
+  },
+  {
+   "description": "Isaac Sim 6.0 AmbientOcclusion AOV semantics as V_s: it is an occlusion term over the full hemisphere around the normal, not sky visibility (a free-standing vertical wall reports ~1, true V_s = 0.5). It is also unclear whether the RTX path-tracer render product exposes an AO render var at all, and at what precision.",
+   "how_to_verify": "Render three planes (up, vertical, down) and an occluded courtyard; read the AO and Normal annotators; compare to (1+n.up)/2 x occlusion. If no AO render var exists, compute V_s from the Normal AOV plus a baked hemisphere ray cast."
+  },
+  {
+   "description": "Normal AOV frame (world vs view space) and the availability of n.v in the .w channel as \u00a713.5 assumes are unverified for Isaac Sim 6.0 annotators.",
+   "how_to_verify": "Render a plane of known orientation, read the Normal annotator, compute n.v and n.up against analytic values (test_normal_aov_frame, +/-0.01)."
+  },
+  {
+   "description": "Band LUT range 200-1000 K (\u00a73.2b) does not cover cold-sky temperatures (T_air - 70 K < 200 K for T_air < 270 K) or glint apparent temperatures; silent clamping would hide the cold-roof effect in winter.",
+   "how_to_verify": "Assert in SR-2 that L_sky is computed by direct quadrature; test that a winter sky (T_air 260 K, clear) yields the exact Lb(190 K); agree with the radiometry area on inverse behaviour outside range (NaN/flag test)."
+  },
+  {
+   "description": "Airglow irradiance in \u00a75.5 is quoted in nW/cm2 without stating in-band vs total, and no spectral shape data file exists in the repo; moon, star and artificial terms have no model.",
+   "how_to_verify": "Adopt the in-band definition in the ADR; obtain an OH Meinel spectral shape (cite source in the data file header); check the shaped spectrum integrates to the configured level (1e-6) and that full-moon/airglow ratio lands in [0.3, 3] per R7."
+  },
+  {
+   "description": "No solar spectrum file and no sun-position algorithm exist; WeatherSeries (thermal-solver skill) lists T_air, RH, wind, cloud, DNI/DHI but no latitude/longitude/time, so theta_s and the shadow term S have no source. The thermal solver needs the same geometry (psi in \u00a76.1).",
+   "how_to_verify": "Add lat/lon/UTC to the scene/weather context; implement SR-6a with NOAA known-answer tests; confirm the thermal area consumes the same function (grep for a second sun-position implementation should find none)."
+  },
+  {
+   "description": "tau_atm^sun (solar slant-path transmittance) is not provided by \u00a77's horizontal Beer-Lambert model; using a TOA spectrum without it overestimates SWIR in-band solar irradiance because of the 1.4 um H2O band.",
+   "how_to_verify": "Compare band fractions of ASTM E-490 (TOA) vs ASTM G173 (AM1.5 ground) over 0.9-1.7 um; if they differ by more than 10 %, adopt DNI x G173 shape (or an air-mass table) and record it in the ADR."
+  },
+  {
+   "description": "The G-buffer fixture in tests/conftest.py lacks world normal / normal_dot_up, shadow mask and behind-surface radiance, so V_s-from-normal, solar shadow and the tau second ray cannot be tested with it as-is.",
+   "how_to_verify": "Extend the fixtures in SR-1 (sphere with world normals, shadow mask, L_behind) and keep gbuffer_ramp/gbuffer_uniform backward compatible; run the existing planck tests to confirm nothing else depends on the shape."
+  },
+  {
+   "description": "\u00a713.5 reads matId from a float texture and \u00a713.2 says SPG stdlib nodes do not support SINT/UINT textures; whether a custom SPG kernel can bind an integer AOV is unverified.",
+   "how_to_verify": "In the SPG port, bind SemanticSegmentation/material-id as both uint and float textures in a minimal kernel and check which compiles and returns correct ids on a two-material scene."
+  },
+  {
+   "description": "Semantics of regime=reflective: culling emission would hide 500 K exhausts and brake discs in night SWIR, which are real signatures.",
+   "how_to_verify": "test_emission_never_culled (SR-5) with the 500 K exhaust known-answer; document in the ADR that regime only gates illumination sources."
+  },
+  {
+   "description": "Directional emissivity uses |n.v| but sky visibility uses n.up; \u00a713.3 lists one Normal AOV for both without saying which dot products the glue must compute, and \u00a713.5 packs only n.v into .w.",
+   "how_to_verify": "Define the G-buffer contract explicitly (normal_dot_view, normal_dot_up, optionally full world normal) in SR-1 and make SR-11 produce both from the Normal AOV with the plane test."
+  },
+  {
+   "description": "Photon-form path: for photon detectors (\u00a79.1) all illumination (sky, solar, airglow) must be delivered in photon units, not just the Planck LUT; a mixed-unit bundle would be a silent factor-of-1e19 error that AGC rescales away.",
+   "how_to_verify": "Type the illumination bundle with a units tag checked against the LUT's units at kernel entry; test_energy_and_photon_paths_consistent and test_photon_form_consistency cover the conversion."
+  },
+  {
+   "description": "Development environment: the default python here lacks numpy/pytest, so `make check` cannot currently be run on this machine.",
+   "how_to_verify": "Run `make install` in a venv, then `make check`; confirm tests/unit passes in < 30 s before starting SR-1."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 engine-free core: all scene-radiance code (sky model, illumination, kernel, geometry) lives under src/irsim/ with NumPy only; tests/unit/test_layering.py parametrises over every file there and will fail on any omni/pxr/isaacsim/warp/carb import. Only SR-11/SR-12 live in src/irsim_isaac/.",
+  "#2 float32 or better: the kernel asserts dtype float32/float64 on temperature, V_s, illumination inputs and emits float32 radiance; test_float16_input_rejected_and_output_is_float32 (SR-1) and the Warp-vs-CPU comparison at 5 mK (SR-11) enforce it; sky/solar/airglow scalars are computed in float64 and cast once.",
+  "#3 noise in radiance space: this area outputs band radiance (W m^-2 sr^-1 or photons), never Kelvin, so the downstream noise stage has the right domain; apparent temperature is computed only in tests via Lb^-1. No test here adds noise, but the output contract (float32 radiance) is what makes #3 possible downstream.",
+  "#4 Kirchhoff closure: the kernel derives the reflected weight as rho = 1 - eps - tau from the material table and never accepts an independently authored reflectance; test_isothermal_enclosure_identity (SR-3, < 1 mK) and test_isothermal_enclosure_with_transmission / test_closure_violation_raises (SR-8, 1e-6) fail if closure is broken anywhere in the radiance path.",
+  "#5 aperture factor pi/(4F^2+1): NOT applied in this area \u2014 scene radiance is radiance at the surface; test_blackbody_matches_closed_form (SR-1, eps=1 -> output/Lb = 1 +/- 1e-6) catches any stray geometric or pi factor sneaking into stage 1.",
+  "#6 one WeatherSeries: SkyModel, airglow cloud coupling and the solar term take the injected WeatherSeries (T_air, cloud, RH, DNI) \u2014 no free T_air/cloud scalars in public constructors; test_sky_requires_shared_weather (SR-2) enforces it at the API level, and the proposed single SkyModel for Q_LW_down and L_sky (ADR) extends the same guarantee to the sky."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a75.3a line 311 vs line 314 and line 305: the T_sky formula's cos^q(theta_el) gives zero depression at zenith and maximum at the horizon, while line 314 states dT_clear applies 'at zenith' and line 305 writes L_sky(theta_zen). The argument must be the zenith angle (or sin theta_el). R13's '-40 C at 15 deg elevation' (line 298) implies the zenith is colder still.",
+  "\u00a71 line 55 (fidelity table) says L3 reflection is 'path-traced in T-domain', but \u00a75.3c line 318 says 'Path-trace in the radiance domain (L3)' and \u00a713.7 option 3 (line 1132) requires emission proportional to band radiance. Temperatures do not add; only the radiance-domain statement is physical.",
+  "\u00a72 line 86 writes the reflected term as (1 - eps) L_down (opaque, diffuse), but \u00a74.4 line 260 requires rho = 1 - eps - tau with a tau second ray, and \u00a75.4 line 326 requires a specular lobe rather than a Lambertian albedo. The master equation is the L2 opaque-diffuse special case and does not say so.",
+  "\u00a75.3a line 305 defines L_sky(theta_zen) as elevation-dependent, but the \u00a713.5 kernel (lines 1039, 1070, 1095) takes a single scalar L_sky and never says how the scalar is derived from the directional function; \u00a713.4 line 998 says only 'L_env from sky model + V_s'.",
+  "\u00a74.2 line 246 says fit (a, p) per material class with p in 4-6, but \u00a713.5 lines 1046 and 1066 hard-code p = 4 with a float2 (eps0, a) table.",
+  "\u00a75.2 line 294 says the per-band illumination path is 'culled by a compile-time flag', while \u00a712.2 line 900 says adding a band requires 'No core code changes' with regime as a YAML field; only a data-driven runtime switch satisfies both.",
+  "\u00a73.2b line 164 fixes the LUT range at 200-1000 K, but \u00a75.3a line 314 (dT_clear up to 70 K) yields T_sky below 200 K whenever T_air < 270 K, and \u00a75.4 glint (line 326, 'saturates detectors') yields apparent temperatures above 1000 K; neither section mentions the clamp.",
+  "\u00a713.3 line 974 and \u00a713.7 line 1130 equate the AmbientOcclusion AOV with V_s, but \u00a75.3a line 302 defines V_s as sky visibility from the surface normal and local occlusion (a cosine-weighted hemisphere factor); AO of an unoccluded vertical wall is ~1 where V_s is 0.5.",
+  "\u00a75.5 line 330/338 quotes airglow in nW/cm2 while the ir-radiometry skill mandates W m^-2 units throughout; the spec does not say whether the level is in-band or total, and no spectral shape source is named.",
+  "\u00a716.4 line 1310 calls steps 1-5 'a defensible LWIR camera' although reflections (step 7) are what \u00a71 line 54 lists as the L2 reflection requirement and \u00a75.3 line 298 calls 'do not skip this'; steps 3-5 deliver L1 reflection fidelity.",
+  "\u00a712.2 (lines 826-898) sensor schema has no home for any \u00a75.3/\u00a75.5 parameter (dT_clear, q, T_ground, airglow level, k_cloud, moon), and the repo has configs/atmospheres/ but no environment/sky config location; CLAUDE.md's layout has no scene/ package and the commit-scope list has no 'scene' scope for the stage \u00a713.4 calls band_radiance.",
+  "tests/conftest.py fixtures (normal_dot_view only) vs \u00a713.3 line 972 (Normal AOV 'for eps(theta) and sky-view factor'): the fixture cannot express the n.up needed for sky visibility, and it fixes sky_view_factor=0.5 for camera-facing normals, which is inconsistent with (1+n.up)/2 unless the camera looks horizontally at a wall.",
+  "thermal-solver skill (WeatherSeries fields: T_air, RH, wind, cloud, DNI/DHI) vs \u00a75.4 (cos theta_s, S) and \u00a76.1 (psi, S): no section or skill assigns a source for sun position (latitude/longitude/time), yet two areas need identical geometry.",
+  "\u00a75.4 line 323 attenuates TOA E_sun along the solar path (tau_atm^sun), but \u00a77.1 line 451 defines only a horizontal-path Beer-Lambert tau(d) with no air-mass or slant-path treatment, so tau_atm^sun has no defined provider."
+ ]
+}

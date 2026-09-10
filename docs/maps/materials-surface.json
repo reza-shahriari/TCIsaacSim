@@ -1,0 +1,512 @@
+{
+ "area": "materials-surface",
+ "existing_state": "Nothing in this area is implemented. Exact inventory (verified by listing, not inferred):\n\nCODE\n- /home/hunter/irsim-scaffold/src/irsim/materials/__init__.py \u2014 one line: `\"\"\"See docs/physics-model.md.\"\"\"`. No modules, no functions.\n- /home/hunter/irsim-scaffold/src/irsim/config/__init__.py \u2014 same one-line docstring. No pydantic schemas exist for materials (or anything else), although `pydantic>=2.5`, `pyyaml>=6.0`, `scipy>=1.11` are declared in pyproject.toml and unused.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/planck.py \u2014 the only physics code in the repo: `spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT`, `fractional_exitance`, `band_radiance_tophat` (float64, validated inputs). No band LUT, no R(lambda) loader, no inverse. Materials work can use `spectral_radiance` and `band_radiance_tophat` today for band-weighted emissivity with a top-hat response.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py \u2014 H_PLANCK, C_LIGHT, K_BOLTZMANN, Q_E, C1L, C1Q, C2, SIGMA_SB, WIEN_B, EXP_ARG_MAX, plausibility bounds. No optical constants (n/k) live here; per CLAUDE.md they should not \u2014 they are data files.\n- /home/hunter/irsim-scaffold/src/irsim_isaac/ \u2014 package docstrings only (`__init__.py`, `pipeline/__init__.py`), plus `spg/README.md` (one line). No USD material-mapping layer, no material-ID AOV code, no debug AOV.\n\nCONFIG / DATA\n- /home/hunter/irsim-scaffold/configs/materials/ \u2014 only `.gitkeep`. Zero material YAML files.\n- /home/hunter/irsim-scaffold/data/nk/ \u2014 only `.gitkeep`. Zero n/k tables.\n- /home/hunter/irsim-scaffold/data/spectra/ \u2014 only `.gitkeep`. Zero emissivity spectra; note this same directory is where the sensor config (`configs/sensors/flir_boson_640_lwir.yaml` line 13: `spectra/boson_vox.csv`) expects detector response curves.\n- /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml \u2014 the only band configured (7.5-13.5 um, regime emissive). Material band keys must at minimum cover `lwir`.\n- .gitignore ignores only `data/lut/*.npy` and `data/lut/*.json`; n/k and spectra CSVs would be committed.\n\nTESTS\n- /home/hunter/irsim-scaffold/tests/unit/test_layering.py \u2014 walks `src/irsim/**/*.py` with `rglob`, forbids imports of {omni, pxr, isaacsim, warp, carb}. Any new materials module is covered automatically.\n- /home/hunter/irsim-scaffold/tests/unit/test_planck.py \u2014 radiometry only.\n- /home/hunter/irsim-scaffold/tests/conftest.py \u2014 `gbuffer_ramp` (256x256, T 250-450 K float32, `normal_dot_view` float32 ones, `material_id` int32 zeros, `sky_view_factor` 0.5) and `gbuffer_uniform` (64x64, 300 K). These define the consumer-side interface the material table must serve: an int32 material index per pixel and a float32 cos(theta). No grazing-angle sphere or two-material fixture exists yet (the ir-sim-testing skill asks for both).\n- No material tests of any kind. No `tests/golden` content. No integration tests.\n\nSCRIPTS / DOCS\n- /home/hunter/irsim-scaffold/scripts/generate_luts.py \u2014 stub that exits 1. No `scripts/audit_materials.py`.\n- /home/hunter/irsim-scaffold/docs/decisions/ \u2014 only the 0001 template ADR.\n- README.md status table: `materials` = \"not started\". CHANGELOG.md has no materials entry.\n- Git: single commit 3b653b3 \"Project Structure Created\", tree clean.\n\nENVIRONMENT NOTE: the default interpreter has neither pytest nor numpy and there is no `.venv`, so the existing unit suite could not be executed in this mapping session; its green status is unverified here. Run `make install && make check` before the first materials commit.",
+ "key_equations_and_data": [
+  "\u00a74.1 Kirchhoff, opaque surface in LTE: eps(lambda,theta,phi) = alpha = 1 - rho(lambda,theta,phi), rho = directional-hemispherical reflectance (DHR = hemispherical integral of the BRDF at the view geometry; DHE = 1 - DHR per DIRSIG [R3]). Rule: author ONE spectral property per band, derive the other; never author two.",
+  "\u00a74.4 general closure triple, per band: eps + rho + tau = 1. Tolerance 1e-6 absolute (\u00a715 Tier-1 table line 1182; ir-sim-testing skill 'Kirchhoff closure 1e-6 absolute \u2014 data quality, not arithmetic'; thermal-materials skill Rule 1: fix the data, never loosen the tolerance).",
+  "\u00a74.2 Level A Fresnel from complex index n~(lambda) = n + i k: Z = n~^2 - sin^2(theta_i); A = sqrt((|Z| + Re Z)/2); B = sgn(Im Z) * sqrt((|Z| - Re Z)/2); sqrt(Z) := A + jB (branch-safe: selects Im(k_z) > 0, passivity). r_perp = (cos theta - (A+jB)) / (cos theta + (A+jB)); r_par = ((A+jB) - n~^2 cos theta) / ((A+jB) + n~^2 cos theta); R_perp = |r_perp|^2, R_par = |r_par|^2; R = (R_perp + R_par)/2; eps(lambda,theta) = 1 - R(lambda,theta). Implementation must assert 0 <= R <= 1 (skill). Closed-form check independent of the A/B machinery: R(0) = ((n-1)^2 + k^2)/((n+1)^2 + k^2).",
+  "\u00a74.2 Level A known answers: water at 10 um, n = 1.218, k = 0.0508 [R1]. Verified in this session with the spec's equations: R(0 deg) = 0.010180 (eps 0.9898); eps(60 deg) = 0.9612; eps(80 deg) = 0.6972; eps(89.9 deg) = 0.0122; hemispherical eps_h = 2*int eps(theta) cos sin dtheta = 0.9511. Bismuth is the second reference in [R1] (values not given in spec). Lossless n=1.5 Brewster null: R_par(atan 1.5) = 0 to ~1e-32. n=1,k=0: R = 0 at all angles. Strongly absorbing media show NO sharp TIR knee: R < 1 at every angle (\u00a74.2 line 238).",
+  "\u00a74.2 Level B empirical angular falloff: eps(theta) = eps0 * [1 - a * (1 - cos theta)^p], a ~ 0.15-0.35, p ~ 4-6 for painted metals and plastics; a -> 0 for rough dielectrics (asphalt, vegetation, fabric). Fit (a, p) once per material class against Level A and bake. Skill acceptance: max |eps_B - eps_A| < 0.02 over 0-70 deg. NOTE \u00a713.5 kernel (line 1066) hard-codes p = 4 and carries only float2 (eps0, a) per material.",
+  "\u00a74.2 Level C constant eps: permitted only for rough, high-emissivity surfaces (eps > 0.93) within +/-50 deg of normal. Vehicle bodies, glass, water are explicitly excluded.",
+  "\u00a74.3 per-band roughness: IR lobe narrower/stronger than visible; optically smooth when sigma_rms << lambda/8. `roughness_per_band` must decrease with wavelength for smooth-class materials (example {nir 0.35, swir 0.30, mwir 0.18, lwir 0.12}); never reuse visible-band roughness. Numerical meaning of 'roughness' (GGX alpha vs RMS height in um) is NOT defined by the spec.",
+  "\u00a74.4 semi-transparent materials: per-band triple (eps, rho, tau) with eps+rho+tau = 1; tau > 0 handled as a second ray in the SWIR/NIR path. Glass: eps_LWIR ~ 0.85-0.92 (opaque), transparent in SWIR/NIR. Skill test: glass returns tau > 0.5 in SWIR and tau ~ 0 in LWIR. Reference composition for the second ray (materials-owned, engine-free): L_out = eps*Lb(T_surf) + rho*L_env + tau*L_behind per band; identity: T_surf = T_env = T_behind = T  =>  L_out = Lb(T) for any closed triple.",
+  "\u00a712.3 material schema (per-band SPECTRAL, not per-band scalar): materials.<name>.thermal{density_kg_m3, specific_heat_j_kgk, conductivity_w_mk, thickness_m, solar_absorptivity} ; optical{spectral_emissivity: 'spectra/<name>.csv' (lambda um, eps(lambda), 0.3-15 um), roughness_per_band{nir,swir,mwir,lwir}, angular_model{type: fresnel, n_k_file: 'nk/<name>.csv'}, transmittance_per_band{nir,swir,mwir,lwir}}. thermal-materials skill adds top-level `source: measured|literature|estimated` (mandatory in practice) and drops the `materials:` wrapper. Schema must also express angular_model variants {type: empirical, a, p} and {type: constant} \u2014 not shown in spec but required by \u00a74.2 Levels B/C and the \u00a713.5 kernel.",
+  "Band-effective (grey-within-band) emissivity \u2014 NOT written in the spec but required to reconcile \u00a712.3 (spectral) with Appendix A item 3 (line 1388, 'emissivity is grey within a band') and the \u00a713.5 kernel's scalar eps0: eps_B(T) = int R(lambda) eps(lambda) B(lambda,T) dlambda / int R(lambda) B(lambda,T) dlambda for energy detectors (bolometer, \u00a73.1 energy form), and with B_q(lambda,T) (photon form, \u00a73.1) for photon detectors (MWIR/SWIR/NIR). Same for tau_B and rho_B. Reference quadrature: Simpson on a 0.01 um grid (\u00a73.2 b). The T at which to evaluate (300 K reference vs. tabulated eps_B(T)) is a decision (see ADRs).",
+  "Hemispherical emissivity for the thermal solver (\u00a76.1 emitted term eps*sigma*T^4 and absorbed eps*Q_LW; \u00a76.2 says eps is 'spectral; drives both heat balance and radiance'): eps_hemi(lambda) = 2 * int_0^{pi/2} eps(lambda,theta) cos theta sin theta dtheta; total eps_tot(T) = int eps_hemi(lambda) B(lambda,T) dlambda / (sigma T^4 / pi). For constant eps this is the identity; for Fresnel water at 10 um it is 0.951 vs 0.990 at normal incidence (computed this session).",
+  "\u00a716.2 starting values (literature, NOT measurements; mark `source: literature`), columns eps_LWIR, eps_MWIR, alpha_sol, rho kg/m3, c_p J/kgK, k W/mK: asphalt dry 0.94/0.92/0.90/2200/920/0.75; concrete 0.92/0.90/0.65/2300/880/1.4; car paint black 0.90/0.88/0.94/7800/470/45; car paint white 0.90/0.88/0.28/7800/470/45; bare aluminium 0.09/0.06/0.15/2700/900/205; rusted steel 0.85/0.82/0.80/7800/470/45; glass windshield 0.88/0.85/0.10/2500/840/1.0; rubber tyre 0.95/0.94/0.94/1100/2000/0.16; human skin 0.98/0.97/0.65/1050/3500/0.37; cotton clothing 0.95/0.93/0.70/300/1300/0.06; vegetation leaf 0.97/0.96/0.50/700/3000/0.30; soil dry 0.92/0.90/0.75/1500/800/0.30; soil wet 0.96/0.95/0.85/2000/1500/1.5; water 0.96/0.98/0.93/1000/4180/0.60; snow 0.99/0.98/0.15/300/2100/0.20. No thickness_m, no NIR/SWIR eps, no roughness, no tau, no angular parameters are given. Paint example thickness_m = 0.0012 (\u00a712.3).",
+  "Thermal derived quantities the material must supply to the thermal area (\u00a76.1, \u00a76.3, \u00a76.4): C = rho * c_p * delta (J m^-2 K^-1); thermal inertia P = sqrt(k rho c_p); R_12 = delta_1/(2k) + delta_2/(2k); alpha_sol used as ABSORPTIVITY (absorbed = alpha_sol * Q_sol, \u00a76.1 line 363) \u2014 the field is not albedo.",
+  "Skill Rule 2 finish taxonomy (thermal-materials lines 38-43): painted eps_LWIR 0.88-0.93 (colour changes solar_absorptivity, not eps); bare/polished metal 0.05-0.15 (a mirror); oxidised 0.75-0.90; coated exhaust/heat shield 0.20-0.85 (measure). Library is organised by surface finish, with alloy as a second-order substrate correction.",
+  "Data files: data/nk/<material>.csv (lambda um, n, k; source refractiveindex.info, source URL recorded in the material YAML and file header) [\u00a74.2, skill line 96]; data/spectra/<material>.csv (lambda um, eps(lambda), 0.3-15 um) [\u00a712.3]. Both must be monotonic in lambda, in micrometres, and cover every configured band (7.5-13.5 for the Boson config).",
+  "Kernel-facing packed table (\u00a713.3 'DiffuseAlbedo or material-ID' AOV, uint8/float; \u00a713.5 `const float2* matEps` = (eps0, a); \u00a714 Unreal 'material parameter collection / texture atlas'): per material index -> per band {eps0, a, p, rho_B, tau_B, roughness} plus thermal {rho, c_p, k, thickness, alpha_sol}, all float32 (non-negotiable #2), with a reserved 'unmapped' sentinel index rendered magenta (skill 'USD import problem'). conftest.py fixes the pixel-side key as int32 `material_id`.",
+  "USD mapping layer resolution order (skill lines 117-122): (1) explicit `thermal:material` USD attribute override; (2) semantic class (car_body, road, pedestrian) from the semantics schema; (3) material-name pattern (*paint*, *glass*, *chrome*, *rubber*); (4) loud default + recorded miss. Deliverables: scripts/audit_materials.py (per-prim misses grouped/counted, coverage %, CI threshold) and a magenta debug AOV for unmapped surfaces."
+ ],
+ "work_items": [
+  {
+   "id": "MAT-01",
+   "title": "Material schema (pydantic) + YAML loader with author-one-derive-the-rest closure",
+   "spec_refs": [
+    "\u00a74.1",
+    "\u00a74.4",
+    "\u00a712.3",
+    "\u00a76.2",
+    "thermal-materials skill 'Material schema' and Rule 1",
+    "\u00a715 Tier 1 'Kirchhoff closure'"
+   ],
+   "description": "Create `irsim/config/materials.py` (schema) and `irsim/materials/library.py` (loader). Schema: `source` (measured|literature|estimated, required), `thermal{density_kg_m3, specific_heat_j_kgk, conductivity_w_mk, thickness_m, solar_absorptivity}`, `optical{spectral_emissivity | spectral_reflectance (exactly one), roughness_per_band, angular_model (discriminated union: fresnel{n_k_file} | empirical{a,p} | constant), transmittance_per_band}`. Band keys are free strings validated later against the sensor configs (bands are data, not code). Loader resolves file paths relative to `data/`, derives rho_B = 1 - eps_B - tau_B per band, and refuses any input where eps_B + tau_B > 1. Provides `MaterialThermal` (the one object the thermal area consumes) and `MaterialOptical`. Accept both the \u00a712.3 `materials:` wrapper and the skill's bare-key form, or pick one in the ADR. Docstrings cite \u00a74.1/\u00a74.4/\u00a712.3.",
+   "depends_on": [
+    "MAT-02 for spectral-to-band reduction (can land first with scalar-per-band eps as a temporary authoring path, then MAT-02 adds the spectral path)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_authoring_both_emissivity_and_reflectance_is_rejected: a YAML with both `spectral_emissivity` and `spectral_reflectance` raises ValidationError (energy conservation cannot be violated by authoring).",
+    "test_derived_closure_1e-6: for the \u00a712.3 example and for a hand-built material with tau_swir = 0.7, eps_swir = 0.1, assert |eps + rho + tau - 1| < 1e-6 in every band after loading.",
+    "test_over_unity_rejected: eps_band = 0.9 with tau_band = 0.2 raises (sum > 1 by 0.1, not a rounding issue).",
+    "test_spec_12_3_example_round_trips: the literal YAML block from \u00a712.3 lines 906-920 loads and re-serialises with identical field values (guards schema drift from the spec).",
+    "test_solar_absorptivity_is_absorptivity: car_paint_white alpha_sol = 0.28 < car_paint_black 0.94 after load (catches an albedo/absorptivity flip, \u00a76.1 line 363)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-02",
+   "title": "Spectral emissivity curve loader and band-effective (grey-within-band) emissivity",
+   "spec_refs": [
+    "\u00a712.3 line 904 'per-band spectral'",
+    "Appendix A item 3 line 1388",
+    "\u00a73.1 energy vs photon form",
+    "\u00a73.2 (b) quadrature grid",
+    "\u00a713.5 scalar eps0 per material"
+   ],
+   "description": "Create `irsim/materials/spectral.py`: load `data/spectra/<name>.csv` (lambda um ascending, eps in [0,1]); `band_effective(curve, band, T_ref, weighting='energy'|'photon', R=None)` computes eps_B = int R eps B dlambda / int R B dlambda by Simpson on 0.01 um, using `irsim.radiometry.planck.spectral_radiance` / `spectral_photon_radiance`. With R=None use the band's top-hat [lambda_min, lambda_max]; accept an R(lambda) array once radiometry ships its loader. Same reducer applied to spectral tau if provided. Emits float64 internally; consumers cast to float32. Docstring cites \u00a712.3 and the ADR that fixes T_ref and the weighting rule.",
+   "depends_on": [
+    "radiometry: existing `spectral_radiance`/`spectral_photon_radiance` (present)",
+    "radiometry: R(lambda) loader normalised to peak 1.0 (soft \u2014 top-hat path works without it)",
+    "config: sensor/band schema exposing lambda_min/lambda_max/regime (soft \u2014 can pass a tuple)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_flat_spectrum_identity: eps(lambda) = 0.9 everywhere gives eps_B = 0.9 to 1e-12 for any band, T, and weighting.",
+    "test_step_spectrum_matches_closed_form: eps = 0.95 for lambda < 10 um, 0.85 above; top-hat 8-12 um at 300 K; eps_B must equal (0.95*Lb(8-10) + 0.85*Lb(10-12)) / Lb(8-12) computed independently with `band_radiance_tophat` (fractional-exitance series) to 1e-6 absolute.",
+    "test_photon_weighting_shifts_toward_long_wavelength: for a spectrum decreasing with lambda over 3-5 um, eps_B(photon) < eps_B(energy) (B_q \u221d lambda*B); equality here means the wrong Planck form is used for photon bands.",
+    "test_temperature_dependence_sign: for the same decreasing spectrum, eps_B(500 K) < eps_B(300 K) (Wien shift toward short lambda where eps is higher... assert the analytically expected direction), catching a T_ref that is silently ignored.",
+    "test_band_outside_curve_raises: a curve covering 0.3-13 um used with a 7.5-13.5 um band raises rather than extrapolating."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-03",
+   "title": "Branch-safe complex Fresnel reflectance and Level A directional emissivity",
+   "spec_refs": [
+    "\u00a74.2 Level A (lines 217-238)",
+    "\u00a74.1",
+    "thermal-materials skill 'Angular emissivity' Level A",
+    "[R1]"
+   ],
+   "description": "Create `irsim/materials/fresnel.py`: `fresnel_reflectance(n, k, cos_theta) -> (R, R_perp, R_par)` vectorised over any broadcastable shapes, implementing exactly the A/B reparameterisation of \u00a74.2 (sgn(0) := 0 documented; for Re Z < 0 lossless this yields R = 1, the correct TIR reflectance). `directional_emissivity_fresnel(n, k, cos_theta) = 1 - R`. Assert 0 <= R <= 1 and finite; clamp |cos_theta| for back-facing normals as the \u00a713.5 kernel does. Pure NumPy, float64 reference; float32 inputs preserved on output. Docstring cites \u00a74.2 and records the r_par sign convention difference vs. textbooks (harmless for R).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_normal_incidence_closed_form: R(theta=0) == ((n-1)^2 + k^2)/((n+1)^2 + k^2) to 1e-12 relative over a grid n in [0.05, 30], k in [0, 100].",
+    "test_brewster_null_lossless: n = 1.5, k = 0: R_par(atan 1.5) < 1e-12 (catches a swapped r_perp/r_par or a wrong n~^2 factor).",
+    "test_index_matched_is_transparent: n = 1, k = 0 gives R = 0 to 1e-15 at every angle.",
+    "test_reflectance_bounded_sweep: theta in [0, 89.9 deg] x {(1.218,0.0508), (1.5,0), (2.2,0.3), (25.3,89.8), (0.5,0), (0.05,3)}: 0 <= R <= 1, finite, and R(89.99 deg) > 0.99 (grazing limit).",
+    "test_water_10um_published_curve: n=1.218, k=0.0508: R(0) = 0.01018 +/- 1e-4; eps(60 deg) = 0.961 +/- 0.005; eps(80 deg) = 0.697 +/- 0.005 (values reproduced this session; cross-check against the [R1] curve).",
+    "test_no_tir_knee_for_lossy: n = 0.5, k = 0.5: R(theta) < 1 - 1e-4 for all theta <= 89 deg and max |dR/dtheta| over a 0.01 deg grid < 5 per radian (a naive complex sqrt produces a discontinuity here).",
+    "test_wavelength_continuity_across_n_lt_1: sweep n from 0.3 to 3.0 at k = 0.01, theta = 60 deg, 1000 steps: |R_i+1 - R_i| < 0.01 everywhere (wrong branch gives a jump)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-04",
+   "title": "n/k optical-constant tables: loader, interpolation, and first data files",
+   "spec_refs": [
+    "\u00a74.2 (refractiveindex.info, water validation)",
+    "\u00a712.3 `n_k_file`",
+    "thermal-materials skill lines 96-97",
+    "CLAUDE.md 'Don't invent physical constants'"
+   ],
+   "description": "Create `irsim/materials/nk.py`: load `data/nk/<name>.csv` (header lines with `# source:` URL and citation, columns lambda_um, n, k), assert micrometres, ascending lambda, k >= 0, n > 0; interpolate n and k separately (never |n~|) on lambda; raise on extrapolation outside the table. Check in initial tables with provenance for: water (Hale & Querry 1973), soda-lime/borosilicate glass, aluminium, and an acrylic/paint proxy \u2014 the four materials the spec singles out. `fresnel_from_table(name, lambda_um, cos_theta)` composes MAT-03.",
+   "depends_on": [
+    "MAT-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_water_anchor: interpolating the checked-in water table at 10.0 um gives n = 1.218 +/- 0.01 and k = 0.0508 +/- 0.003 (\u00a74.2 anchor); a table in nm or with n/k columns swapped fails.",
+    "test_fresnel_from_table_matches_scalar: `fresnel_from_table('water', 10.0, cos60)` equals MAT-03 with (1.218, 0.0508) to 1e-3 absolute in R.",
+    "test_aluminium_is_a_mirror: eps(0) from the Al table at 10 um < 0.03 (skill Rule 2: bare metal is a mirror; \u00a716.2 says 'eps = 0.09 means it is a mirror').",
+    "test_every_nk_file_has_source_header: parse `# source:` from each file in data/nk; missing provenance fails.",
+    "test_extrapolation_raises: requesting 30 um from a table ending at 20 um raises rather than clamping."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "MAT-05",
+   "title": "Level B empirical angular model and per-class (a, p) fitter against Level A",
+   "spec_refs": [
+    "\u00a74.2 Level B (lines 240-246)",
+    "\u00a713.5 line 1066 (p = 4 hard-coded)",
+    "thermal-materials skill 'Level B' and test 'Level B fit vs Level A < 0.02 over 0-70 deg'"
+   ],
+   "description": "Create `irsim/materials/angular.py`: `emissivity_empirical(eps0, a, p, cos_theta)` = eps0 * (1 - a * (1 - cos)^p), and `fit_empirical(eps_A(theta), theta_grid, p_choices=(4,5,6))` returning (eps0, a, p, max_residual) by least squares over 0-70 deg with bounds a in [0, 0.5]. The fitter must REPORT failure (residual > 0.02) rather than return a bad fit \u2014 metals and low-n dielectrics whose eps rises with angle cannot be represented. Provide `bake_angular_models(library)` that writes (a, p) into the YAML for materials marked `angular_model: {type: empirical, fit_from: nk/...}`.",
+   "depends_on": [
+    "MAT-03",
+    "MAT-04"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_fit_residual_below_0p02_for_dielectrics: water (1.218, 0.0508), paint proxy (1.5, 0.1), glass proxy (2.2, 0.3): max |eps_B(theta) - eps_A(theta)| < 0.02 over 0-70 deg on a 1 deg grid.",
+    "test_fit_rejects_metal: aluminium (25.3, 89.8) \u2014 eps increases with theta then falls; fitter must flag residual > 0.02 or raise 'requires Level A' (a fit that silently succeeds is wrong).",
+    "test_eps0_and_a0_identities: eps(theta=0) == eps0 exactly; a = 0 gives constant eps at all angles.",
+    "test_monotone_falloff: for a > 0, p >= 1, eps is non-increasing in theta over [0, 90 deg].",
+    "test_p_is_a_free_parameter: fitting water with p fixed at 4 versus best p in {4,5,6} changes the residual; assert the chosen p is recorded (guards against a kernel that hard-codes p = 4 without the material saying so)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-06",
+   "title": "Unified directional-emissivity dispatch over G-buffer arrays (Levels A/B/C)",
+   "spec_refs": [
+    "\u00a74.2 (all three levels)",
+    "\u00a713.3 Normal AOV 'for eps(theta)'",
+    "\u00a713.5",
+    "ir-sim-testing 'grazing-angle sphere' fixture"
+   ],
+   "description": "Create `irsim/materials/directional.py`: `directional_emissivity(material_optical, band, cos_theta: NDArray[float32]) -> NDArray[float32]` selecting Level A (n/k table at the band's effective wavelength, or spectrally averaged), Level B (baked a, p), or Level C (constant) per the material's `angular_model`. Adds the `gbuffer_sphere` fixture (grazing-angle sphere: cos_theta from 1 at centre to 0 at the limb) and `gbuffer_two_material` to tests/conftest.py. This is the CPU oracle the isaac band_radiance kernel is tested against.",
+   "depends_on": [
+    "MAT-03",
+    "MAT-05",
+    "MAT-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_level_a_vs_baked_level_b_on_sphere: for water, |eps_A - eps_B| < 0.02 wherever cos_theta > cos 70 deg on the sphere fixture.",
+    "test_limb_darkening_direction: on the sphere, eps at the limb < eps at the centre for every dielectric (\u00a74.2: 'cooler-looking rim'); a model that returns constant eps for glass fails.",
+    "test_level_c_only_for_high_emissivity: constructing Level C for a material with eps_B < 0.93 in any band raises or warns loudly (spec restriction).",
+    "test_dtype_preserved_float32_and_finite: float32 in gives float32 out (non-negotiable #2); cos_theta = 0 and negative (back-facing) give finite eps in [0, 1].",
+    "test_back_facing_uses_abs: eps(cos = -0.5) == eps(cos = +0.5), matching the \u00a713.5 kernel's fabsf."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "MAT-07",
+   "title": "Material library v0: the fifteen \u00a716.2 materials as YAML + spectra with provenance",
+   "spec_refs": [
+    "\u00a716.2",
+    "\u00a712.3",
+    "\u00a74.3",
+    "\u00a74.4",
+    "\u00a712.1 table (glass/water/vegetation per band)",
+    "thermal-materials skill Rule 2, Rule 3, Rule 4, 'Tests to write'"
+   ],
+   "description": "Author `configs/materials/<name>.yaml` for all 15 \u00a716.2 rows with `source: literature`, thermal properties from the table, a `thickness_m` per row (paint 1.2 mm per \u00a712.3; ADR for the rest), `roughness_per_band` decreasing with lambda for smooth classes and flat for rough ones, `transmittance_per_band` (glass: nir/swir > 0.5, mwir per ADR, lwir 0), and an emissivity spectrum in `data/spectra/` (flat-per-band synthetic curves reproducing the table values where no literature curve exists, clearly labelled synthetic). Angular model: fresnel for water/glass/aluminium/paint (n/k from MAT-04), empirical baked for rubber/skin/cotton, constant for asphalt/concrete/soil/vegetation/snow. This step lands the CLAUDE.md non-negotiable #4 library-walk test.",
+   "depends_on": [
+    "MAT-01",
+    "MAT-02",
+    "MAT-04",
+    "MAT-05"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_library_kirchhoff_closure (the non-negotiable #4 test): walk every YAML in configs/materials, every band declared plus every band in configs/sensors: |eps_B + rho_B + tau_B - 1| < 1e-6.",
+    "test_library_reproduces_16_2: eps_B(lwir top-hat 7.5-13.5, 300 K) and eps_B(mwir 3-5, 300 K) within 0.02 of the \u00a716.2 columns for each material (with the ADR-defined normal/hemispherical convention).",
+    "test_glass_band_transition: glass tau_swir > 0.5, tau_nir > 0.5, tau_lwir < 0.01, eps_lwir in [0.85, 0.92].",
+    "test_bare_aluminium_is_a_mirror: eps_lwir < 0.15 and eps_mwir < eps_lwir (\u00a716.2 0.06 < 0.09).",
+    "test_roughness_monotone_for_smooth_classes: paint/glass/water roughness strictly decreasing nir -> lwir (\u00a74.3).",
+    "test_thermal_inertia_ordering: P = sqrt(k rho c_p) satisfies water > concrete > asphalt > cotton (a transposed column in the table fails this).",
+    "test_every_material_has_source_and_all_bands: missing `source` or a band absent for any material fails loudly."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-08",
+   "title": "Packed float32 MaterialTable (material index -> per-band parameters) with unmapped sentinel",
+   "spec_refs": [
+    "\u00a713.3 material-ID AOV",
+    "\u00a713.5 `matEps` float2",
+    "\u00a714 'Emissivity table'",
+    "CLAUDE.md non-negotiable #2"
+   ],
+   "description": "Create `irsim/materials/table.py`: `MaterialTable.from_library(library, bands)` producing contiguous float32 arrays indexed by a stable integer id: per band `eps0[m, b]`, `a[m, b]`, `p[m, b]`, `rho[m, b]`, `tau[m, b]`, `roughness[m, b]`, plus thermal columns; index 0 reserved for UNMAPPED (flagged, rendered magenta downstream). Serialise to `data/lut/<library_hash>_materials.npz` with a JSON sidecar (config hash, band list, index->name). This is what the Warp/SPG kernels upload via `cuda.static`.",
+   "depends_on": [
+    "MAT-07",
+    "MAT-06"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_closure_survives_float32_packing: for every (m, b), |eps0 + rho + tau - 1| < 1e-6 after packing to float32 (float32 epsilon ~6e-8 keeps this comfortably inside tolerance; a float16 pack would fail at ~1e-3).",
+    "test_all_arrays_float32_or_int32: dtype assertions on every array (non-negotiable #2).",
+    "test_round_trip_by_name: table[index_of('car_paint_black')].eps0['lwir'] equals the library's eps_B to 1e-6; index_of on an unknown name raises.",
+    "test_sentinel_index_zero_is_unmapped: row 0 has eps = NaN-free sentinel values and `is_unmapped[0]` is True; conftest `material_id` zeros therefore point at UNMAPPED unless the fixture is updated \u2014 the test asserts the fixture is updated to a real material.",
+    "test_stale_table_detected: changing one YAML value changes the sidecar hash so a stale npz is rejected on load."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "MAT-09",
+   "title": "Engine-free reference for the (eps, rho, tau) surface composition including the second ray",
+   "spec_refs": [
+    "\u00a74.4",
+    "\u00a74.1",
+    "\u00a72 three-term L_sensor (self-emission + reflected)",
+    "\u00a75.1",
+    "\u00a712.2 line 900 'enable glass transmission in the material resolver'"
+   ],
+   "description": "Create `irsim/materials/surface.py`: `surface_radiance(eps, rho, tau, Lb_surface, L_env, L_behind)` = eps*Lb_surface + rho*L_env + tau*L_behind, vectorised, float32-preserving; L_behind defaults to L_env when tau == 0 so LWIR-only callers need no second ray. This is the materials-owned oracle the scene-radiance kernel (isaac area) reproduces; it uses `band_radiance_tophat` for tests and takes band radiances as inputs so it does not depend on the LUT.",
+   "depends_on": [
+    "MAT-08",
+    "radiometry: existing `band_radiance_tophat` (present); later the band LUT for speed"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_isothermal_enclosure_identity: for ANY closed triple, with Lb_surface = L_env = L_behind = Lb(T), output == Lb(T) to 1e-12 relative (a surface in an isothermal cavity is indistinguishable from a blackbody \u2014 fails if closure or a coefficient is wrong).",
+    "test_tau_zero_reduces_to_opaque: equals eps*Lb + (1-eps)*L_env to 1e-12 (the \u00a713.5 kernel form).",
+    "test_glass_shows_driver_in_swir_and_itself_in_lwir: with the v0 glass material, dL_out/dL_behind == tau_swir (> 0.5) and == tau_lwir (< 0.01); dL_out/dLb_surface == eps_lwir (~0.88).",
+    "test_cold_sky_reflection_sign: for aluminium (eps 0.09) with L_env = Lb(233 K) and T_surf = 300 K, apparent radiance < Lb(250 K) (the 'roofs read cold' phenomenon, \u00a74.3); a model that ignores rho fails."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "MAT-10",
+   "title": "Engine-free USD material-mapping resolver (override -> semantic -> name pattern -> loud default)",
+   "spec_refs": [
+    "thermal-materials skill 'The USD import problem' (lines 112-132) and test 'Import mapping'",
+    "\u00a713.3 material-ID AOV"
+   ],
+   "description": "Create `irsim/materials/mapping.py`: input is a plain list of `PrimRecord(path, material_name, semantic_class, override)` (no USD types), output `MappingResult(assignments: dict[path, material_id], misses: list[PrimRecord], coverage: float)`. Rules table lives in `configs/materials/mapping.yaml` (semantic -> material, glob/regex patterns -> material, case-insensitive). Never silently defaults: misses map to the UNMAPPED sentinel and are recorded. Coverage threshold configurable for CI.",
+   "depends_on": [
+    "MAT-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_precedence_override_beats_semantic_beats_pattern: a prim with all three set resolves to the override; with two, to the semantic; with one, to the pattern.",
+    "test_known_names_resolve: 'Car_Paint_Metallic_Red' -> car_paint_*, 'Windshield_Glass' -> glass_windshield, 'Chrome_Trim' -> bare_aluminium (finish taxonomy, skill Rule 2), 'Tire_Rubber' -> rubber_tyre.",
+    "test_unknown_is_reported_not_defaulted: 'Mystery_Mat_07' appears in misses with sentinel id 0, and coverage drops accordingly; a resolver that returns a real material here fails.",
+    "test_coverage_arithmetic: 7 of 10 prims mapped -> coverage == 0.7 exactly; CI helper raises below threshold."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "MAT-11",
+   "title": "scripts/audit_materials.py + Isaac USD stage walker feeding the resolver",
+   "spec_refs": [
+    "thermal-materials skill lines 124-132",
+    "\u00a713.3",
+    "CLAUDE.md layout (scripts/, src/irsim_isaac/)"
+   ],
+   "description": "`scripts/audit_materials.py` accepts either a USD stage path (requires Isaac/pxr, imports only inside `irsim_isaac.materials_usd`) or a JSON prim dump (engine-free path), runs MAT-10, prints misses grouped and counted with coverage %, exits non-zero below the threshold. `irsim_isaac/materials_usd.py` walks the stage, reads bound material names, `semantic:Semantics` params, and the `thermal:material` custom attribute (name to be fixed by ADR) into `PrimRecord`s, and writes the resolved index back as a per-prim primvar for the material-ID AOV.",
+   "depends_on": [
+    "MAT-10",
+    "isaac: stage loading / render-product bootstrap",
+    "isaac: temperature encode/decode round trip (build-order step 2, gate for all engine work)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "unit: test_audit_from_json_dump: a fixture dump with 3 known and 2 unknown names yields coverage 0.6, lists both unknowns, exit code 1 at threshold 0.9.",
+    "integration (@isaac): test_audit_sample_stage: a checked-in 4-prim USDA test stage with known bindings resolves all four; adding a fifth unbound prim is reported as a miss.",
+    "integration (@isaac): test_override_attribute_wins: a prim whose visible material says *glass* but carries `thermal:material = car_paint_black` resolves to paint."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "MAT-12",
+   "title": "Material-ID AOV binding and magenta unmapped debug AOV in Isaac Sim 6.0",
+   "spec_refs": [
+    "\u00a713.3 AOV table (material-ID row)",
+    "\u00a713.5 `tex2D<float>(matId)`",
+    "thermal-materials skill 'debug AOV ... magenta'",
+    "isaac-sim-spg skill 'AOV set'"
+   ],
+   "description": "In `irsim_isaac/pipeline/material_id.py`: emit a per-pixel integer material index from the per-prim primvar written by MAT-11 through whichever AOV the experiment in the ambiguities list shows is exact (custom primvar AOV, semantic-segmentation remap, or DiffuseAlbedo encoding), nearest-sampled (no AA blending of IDs), and bind the MAT-08 table on the GPU once via `cuda.static` / a warp array. Add the magenta debug output for sentinel 0.",
+   "depends_on": [
+    "MAT-08",
+    "MAT-11",
+    "isaac: AOV/annotator setup (\u00a713.3)",
+    "isaac: Warp reference pipeline skeleton (\u00a713.6)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "integration (@isaac): test_material_id_is_integer_exact: a 3-material test scene rendered at 4x supersampling; every pixel's decoded id is in {ids of the three prims, 0}; zero pixels carry a non-integer or blended value (an AA-interpolated id at an edge is a wrong material, not a small error).",
+    "integration (@isaac): test_unmapped_renders_magenta: a prim with no mapping produces RGB (1,0,1) in the debug AOV and id 0 in the ID AOV.",
+    "integration (@isaac, later): test_kernel_eps_matches_cpu_oracle: band_radiance kernel eps(theta) vs MAT-06 on the same G-buffer agrees to 1e-4 relative (isaac-sim-spg 'Verification discipline')."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "MAT-13",
+   "title": "Hemispherical (band and total) emissivity from the directional model, for the thermal solver",
+   "spec_refs": [
+    "\u00a76.1 (eps in emitted and absorbed-LW terms)",
+    "\u00a76.2 'spectral; drives both heat balance and radiance'",
+    "\u00a74.2",
+    "\u00a716.2 (table values fall between normal and hemispherical)"
+   ],
+   "description": "Create `irsim/materials/hemispherical.py`: `hemispherical_emissivity(material, lambda_or_band)` = 2 * int_0^{pi/2} eps(theta) cos theta sin theta dtheta via Gauss-Legendre in cos theta; `total_hemispherical_emissivity(material, T)` integrates over lambda with B(lambda,T)/(sigma T^4/pi) weighting. Exposed on `MaterialThermal` so the thermal area never reuses the band directional eps by accident. Records in the ADR which quantity the \u00a716.2 scalars are taken to be.",
+   "depends_on": [
+    "MAT-03",
+    "MAT-05",
+    "MAT-02"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_constant_eps_identity: Level C material gives eps_hemi == eps to 1e-12 and eps_tot(T) == eps to 1e-12 for any T.",
+    "test_water_10um_hemispherical_known_answer: Fresnel water gives eps_hemi = 0.951 +/- 0.002 (independent midpoint quadrature, N = 20000, computed this session) and eps_hemi < eps(0) = 0.990.",
+    "test_metal_hemispherical_exceeds_normal: aluminium (25.3, 89.8): eps_hemi (0.015) > eps(0) (0.012) \u2014 sign of the difference flips for metals; a model that assumes monotone falloff fails.",
+    "test_quadrature_convergence: Gauss-Legendre 16-point vs 64-point agree to 1e-6 for every library material.",
+    "test_thermal_sensitivity_bound: for water, an equilibrium-temperature solve with eps = 0.990 vs 0.951 differs by > 0.3 K under a cold clear sky (justifies why the solver must not use the normal-incidence value)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Band-effective emissivity convention (how spectral eps(lambda) becomes the scalar the kernel uses)",
+   "why": "\u00a712.3 mandates spectral authoring, Appendix A item 3 declares eps grey within a band, and the \u00a713.5 kernel consumes one eps0 per material; the reduction that connects them is not written anywhere. The choice fixes a permanent error: Planck weighting at a fixed T_ref makes hot objects (exhaust at 500 K) use a slightly wrong eps; ignoring the photon/energy distinction biases MWIR/SWIR by a band-dependent amount.",
+   "options": [
+    "Weight by B(lambda, 300 K) (energy) for bolometer bands and B_q(lambda, 300 K) for photon bands; single scalar per material per band; error bounded by a test that reports max |eps_B(200 K) - eps_B(1000 K)| across the library",
+    "Tabulate eps_B(T) alongside the Planck LUT (adds a second LUT per material per band; exact for non-grey spectra; raises kernel table size)",
+    "Unweighted mean of eps(lambda) across the band (simplest; wrong by up to a few percent for sloped spectra)"
+   ]
+  },
+  {
+   "title": "Angular-model level per material class and the baked (a, p) values",
+   "why": "\u00a74.2 says pick per class, not globally, and the \u00a713.5 kernel hard-codes Level B with p = 4. Level B cannot represent metals (eps rises with angle) or low-n materials, so which materials get Level A in the kernel, and whether p is per-material or fixed, changes the kernel argument layout (float2 vs float3/float4 per material) \u2014 a decision that outlives every commit touching the kernel.",
+   "options": [
+    "Level A only for water/glass/bare metal (n/k tables, evaluated per pixel or via a small angular LUT); Level B with per-material p for painted/plastic; Level C for rough dielectrics",
+    "Level B everywhere with p fixed at 4 as in \u00a713.5 (two shader instructions; accept > 0.02 error on metals and document it)",
+    "Precompute a per-material eps(cos theta) 1-D LUT (e.g. 64 entries float32) so the kernel is level-agnostic and the CPU chooses the level"
+   ]
+  },
+  {
+   "title": "What the \u00a716.2 scalar emissivities mean, and which source wins when n/k Fresnel disagrees with the table",
+   "why": "Verified numerically: Fresnel from bulk n/k gives water eps(0) = 0.990 / eps_hemi = 0.951 against the table's 0.96, and aluminium 0.012-0.015 against 0.09. Real bare metal has an oxide layer and roughness the bulk n/k does not capture. The library must declare whether a scalar is normal-incidence, hemispherical, or an effective measured value, and whether Fresnel-derived eps is rescaled to match the table (an 'effective n/k' fit) or the table is discarded for Fresnel materials.",
+   "options": [
+    "Table values are treated as effective near-normal band emissivity; for Level A materials, fit an effective k (or a thin-film/roughness factor) so eps(0) matches the table, keep the Fresnel angular shape",
+    "Trust n/k for Level A materials and mark the \u00a716.2 row as superseded; accept eps_Al ~ 0.01 (a perfect mirror) until measured",
+    "Store both: `eps_normal` and `eps_hemispherical` explicitly per band, derived from the chosen model, with the thermal solver reading only the hemispherical one"
+   ]
+  },
+  {
+   "title": "Material file layout and data directory conventions",
+   "why": "\u00a712.3 shows a `materials:` wrapper (implying one library file); the skill shows bare top-level keys (implying one file per material); CLAUDE.md says the closure test 'walks the whole material library'. Also, \u00a712.3 paths like `spectra/car_paint_black.csv` collide with the sensor config's `spectra/boson_vox.csv` in `data/spectra/`. Whatever is chosen becomes the on-disk contract for every asset anyone adds.",
+   "options": [
+    "One YAML per material in configs/materials/, bare key, `source` required; emissivity spectra in data/spectra/materials/, detector responses in data/spectra/responses/ (sensor config already writes 'responses/boson_vox.csv' in \u00a712.2 line 832 but 'spectra/boson_vox.csv' in the actual file \u2014 pick one)",
+    "Single configs/materials/library.yaml with the \u00a712.3 wrapper",
+    "One YAML per material AND a generated index file with content hash, mirroring the LUT sidecar approach"
+   ]
+  },
+  {
+   "title": "Roughness semantics and its deferral at L2",
+   "why": "\u00a74.3/\u00a712.3 require per-band roughness but never define the number (GGX alpha? RMS height in um with the lambda/8 rule? Beckmann sigma?), and the L2 sky-view-factor reflection (\u00a75.3a, \u00a713.5) never reads it. Authoring a number with undefined meaning now means re-authoring the whole library when option 2-4 of \u00a713.7 lands.",
+   "options": [
+    "Define roughness_per_band as a unitless microfacet alpha in [0,1] (GGX), document the lambda/8 derivation rule from an RMS height, leave it unconsumed at L2 and record that explicitly",
+    "Author RMS height sigma_h in um once (band-independent, physical) and derive per-band alpha via the sigma/lambda ratio in code \u2014 fewer numbers to author, one formula to validate",
+    "Defer the field entirely until \u00a713.7 option 2+ exists (violates \u00a74.4's 'schema must express it from day one' spirit for tau, but tau and roughness are separable)"
+   ]
+  },
+  {
+   "title": "Semi-transparent tau: scalar-per-band vs spectral, and where L_behind comes from",
+   "why": "\u00a712.3 makes tau per-band scalar while eps is spectral, so closure at spectral resolution is ill-defined; and the 'second ray' (\u00a74.4) is an engine capability that LWIR-first work will not have. The choice determines whether MWIR glass (partially transmitting 3-4.5 um) is representable.",
+   "options": [
+    "Spectral tau(lambda) file optional; scalar per band accepted and expanded to a flat spectrum; closure enforced on band-effective values only; L_behind = L_env until a second ray exists (documented approximation)",
+    "Spectral everything (eps and tau curves mandatory) with closure enforced per wavelength sample",
+    "Scalar per band only, no spectral tau ever (simplest, blocks spectral MWIR glass)"
+   ]
+  },
+  {
+   "title": "Mapping-layer default behaviour and CI coverage threshold",
+   "why": "The skill demands a loud default and a CI-failing coverage threshold; the number chosen (e.g. 95%) and whether an unmapped prim renders as sentinel magenta radiance (poisoning downstream statistics) or is dropped from validation metrics affects every dataset generated.",
+   "options": [
+    "Sentinel index 0 -> magenta in debug AOV and eps = 1, tau = 0 (blackbody) in the physics path so unmapped objects are at least energy-conserving; CI threshold 95%",
+    "Sentinel -> NaN radiance so any downstream metric fails loudly; CI threshold 100% on curated scenes",
+    "Fallback to a 'generic_painted' material with a logged warning (explicitly rejected by the skill; listed for completeness)"
+   ]
+  },
+  {
+   "title": "Provenance and licensing of checked-in n/k and emissivity data",
+   "why": "refractiveindex.info aggregates datasets under varied licences; ECOSTRESS/ASTER spectral libraries have their own terms. Checked-in CSVs outlive commits and are redistributed with the repo.",
+   "options": [
+    "Check in small CSV extracts with a `# source:` header citing the original paper (data are facts; cite the measurement), record licence per file",
+    "Download at `make data` time from a pinned URL with a hash, keep only the hash in git",
+    "Vendor only public-domain datasets (Hale & Querry water, Raki\u0107 aluminium) and mark everything else `estimated` with synthetic flat spectra"
+   ]
+  },
+  {
+   "title": "Fresnel specular R(theta) used as DHR for smooth materials (rough-surface DHR not modelled)",
+   "why": "\u00a74.1 defines rho as the hemispherically integrated BRDF but \u00a74.2 uses the specular Fresnel reflectance directly as 1 - eps. That is exact only for optically smooth surfaces; for rough surfaces the DHR differs and eps(theta) is flatter. Choosing to ignore this is the L2 approximation and needs to be on record with the error it introduces (a few percent in eps for intermediate roughness).",
+   "options": [
+    "Accept specular Fresnel as DHR for Level A materials (smooth by construction: water, glass, polished metal, gloss paint) and use Level B/C for anything rough; document the error band",
+    "Implement a microfacet DHR integral (GGX/Beckmann with the per-band roughness) as the Level A+ path \u2014 makes roughness consumed and closes the \u00a74.1/\u00a74.2 gap at the cost of a 2-D LUT per material"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "The band-effective emissivity formula is absent from the spec (see ADR 1). Its magnitude matters: for a realistic sloped spectrum the difference between energy-weighted, photon-weighted and unweighted means can exceed the 0.02 Level-B budget.",
+   "how_to_verify": "Implement MAT-02 with all three reductions behind a flag; run the library and print max spread per material per band; if any exceeds 0.01, the ADR must pick the Planck-weighted form and the kernel must not take an unweighted mean."
+  },
+  {
+   "description": "\u00a713.5 hard-codes Level B with p = 4 and a float2 (eps0, a) per material; \u00a74.2 says fit p in 4-6 per class; the skill's fit criterion is 0.02 over 0-70 deg. If p = 4 cannot meet 0.02 for glass or paint, the kernel signature must change (float3/float4) before any SPG or Warp code is written.",
+   "how_to_verify": "MAT-05 fitter run over water, glass proxy, paint proxy with p locked at 4 versus free; report residuals. Decide the kernel layout from the numbers, not from the sketch."
+  },
+  {
+   "description": "\u00a716.2 scalar emissivities match neither normal-incidence nor hemispherical Fresnel from bulk n/k (water 0.96 vs 0.990/0.951; aluminium 0.09 vs 0.012/0.015). The table does not say what it tabulates.",
+   "how_to_verify": "Compute eps(0), eps_hemi, and eps(50 deg) for every Level-A material from its n/k table and diff against \u00a716.2; write the ADR from the diff table. For aluminium, check whether a thin Al2O3 overlayer (n ~ 1.6, k ~ 0.1 at 10 um) or a roughness factor reproduces 0.09 before deciding to override."
+  },
+  {
+   "description": "sgn(0) in the A/B branch rule is undefined for lossless media with Re(Z) < 0 (n < 1, beyond the critical angle). With sgn(0) = 0 the form gives sqrt(Z) = 0, which still yields R = 1 (correct TIR reflectance) but wrong phase; with sgn(0) = +1 it gives the textbook sqrt. Only matters for n < 1 materials (reststrahlen bands, some metals near plasma edges) and only if phase or polarisation is ever used.",
+   "how_to_verify": "Verified this session: n = 0.5, k = 0 at 60 deg gives R = 1.0 with sgn(0) = 0. Document the convention in MAT-03's docstring and add the n < 1 case to the bounded-sweep test."
+  },
+  {
+   "description": "The spec's r_par has the opposite overall sign to the usual textbook convention (r_par = (n~^2 cos - sqrt Z)/(n~^2 cos + sqrt Z)). Irrelevant for R = |r|^2; would matter for polarimetric work (Appendix A item 5 says out of scope).",
+   "how_to_verify": "Brewster-null test in MAT-03 passes with either sign; note in the docstring which convention is implemented so a future polarisation extension does not inherit a silent sign."
+  },
+  {
+   "description": "Data directory collision: \u00a712.3 puts material emissivity spectra at `spectra/<material>.csv`; the sensor config and ir-radiometry skill put detector response curves in `data/spectra/` too (and \u00a712.2 line 832 says `responses/boson_vox.csv` while the actual file says `spectra/boson_vox.csv`). A loader that globs data/spectra will mix the two.",
+   "how_to_verify": "Decide the layout in the ADR (materials/ vs responses/ subdirectories), fix the sensor YAML path to match, and add a test that every spectral CSV declares its kind in a header."
+  },
+  {
+   "description": "Roughness is required by the schema but has no numerical definition and no consumer at L2 (sky-view-factor blend ignores it). Values authored now may be meaningless later.",
+   "how_to_verify": "Write the definition in the ADR before authoring MAT-07; add a schema test that roughness is in the declared range; grep the L2 kernel to confirm it is intentionally unread and say so in README limitations."
+  },
+  {
+   "description": "Closure is ill-defined at spectral resolution when eps is spectral and tau is per-band scalar (\u00a712.3). The library-walk test must state on which quantities it asserts eps + rho + tau = 1.",
+   "how_to_verify": "MAT-01/MAT-07: assert closure on band-effective values (after MAT-02 reduction) and, when a spectral tau file exists, additionally per wavelength sample; document both in the test docstring."
+  },
+  {
+   "description": "Glass in MWIR: \u00a712.1 says 'opaque-ish', \u00a74.4 gives only LWIR (opaque) and SWIR/NIR (transparent). Soda-lime glass transmits partially between 3 and ~4.5 um for windshield thickness, so tau_mwir is neither 0 nor 0.5 and depends on thickness.",
+   "how_to_verify": "Compute Beer-Lambert internal transmittance from the checked-in glass k(lambda) over 5 mm, band-average over 3-5 um with B(300 K) weighting, and set tau_mwir from that number; record it in the glass YAML with `source: literature` and the calculation."
+  },
+  {
+   "description": "Isaac Sim 6.0: it is not established which AOV can carry an exact integer material id. \u00a713.3 hedges 'DiffuseAlbedo or material-ID, uint8/float'; SPG stdlib nodes do not support SINT/UINT textures; the \u00a713.5 kernel reads the id via tex2D<float>; conftest uses int32. An anti-aliased or filtered id at object edges is a wrong material, not a small error.",
+   "how_to_verify": "Before MAT-12: render a 3-prim scene, enumerate annotators available on the render product (semantic segmentation, primvar-driven AOVs, DiffuseAlbedo), read back each candidate at 1x and 4x supersampling, histogram the values; accept only a channel whose histogram has exactly N+1 distinct values with no edge blending. Record the finding in the MAT-12 ADR."
+  },
+  {
+   "description": "The `thermal:material` USD override attribute name and the semantic-class source are unspecified. Isaac Replicator's semantics API and the `semantic:Semantics:params:*` attribute layout changed across 4.x/5.x, and 6.0 deprecates `isaacsim.sensors.camera` in favour of `isaacsim.sensors.experimental.rtx`.",
+   "how_to_verify": "In a 6.0 session, author a prim with `customData`/attribute `thermal:material` and a Replicator semantic label, print the USD attributes via `prim.GetAttributes()`, and fix the names in the mapping ADR; write the MAT-11 integration test against those exact names."
+  },
+  {
+   "description": "Specular Fresnel R(theta) is used as the DHR (\u00a74.1 vs \u00a74.2). For rough materials this overstates the angular falloff; the spec routes those to Level C so the practical impact is confined to intermediate-roughness surfaces (matte paint, weathered plastics).",
+   "how_to_verify": "For a paint proxy, compare eps(theta) from specular Fresnel with a Beckmann/GGX DHR integral at alpha = 0.12 (the \u00a712.3 LWIR value); if the difference exceeds 0.02 at 60 deg, the ADR must say so and Level B fits should target the DHR curve, not the specular one."
+  },
+  {
+   "description": "The thermal solver needs total hemispherical emissivity; the radiance path needs band directional emissivity. \u00a76.2's single symbol eps invites using the LWIR band value in the energy balance.",
+   "how_to_verify": "MAT-13's sensitivity test: solve equilibrium T for water with eps = 0.990 vs 0.951 under a clear-sky night forcing and show the difference (> 0.3 K expected); make `MaterialThermal` expose only the hemispherical quantity so the wrong one is not reachable from the thermal area."
+  },
+  {
+   "description": "Band names (nir/swir/mwir/lwir) appear as literal keys in \u00a712.3; encoding them as an Enum in the schema would violate 'bands are data, not code' and block e.g. a second LWIR band with a different response.",
+   "how_to_verify": "Schema test: a material declaring an extra band key `lwir_wide` loads without code change; the library-walk test takes the band list from configs/sensors, not from a constant."
+  },
+  {
+   "description": "The existing unit suite could not be executed in this environment (no pytest/numpy in the default interpreter, no venv). The 'green' baseline is unverified here.",
+   "how_to_verify": "`make install && make check` before the first materials commit; if radiometry tests fail, fix or report before building on them."
+  },
+  {
+   "description": "float32 packing of the material table: closure at 1e-6 after float32 is comfortable (~1e-7 worst case) but a future fp16 table would fail silently at ~1e-3; the isaac side might be tempted to use fp16 textures for the material table.",
+   "how_to_verify": "MAT-08 dtype test plus a deliberate negative test that packs to float16 and asserts the closure test fails, so the guard is known to be live."
+  },
+  {
+   "description": "Bismuth is named as the second [R1] validation material but no n/k values are quoted in the spec.",
+   "how_to_verify": "Pull n/k for Bi at 10 um from refractiveindex.info, add to data/nk with source, and add a second known-answer Fresnel test alongside water once the [R1] curve is available for comparison."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free physics core: everything in MAT-01..MAT-10 and MAT-13 is pure Python + NumPy under src/irsim/materials and src/irsim/config; the USD stage walker (MAT-11) and the material-ID AOV binding (MAT-12) live in src/irsim_isaac. Enforced automatically by tests/unit/test_layering.py (rglob over src/irsim, forbids omni/pxr/isaacsim/warp/carb). The mapping resolver is deliberately designed on plain PrimRecord dataclasses so it is testable without pxr.",
+  "#2 float32 or better wherever temperature or radiance flows: the packed MaterialTable (MAT-08) stores every array as float32; `directional_emissivity` (MAT-06) and `surface_radiance` (MAT-09) preserve float32 inputs; spectra/LUT sidecars are written float32; the reference computations run in float64. Enforced by dtype assertions in tests/unit/test_material_table.py, test_directional_emissivity.py, and a negative float16 test that must fail closure.",
+  "#4 Kirchhoff closure eps + rho + tau = 1 to 1e-6 for every material in every band: the schema (MAT-01) makes it impossible to author both eps and rho; rho is derived; the library-walk test tests/unit/test_material_library_closure.py (MAT-07) iterates every YAML in configs/materials over the union of declared and sensor-configured bands; MAT-08 re-asserts closure after float32 packing; MAT-09's isothermal-enclosure identity fails if the composition breaks closure.",
+  "#3 (noise in radiance space), #5 (aperture factor) and #6 (single WeatherSeries) are not touched by this area: materials add no noise, define no aperture, and read no weather. The only contact with #6 is that `MaterialThermal` (MAT-01/MAT-13) is the single object the thermal solver consumes, which keeps thermal properties from being authored twice."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a712.3 line 904 requires materials to be 'per-band spectral, not per-band scalar', but \u00a716.2 lines 1262-1278 supplies only per-band scalars (LWIR and MWIR columns only; no NIR/SWIR), and Appendix A item 3 line 1388 states 'emissivity is grey within a band'. The spectral-to-band reduction that reconciles the three is not written anywhere in the spec.",
+  "\u00a712.3 lines 906-920 wraps materials in a `materials:` key; thermal-materials skill lines 136-150 shows a bare top-level key and adds a mandatory `source:` field that \u00a712.3 does not have. CLAUDE.md says 'one test walks the whole material library', which presumes a layout neither document fixes.",
+  "\u00a716.2 lacks `thickness_m`, `roughness_per_band`, `angular_model`, `transmittance_per_band` and NIR/SWIR emissivities \u2014 all of which the \u00a712.3 schema requires \u2014 so the 'starting values' cannot populate a schema-valid material without additional authored numbers.",
+  "\u00a74.2 line 236 gives water at 10 um as n = 1.218, k = 0.0508, which through the spec's own equations yields eps(0 deg) = 0.990 and hemispherical eps = 0.951 (computed this session); \u00a716.2 line 1277 lists water eps_LWIR = 0.96. Likewise aluminium: bulk n/k Fresnel gives eps ~ 0.012-0.015 vs \u00a716.2 line 1268's 0.09. The table never states whether values are normal-incidence, hemispherical, or effective.",
+  "\u00a713.5 lines 1046 and 1061-1066 hard-code Level B with p = 4 and a float2 (eps0, a) per material, ignoring Level A, per-band roughness (\u00a74.3), tau (\u00a74.4), and the per-class p in 4-6 of \u00a74.2 line 246. \u00a713.3 line 971 calls the ID AOV 'uint8/float', \u00a713.5 line 1062 reads it as float via tex2D<float>, and tests/conftest.py line 27 makes it int32 \u2014 three types for one key.",
+  "\u00a712.3 line 919 makes `transmittance_per_band` a per-band scalar while `spectral_emissivity` (line 916) is a spectral curve; the closure eps + rho + tau = 1 of \u00a74.4 line 260 is therefore defined only after an unspecified band reduction.",
+  "\u00a74.1 line 207 defines rho as the directional-hemispherical reflectance (hemispherical integral of the BRDF), but \u00a74.2 lines 231-233 sets eps = 1 - R with R the specular Fresnel reflectance \u2014 exact only for optically smooth surfaces, while \u00a74.3 line 256 simultaneously requires per-band roughness for the same materials.",
+  "\u00a712.1 line 814 says glass is 'opaque-ish' in MWIR; \u00a74.4 line 260 covers only LWIR (opaque) and SWIR/NIR (transparent), leaving MWIR tau undefined for the material the spec calls a headline capability.",
+  "\u00a76.1 line 355 writes absorbed solar as (1 - alpha_sol)^c Q_sol, then line 363 says to write it as alpha_sol Q_sol and 'drop the confusing complement'. The material field `solar_absorptivity` (\u00a712.3 line 914) must be absorptivity; the \u00a716.2 alpha_sol column (white paint 0.28, snow 0.15) is consistent with absorptivity, so the line-355 form is the typo.",
+  "\u00a74.2 line 228: r_par is written with the opposite overall sign to the standard convention; harmless for R_par = |r_par|^2 but a latent sign for any future polarimetric extension (Appendix A item 5).",
+  "CLAUDE.md layout comment says `data/` holds 'spectral response curves, n/k tables, generated LUTs, weather files' with no location for material emissivity spectra; \u00a712.3 line 916 uses `spectra/<material>.csv`, \u00a712.2 line 832 uses `responses/boson_vox.csv` for the detector, and the actual configs/sensors/flir_boson_640_lwir.yaml line 13 uses `spectra/boson_vox.csv` \u2014 two kinds of curve in one directory with three naming conventions.",
+  "thermal-materials skill line 27 says the closure test asserts closure 'in every configured band', while \u00a715 line 1182 says 'every material, every band'. With one sensor config (LWIR only), 'configured' would let a material with no SWIR data pass, contradicting \u00a74.4's 'schema can express this from day one'.",
+  "\u00a713.7 lines 1130-1133 and the isaac-sim-spg skill list four reflection strategies of which only option 1 (sky-view blend) is planned at L2, yet \u00a712.3 line 922 says roughness_per_band 'is the parameter that makes vehicles reflect the sky correctly in LWIR' \u2014 a parameter that no L2 code path reads."
+ ]
+}

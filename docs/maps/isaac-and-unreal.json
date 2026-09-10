@@ -1,0 +1,927 @@
+{
+ "area": "isaac-and-unreal",
+ "existing_state": "Nothing functional exists for this area; it is scaffold only. Verified file by file:\n\nENGINE GLUE (src/irsim_isaac/): three files, all placeholders. /home/hunter/irsim-scaffold/src/irsim_isaac/__init__.py = one docstring line (\"Isaac Sim glue. The only package permitted to import engine modules.\"). /home/hunter/irsim-scaffold/src/irsim_isaac/pipeline/__init__.py = one docstring line (\"Render product / AOV setup and the Warp reference pipeline.\"). /home/hunter/irsim-scaffold/src/irsim_isaac/spg/README.md = one line (\"SPG assets: .cu kernels, .cu.lua launch scripts, .usda shader definitions.\"). There are NO .cu, .cu.lua or .usda files, no Warp kernels, no annotator/render-product code, no ROS 2 code, no Unreal code, no environment/import guard.\n\nTESTS: /home/hunter/irsim-scaffold/tests/unit/test_layering.py (34 lines) walks src/irsim/**/*.py with ast, collects absolute-import roots, and asserts none is in FORBIDDEN = {\"omni\",\"pxr\",\"isaacsim\",\"warp\",\"carb\"} (one param per file; only 4 files today). It does NOT check that irsim avoids importing irsim_isaac, does not inspect irsim_isaac at all, and cannot see importlib/string imports. /home/hunter/irsim-scaffold/tests/conftest.py provides `rng` (default_rng(20260910)), `gbuffer_ramp` (256x256 dict: temperature_k float32 linear 250-450 K across columns, normal_dot_view=1 float32, distance_m=50 float32, material_id=0 int32, sky_view_factor=0.5 float32) and `gbuffer_uniform` (64x64, 300 K, 10 m, sky_view 0). No encoded-T key, no motion-vector, no semantic key, no two-material / grazing-sphere / step-edge fixtures (the ir-sim-testing skill line 96 asks for five). /home/hunter/irsim-scaffold/tests/integration/ contains only .gitkeep \u2014 tests/integration/test_temperature_encoding.py named by the isaac-sim-spg skill (line 112) does NOT exist. tests/golden/ contains only .gitkeep. tests/unit/test_planck.py exists (radiometry only).\n\nBUILD/CONFIG: /home/hunter/irsim-scaffold/pyproject.toml defines markers isaac, gpu, slow and addopts \"-m 'not isaac and not gpu'\"; dependencies numpy/scipy/pydantic/pyyaml; dev extra pytest/pytest-cov/ruff/mypy/matplotlib; NO warp-lang, NO isaac extra. /home/hunter/irsim-scaffold/Makefile: test = pytest tests/unit; test-all = pytest tests -m \"\"; typecheck = mypy src/irsim ONLY (irsim_isaac is untyped); lint covers src tests scripts (so irsim_isaac is linted). /home/hunter/irsim-scaffold/.gitignore ignores *.usdc, outputs/, data/lut/*.npy, data/lut/*.json. /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml is a full \u00a712.2 schema instance (band 7.5-13.5 um, F/1.0, 14 mm, tau_opt 0.92, 640x512, 12 um, 60 Hz, 16 bit, tau_th 10 ms, NETD 50 mK, 3D ratios, NUC shuttered 180 s / 700 ms freeze, plateau AGC, outputs all four true) and contains NO engine-facing fields (no supersample factor, no T_ref/T_span, no AOV names, no render-product resolution, no reflection strategy, no camera prim path). configs/materials and configs/atmospheres: .gitkeep only. data/lut, data/nk, data/spectra, data/weather: .gitkeep only (no LUT, no spectral response file \u2014 the yaml references spectra/boson_vox.csv which does not exist). /home/hunter/irsim-scaffold/scripts/generate_luts.py is a stub that prints its docstring and exits 1; its docstring plans .npy output + JSON sha256 sidecar.\n\nPHYSICS CORE AVAILABLE TO THIS AREA: only /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py and planck.py (spectral_radiance, spectral_photon_radiance, d_spectral_radiance_dT, fractional_exitance, band_radiance_tophat; float64 reference). No band LUT, no inverse, no `irsim.optics` aperture factor, no materials, no atmosphere, no detector/noise/isp \u2014 every other src/irsim subpackage is a one-line __init__.py. There is no `irsim/pipeline` or G-buffer module anywhere.\n\nDOCS: docs/decisions/ has only 0001 (ADR template). README.md status row: `irsim_isaac` = not started, \"Temperature-encoding round trip is the first task\". CHANGELOG has no isaac entries. Git: one commit (3b653b3 \"Project Structure Created\"), clean tree.\n\nENVIRONMENT NOTE: the default python3 (/home/hunter/miniconda3/bin/python3) has neither numpy, pytest nor warp installed, so `make test` does not run here without `make install` into an environment; no conda env for this project exists (envs: drone_sim, matlab_airsim, sim, ytd). Isaac Sim availability on this machine was not verified.",
+ "key_equations_and_data": [
+  "Temperature encoding (\u00a713.3, \u00a73.2 precision trap, skill isaac-sim-spg 'Temperature encoding'): c = (T \u2212 T_ref)/T_span with T_ref = 200 K, T_span = 800 K, so c \u2208 [0,1] for 200\u20131000 K; decode T = c\u00b7T_span + T_ref. Must be a float32 AOV; fallback if float32 unavailable: coarse/fine split across two fp16 channels (R coarse, G fine). Acceptance: rendered-ramp round trip < 10 mK (\u00a713.3, \u00a715 Tier 1 table). Constants T_REF_K, T_SPAN_K must live in irsim (CLAUDE.md: constants in irsim.radiometry.constants or a dedicated encoding module).",
+  "Precision facts the tests must reproduce (\u00a73.2 line 170, \u00a713.3 line 978): fp16 spacing at 300 K = 2^8\u00b72^-10 = 0.25 K (5\u00d7 a 50 mK NETD); 8-bit unorm over 200\u2013400 K = 0.78 K/code. float32 spacing at c\u22480.125 is ~1.2e-5 K \u2014 comfortably < 10 mK.",
+  "AOV set and formats (\u00a713.3 table, skill 'AOV set'): PtSelfIllumination (or custom) \u2192 encoded T, float32; DiffuseAlbedo or material-ID \u2192 emissivity lookup key, uint8/float; Normal \u2192 surface normal (world or view), fp16 ok; DistanceToCamera \u2192 path length d, float32 (ray length, not image-plane depth); AmbientOcclusion (or custom) \u2192 sky-view factor V_s, fp16 ok; MotionVectors \u2192 image-plane velocity, fp16 ok; SemanticSegmentation \u2192 labels, uint. Alternative T carrier: HdrColor with max bounces = 0 (\u00a713.1 step 2).",
+  "G-buffer contract consumed by all six stages (\u00a713.4 diagram; conftest.py keys): temperature_k (or encoded c) float32, normal_dot_view float32 (= |n\u00b7v| = cos \u03b8, \u00a713.5 line 1064), distance_m float32, material_id int32 (transported as float in SPG, \u00a713.5 line 1062), sky_view_factor float32 \u2208 [0,1], plus optional motion_px_per_frame float32x2 and semantic_id uint32.",
+  "Stage 1 band_radiance (\u00a713.4, \u00a713.5, \u00a75.3a, \u00a74.2 Level B): T = c\u00b7T_span + T_ref; u = (T \u2212 lutT0)/(lutT1 \u2212 lutT0)\u00b7(N\u22121) clamped to [0, N\u22121.001]; B = LUT[i0]\u00b7(1\u2212fr) + LUT[i0+1]\u00b7fr; \u03b5(\u03b8) = \u03b50\u00b7[1 \u2212 a\u00b7(1\u2212cos\u03b8)^p] (sketch hard-codes p = 4); L_env = V_s\u00b7L_sky + (1\u2212V_s)\u00b7L_ground; L = \u03b5\u00b7B + (1\u2212\u03b5)\u00b7L_env [W m\u207b\u00b2 sr\u207b\u00b9]. Per-material table matEps = (eps0, a) float2 per band (\u00a713.5 line 1046). Kirchhoff identity usable as test: T_s = T_sky = T_ground \u21d2 L = B(T) for every \u03b5 (\u00a74.1).",
+  "Band LUT the kernel loads once (\u00a73.2b, \u00a713.2 cuda.static, \u00a713.5 line 1111): L_B(T) tabulated on T \u2208 [200,1000] K at 0.05 K (N = 16001), float32, one table per band per quantity (Lb, Lb_q, dLb_dT); generated offline and loaded as a binary asset \u2014 format unspecified by spec (scripts/generate_luts.py plans .npy, which Lua/Unreal cannot read); Unreal needs PF_R32_FLOAT texture (\u00a714 line 1149, 1159).",
+  "Sky radiance scalar inputs to stage 1 (\u00a75.3a): T_sky(\u03b8_el) = T_air \u2212 \u0394T_clear\u00b7(1\u2212cloud)\u00b7cos^q(\u03b8_el), \u0394T_clear \u2248 55\u201370 K LWIR clear/dry, 5\u201310 K overcast, q \u2248 0.5\u20131.0; L_sky = Lb(T_sky), L_ground = Lb(T_ground). Both come from the ONE WeatherSeries (CLAUDE.md non-negotiable 6).",
+  "Stage 2 atmosphere (\u00a77.1, \u00a713.4): \u03c4 = exp(\u2212\u03b3_B\u00b7d) with \u03b3 from the (band, atmosphere, humidity, visibility) table (\u00a77.2), \u03b3_LWIR \u2248 \u03b30 + \u03b2\u00b7w with Magnus w (\u00a77.3); L' = \u03c4\u00b7L + (1\u2212\u03c4)\u00b7B(T_air). Identity for tests: T = T_air \u21d2 L' = L for any d; d = 0 \u21d2 L' = L.",
+  "Stage 3 optics (\u00a78.1, \u00a78.2, \u00a78.3, \u00a713.4): E_FPA = \u03c0\u00b7L'\u00b7\u03c4_opt/(4F\u00b2+1)\u00b7cos\u2074\u03b8_ij, \u03a6 = E\u00b7A_d; \u03a6_self \u2248 A_d\u00b7\u03a9_eff\u00b7(1\u2212\u03c4_opt)\u00b7Lb(T_housing), \u03a9_eff = \u03c0/(4F\u00b2+1); the aperture factor is defined ONCE in irsim.optics (non-negotiable 5); field angle \u03b8_ij from focal_length_mm and pitch_um; box-filter downsample from a 3\u20134\u00d7 supersampled render (\u00a78.3 line 580, \u00a713.4 line 1030) giving MTF_det = |sinc(\u03c0 w \u03be)| (0.64 at Nyquist for the 12 \u00b5m/F1.0/10 \u00b5m worked case) plus aliasing.",
+  "Stage 4 detector (\u00a79.1, \u00a79.2, \u00a713.4): bolometer per-pixel IIR across frames S_n = S_{n\u22121} + (S_ideal_n \u2212 S_{n\u22121})\u00b7(1 \u2212 e^{\u2212\u0394t/\u03c4_th}), \u0394t = 1/frame_rate_hz, \u03c4_th = thermal_time_constant_ms \u2014 requires a persistent per-pixel state buffer across frames; photon path N_e = \u03b7 A_d t_int \u03c0 \u03c4_opt/(4F\u00b2+1) \u222bR L_q d\u03bb + i_dark t_int/q, DN = min(DN_max, floor((N_e+n_e)/N_well\u00b72^N_bits)).",
+  "Stage 5 noise (\u00a710.2, \u00a710.3, \u00a710.4, \u00a713.4): \u03c3\u00b2_total = \u03c3\u00b2_T + \u03c3\u00b2_V + \u03c3\u00b2_H + \u03c3\u00b2_TV + \u03c3\u00b2_TH + \u03c3\u00b2_VH + \u03c3\u00b2_TVH with synthesis per component (i.i.d. per pixel per frame; fixed 2-D field drifting with fpn_drift_tau_s; per-row / per-column fixed; per-row / per-column per frame; global per frame); magnitudes anchored so NETD at 300 K = netd_mk_at_300k (\u00a79.4); bad pixels 0.15 % Poisson-clustered; NUC residual (\u00a711.2); added in radiance/electron space (\u00a73.4 rule, non-negotiable 3); temporal seed from rtx.frameId (\u00a713.2, \u00a713.4 line 1019) so frames are reproducible.",
+  "Stage 6 ISP (\u00a711.1, \u00a711.3, \u00a711.4, \u00a713.4): order raw DN \u2192 bad-pixel replace \u2192 NUC \u2192 temporal filter \u2192 [T_app branch] \u2192 AGC \u2192 gamma \u2192 polarity \u2192 palette \u2192 8-bit; linear AGC y = clip((x \u2212 x_plo)/(x_phi \u2212 x_plo), 0, 1)^{1/\u03b3} with p = 0.5 % / 99.5 %; plateau equalisation with per-bin clip P (config plateau: 0.012) \u2014 a global histogram reduction, not element-wise; DDE = unsharp mask with dde_gain; palette gray|ironbow|rainbow|lava; polarity white_hot|black_hot.",
+  "Pipeline outputs (\u00a713.4 line 1027, \u00a712.2 outputs, skill line 142): IrRadiance float32 W m\u207b\u00b2 sr\u207b\u00b9; IrApparentT float32 K = Lb\u207b\u00b9(L_measured) (\u00a73.3 \u2014 must NOT be the kinetic T); IrDN16 uint16; IrDisplay8 RGBA8. Config keys outputs.radiance_linear / apparent_temperature / dn_16 / display_8. All four published; float ones for validation, 8-bit for perception.",
+  "SPG shader triple (\u00a713.2, skill Path A): <Name>.cu with extern \"C\" __global__ void <Name>(...); <Name>.cu.lua with Lua function <Name>(inputs, outputs) returning cuda.kernel({args, block={32,32}, grid={ceil(w/32),ceil(h/32)}}); <Name>.usda declaring opaque inputs:X / outputs:Y, info:spg:sourceAsset = path to .cu, info:spg:sourceAsset:subIdentifier = <Name>. Invariant: CUDA function name == Lua function name == subIdentifier. Lua is found by appending .lua to the source asset path.",
+  "SPG wiring and runtime rules (\u00a713.2 line 954/962, skill lines 39-67): RenderVar.omni:rtx:aov \u2192 Shader.inputs:X \u2192 Shader.outputs:Y \u2192 RenderVar.omni:rtx:aov.connect; shaders chain output\u2192input with no intermediate RenderVar; execution order from the dependency graph, not orderedVars order; every RenderVar consumed or produced must appear in orderedVars; Kit launched with --enable omni.rtx.spg; only local files; shader prims must not be under a Material prim; stdlib nodes: 2-D textures only, no SINT/UINT, no buffer-backed resources; display_render_var only renders RGBA unorm \u2192 float AOVs captured with FileCapture or a separate 8-bit display AOV.",
+  "SPG Lua API surface used (\u00a713.2, \u00a713.5, skill lines 46-58): cuda.static(fn, args...) caches until args change (LUT upload once); rtx.frameId global (noise seed); cuda.image(w,h,dtype) outputs; cuda.empty(shape,dtype) LUTs/statistics; cuda.TextureObject(input) read-only, cuda.SurfaceObject(output) writable, cuda.array(...) raw device pointer; cuda.int/cuda.float scalar args; inputs[name].shape[1]=h, .shape[2]=w; value inputs carry .value (inputs['x'].value ~= nil); stdlib ids spg:rtx.spg.stdlib/Add|Multiply|Scale|Swizzle with info:implementationSource = \"id\".",
+  "Path B API surface (\u00a713.6, skill Path B): isaacsim.sensors.experimental.rtx \u2014 RtxCamera (authoring, wraps USD Camera + optical params), CameraSensor (runtime: creates Replicator render product, attaches annotators, get_data() returns numpy or warp arrays), TiledCameraSensor (batched cameras for datasets). Deprecated, do not use: isaacsim.sensors.camera, isaacsim.sensors.rtx. Per-frame Python dispatch cost < 1 ms at 640\u00d7512.",
+  "Reflection strategies (\u00a713.7, \u00a75.3, Appendix A item 4): (1) sky-view-factor blend from AO AOV \u2014 implement first; (2) low-res encoded-T cubemap probe, 64\u00d764/face (\u00a713.7) vs 32\u00d732\u00d76 (\u00a75.3b), converted to band radiance, specular lookup; (3) second render product with bounces where emission encodes band radiance; (4) Warp ray cast against the T-field for flagged specular materials. Choice must be recorded in an ADR (skill line 165).",
+  "Distortion (\u00a78.4, R23, config optics.distortion.model \u2208 brown_conrady|kannala_brandt|ftheta, coeffs[5]): use the engine's camera distortion (OpenCV pinhole/fisheye, f-theta, Kannala-Brandt) rather than reimplementing.",
+  "Thermal coupling to the renderer (\u00a76.4 line 412, \u00a714 table row 'Thermal solver: Python tick', thermal-solver skill line 61): solver runs on a fixed 1 Hz thermal tick decoupled from the render loop, interpolated to frame rate; per-prim T written as encoded emission each frame (\u00a713.1 step 1: OmniPBR emission per surface).",
+  "Performance envelope (\u00a713.8): six passes over 640\u00d7512 are microseconds; 4\u00d7 supersample \u2192 2560\u00d72048 render; a reflection render product doubles it; TiledCameraSensor for many cameras.",
+  "Kernel-vs-reference acceptance (skill 'Verification discipline', ir-sim-testing table): every Warp/SPG kernel gets a companion test on the same synthetic G-buffer against the irsim CPU reference: \u2264 1e-4 relative on radiance or \u2264 5 mK on apparent temperature; encode/decode through an AOV < 10 mK; in-sim SITF and NETD (Tier 2) within 10 % of datasheet, NETD falling with scene T.",
+  "Unreal mapping (\u00a714 table + lines 1157-1164): T transport via custom G-buffer/Custom Data or Scene Capture with T-only material; band radiance as post-process material with float32 PF_R32_FLOAT LUT texture; emissivity table as material parameter collection/atlas; V_s from DFAO or baked sky-visibility; atmosphere post-process using SceneDepth; noise+NUC post-process with noise texture + persistent render target; bolometer IIR via persistent RT ping-pong; thermal solver as Blueprint/C++ component on fixed tick; MUST force float32 render targets (post-process stack defaults to fp16).",
+  "Sensor config fields the glue consumes (configs/sensors/flir_boson_640_lwir.yaml, \u00a712.2): fpa.width/height/pitch_um/frame_rate_hz/bit_depth/thermal_time_constant_ms/type; optics.f_number/focal_length_mm/transmittance/vignetting_cos4/distortion; noise.*; nuc.*; isp.*; outputs.*. Fields the glue needs that the schema lacks: supersample factor, T_ref/T_span (or a reference to the encoding), AOV/annotator names, reflection strategy, material-ID transport, housing temperature source."
+ ],
+ "work_items": [
+  {
+   "id": "IU-01",
+   "title": "Temperature encode/decode module (engine-free) with float32 guard",
+   "spec_refs": [
+    "\u00a713.3",
+    "\u00a73.2 precision trap",
+    "\u00a715 Tier 1 'encode/decode < 10 mK'",
+    "CLAUDE.md non-negotiable 2"
+   ],
+   "description": "Add irsim.radiometry.encoding (or irsim/encoding.py) with T_REF_K = 200.0, T_SPAN_K = 800.0, encode_temperature(T_k: float32 ndarray) -> float32 ndarray and decode_temperature(c) -> float32, plus an optional coarse/fine fp16-pair codec for the \u00a713.3 fallback. Both functions assert input dtype is float32 or float64 and raise on float16 or unorm-like uint8. Docstring cites \u00a713.3. Extend conftest fixtures with an `encoded_t` key derived from temperature_k.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/unit/test_encoding.py::test_round_trip_under_10mK \u2014 encode\u2192float32\u2192decode over 200\u20131000 K at 0.01 K steps; max |\u0394T| < 10 mK (expected ~0.02 mK).",
+    "test_float16_negative_control \u2014 the same ramp cast to float16 between encode and decode has max error \u2265 0.1 K at 300 K (proves the test discriminates and documents why fp16 is banned).",
+    "test_float16_input_raises \u2014 passing a float16 array raises TypeError/ValueError (dtype boundary assertion).",
+    "test_coarse_fine_split_round_trip \u2014 fp16-pair codec round trip < 10 mK over 200\u20131000 K; single-fp16 path fails the same bound."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-02",
+   "title": "G-buffer contract dataclass and the full synthetic fixture set",
+   "spec_refs": [
+    "\u00a713.3 AOV table",
+    "\u00a713.4",
+    "ir-sim-testing skill 'Synthetic G-buffer fixtures'",
+    "conftest.py"
+   ],
+   "description": "Add irsim.pipeline.gbuffer.GBuffer (engine-free) holding temperature_k f32, normal_dot_view f32, distance_m f32, material_id i32, sky_view_factor f32, optional motion_px f32[...,2] and semantic_id u32, with shape and dtype validation at construction (float16 anywhere in T/radiance path \u2192 error). Add conftest fixtures: gbuffer_two_material (left/right split ids 0/1), gbuffer_sphere (analytic normal\u00b7view = sqrt(1 \u2212 r\u00b2/R\u00b2) inside the disc, background outside), gbuffer_step_edge (hot/cold vertical edge at 4\u00d7 supersample for MTF work). All keyed identically to the existing ramp/uniform fixtures.",
+   "depends_on": [
+    "IU-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_gbuffer_rejects_float16_temperature \u2014 constructing with a float16 temperature or distance raises (non-negotiable 2 boundary assert).",
+    "test_sphere_fixture_normal_dot_view_analytic \u2014 at pixel radius r the fixture's cos\u03b8 equals sqrt(1 \u2212 (r/R)\u00b2) to 1e-6; rim pixels have cos\u03b8 < 0.2 (grazing coverage required for \u03b5(\u03b8) tests).",
+    "test_step_edge_is_ideal \u2014 the 4\u00d7 edge fixture has exactly two values and one transition column (so any later ESF blur is attributable to the box filter, not the fixture)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-03",
+   "title": "Engine-boundary hardening: layering test extension, import guard, isaac/gpu extras, mypy on irsim_isaac",
+   "spec_refs": [
+    "CLAUDE.md non-negotiable 1",
+    "tests/unit/test_layering.py",
+    "pyproject.toml markers",
+    "Makefile typecheck"
+   ],
+   "description": "Extend test_layering.py to also assert that no file under src/irsim imports `irsim_isaac`, and that every file under src/irsim_isaac that imports omni/pxr/isaacsim/warp/carb does so only inside functions or behind irsim_isaac.env guards so that `import irsim_isaac` succeeds without Isaac Sim. Add irsim_isaac/env.py with has_isaac()/has_warp()/require_isaac() and a tests/integration/conftest.py that skips the whole directory when Isaac Sim is absent (marker isaac) and gpu-marked tests when no CUDA Warp device exists. Add pyproject optional extras `isaac = ['warp-lang>=1.5']` (exact floor to be confirmed) and extend Makefile typecheck to `mypy src/irsim src/irsim_isaac` with ignore_missing_imports overrides for omni.*, pxr.*, isaacsim.*, warp.*, carb.*. Update CLAUDE.md/irsim/__init__.py wording to include `carb` in the forbidden list (the test already does).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_core_does_not_import_glue \u2014 a synthetic file in src/irsim importing irsim_isaac is flagged (write the fixture file in tmp_path and run the same AST checker).",
+    "test_glue_importable_without_engine \u2014 `import irsim_isaac, irsim_isaac.pipeline` succeeds in the unit environment (no omni), and irsim_isaac.env.has_isaac() is False there.",
+    "test_integration_dir_skips_without_isaac \u2014 collection of tests/integration yields only skipped items when has_isaac() is False."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-04",
+   "title": "Engine-facing binary LUT asset export and loader",
+   "spec_refs": [
+    "\u00a73.2 (b)",
+    "\u00a713.2 cuda.static",
+    "\u00a713.5 line 1111 'load it as a binary asset'",
+    "\u00a714 PF_R32_FLOAT",
+    "scripts/generate_luts.py docstring"
+   ],
+   "description": "Add to the LUT generator a raw little-endian float32 `.f32` (or .bin) export per table alongside the .npy, with a JSON sidecar {T0, T1, N, dtype:'float32', band, sha256(config+spectral file)} so Lua (SPG) and Unreal (PF_R32_FLOAT) can consume the same bytes. Add irsim.radiometry.lut.load_lut_binary() that validates N == 16001 and dtype float32 and refuses stale hashes. Warp path loads via numpy; SPG path via Lua file read (mechanism to be verified, see risks).",
+   "depends_on": [
+    "radiometry: band LUT (Lb, Lb_q, dLb_dT) 200\u20131000 K at 0.05 K float32 with config hash sidecar"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_binary_lut_bit_identical_to_npy \u2014 bytes decode to an array equal (exact) to the .npy table; dtype float32 asserted.",
+    "test_binary_lut_interpolation_matches_reference \u2014 linear interpolation on the exported table (using the exact \u00a713.5 index formula u=(T\u2212T0)/(T1\u2212T0)\u00b7(N\u22121), clamp N\u22121.001) vs band_radiance_tophat/quadrature: max error < 5 mK equivalent over 200\u20131000 K.",
+    "test_stale_hash_refused \u2014 loader raises when the sidecar hash disagrees with the current config."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-05",
+   "title": "CPU reference pipeline skeleton: constant-\u03b5, no-reflection, no-atmosphere radiance \u2192 apparent T \u2192 linear DN16 (build-order step 3)",
+   "spec_refs": [
+    "\u00a716.4 step 3",
+    "\u00a713.4 stages 1 and 4",
+    "\u00a73.3",
+    "\u00a715 Tier 2 SITF",
+    "\u00a713.6 'Verifying physics'"
+   ],
+   "description": "Create the engine-free irsim.pipeline package: Stage protocol, PipelineConfig (from the sensor YAML), PipelineState (persistent buffers, frame index), run_frame(gbuffer, state) -> Outputs(radiance f32, apparent_t f32, dn16 u16, display8 u8|None). First version: stage 1 with constant \u03b5 per material and V_s ignored, stages 2/3/5/6 identity, stage 4 an ideal linear responsivity DN = round((L \u2212 L_min)/(L_max \u2212 L_min)\u00b7(2^bits \u2212 1)) over a configurable radiometric range. This is the oracle every GPU kernel is later compared against, so it is NumPy only.",
+   "depends_on": [
+    "IU-02",
+    "IU-04",
+    "radiometry: LUT forward lookup with linear interpolation and inverse (apparent temperature) with < 1 mK round trip"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_sitf_blackbody \u2014 uniform G-buffers at 10 temperatures 250\u2013450 K with \u03b5 = 1: DN(T) is strictly increasing and DN differences are proportional to Lb(T) differences to 1e-4 relative (a wrong LUT index formula or an off-by-one clamp breaks proportionality at the ends).",
+    "test_apparent_t_equals_kinetic_for_blackbody \u2014 \u03b5 = 1, no atmosphere: |apparent_t \u2212 temperature_k| < 1 mK across the ramp fixture.",
+    "test_apparent_t_below_kinetic_for_grey_body \u2014 \u03b5 = 0.9 with L_env = Lb(250 K): apparent T is lower than kinetic T by the analytic amount Lb\u207b\u00b9(0.9\u00b7Lb(T) + 0.1\u00b7Lb(250)) to < 5 mK (would pass trivially if the pipeline shortcut through kinetic T, so also assert the gap is > 1 K at 300 K).",
+    "test_output_dtypes \u2014 radiance and apparent_t are float32, dn16 is uint16; any float16 intermediate makes the 1 mK assertion above fail."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "IU-06",
+   "title": "Stage 1 complete in CPU reference: Level-B angular emissivity + sky-view-factor environment blend",
+   "spec_refs": [
+    "\u00a713.4",
+    "\u00a713.5",
+    "\u00a74.2 Level B",
+    "\u00a75.3 (a)",
+    "\u00a713.7 option 1",
+    "\u00a716.4 step 7"
+   ],
+   "description": "Implement band_radiance_reference(gbuffer, mat_table, L_sky, L_ground) exactly as the \u00a713.5 sketch but vectorised in NumPy: \u03b5(\u03b8) = \u03b50[1 \u2212 a(1 \u2212 cos\u03b8)^p] with (\u03b50, a, p) per material per band from the material library, L_env = V_s\u00b7L_sky + (1\u2212V_s)\u00b7L_ground, L = \u03b5B + (1\u2212\u03b5)L_env. L_sky/L_ground scalars come from the \u00a75.3a sky model driven by the single WeatherSeries. Note the sketch's matEps float2 (\u03b50, a) drops p \u2014 the reference table carries p and the GPU ports must too (see inconsistencies).",
+   "depends_on": [
+    "IU-05",
+    "materials: per-band (\u03b50, a, p) Level-B table derived from the library with Kirchhoff closure",
+    "scene-radiance/atmosphere: T_sky(\u03b8_el) model and Lb(T_sky) from WeatherSeries"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_kirchhoff_identity_in_kernel \u2014 with T_s = T_sky = T_ground = 300 K, output radiance equals Lb(300) to 1e-6 relative for every material (\u03b5 from 0.05 to 0.99) and every cos\u03b8 on the sphere fixture; a sign error in (1\u2212\u03b5) or \u03b5(\u03b8) fails this.",
+    "test_grazing_rim_reads_colder \u2014 sphere fixture at uniform 300 K, painted material (a = 0.25, p = 4), cold sky Lb(230 K): apparent T at cos\u03b8 = 0.2 is lower than at cos\u03b8 = 1 by the analytic \u0394T from the Level-B formula to < 20 mK; for asphalt (a = 0) the rim/centre difference is < 5 mK.",
+    "test_overcast_flattens \u2014 same scene with T_sky = T_air (overcast) gives a reflected term whose apparent-T swing on an \u03b5 = 0.9 roof is < 0.5 K, versus > 3 K under a clear sky (\u0394T_clear = 60 K) \u2014 the cold-roof phenomenology (\u00a715 Tier 3) as a scalar assertion.",
+    "test_sky_view_factor_interpolates \u2014 V_s = 0 reproduces L_ground-only, V_s = 1 reproduces L_sky-only, V_s = 0.5 is their mean to 1e-6 relative."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "IU-07",
+   "title": "Stages 2\u20133 in CPU reference: atmosphere, aperture/cos\u2074/self-emission, supersample box filter",
+   "spec_refs": [
+    "\u00a77.1",
+    "\u00a78.1",
+    "\u00a78.2",
+    "\u00a78.3",
+    "\u00a713.4 stages 2\u20133",
+    "\u00a713.4 line 1030",
+    "CLAUDE.md non-negotiable 5"
+   ],
+   "description": "Add atmosphere_reference (\u03c4 = exp(\u2212\u03b3\u00b7d), L' = \u03c4L + (1\u2212\u03c4)B(T_air)), optics_reference (\u03a6 = A_d\u00b7\u03c0 \u03c4_opt/(4F\u00b2+1)\u00b7cos\u2074\u03b8_ij\u00b7L' + \u03a6_self, with the aperture factor imported from irsim.optics, \u03b8_ij from focal length and pitch, T_housing from config housing_temp_mode) and a box_downsample(supersample_factor) that reduces a k\u00d7-resolution buffer to sensor resolution by exact block mean. Add `render.supersample` to the sensor/pipeline config.",
+   "depends_on": [
+    "IU-06",
+    "atmosphere: \u03b3_B table and Magnus humidity term",
+    "optics: aperture_factor(F) = \u03c0/(4F\u00b2+1), field-angle map, self-emission"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_atmosphere_identities \u2014 d = 0 gives L' = L; T = T_air gives L' = L for d \u2208 {10, 100, 1000} m (1e-6 relative); \u03c4(200 m) for the clear-dry LWIR preset falls inside the \u00a77.2 table range 0.90\u20130.96.",
+    "test_aperture_factor_not_paraxial \u2014 with F = 1.0 the stage-3 gain equals \u03c0/5\u00b7\u03c4_opt, not \u03c0/4\u00b7\u03c4_opt (20 % apart); the test greps src/ for '4*F**2' / '4.0*f_number**2' patterns and asserts they occur only in irsim/optics.",
+    "test_cos4_vignetting_corner \u2014 for the Boson config (14 mm, 12 \u00b5m, 640\u00d7512) the corner pixel gain relative to centre equals cos\u2074(atan(r_corner/f)) to 1e-4; disabling vignetting_cos4 gives 1.0.",
+    "test_box_filter_mtf_at_nyquist \u2014 4\u00d7 supersampled step edge \u2192 ESF \u2192 LSF \u2192 MTF: value at \u03be_N = 1/(2p) is 0.64 \u00b1 0.03 (|sinc(\u03c0 w \u03be)| for w = p, \u00a78.3 worked case); a 4\u00d7 bar pattern above Nyquist produces a beat (aliasing) with amplitude > 0.1 \u2014 a Gaussian blur at native resolution would fail both.",
+    "test_self_emission_direction \u2014 raising T_housing by 10 K increases \u03a6 by A_d\u00b7\u03a9_eff\u00b7(1\u2212\u03c4_opt)\u00b7[Lb(T+10) \u2212 Lb(T)] to 1e-4 relative."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "IU-08",
+   "title": "Stages 4\u20136 in CPU reference with persistent PipelineState (bolometer IIR, seeded 3D noise, AGC/DDE/palette)",
+   "spec_refs": [
+    "\u00a79.2 IIR",
+    "\u00a79.4 NETD anchor",
+    "\u00a710.2",
+    "\u00a710.3",
+    "\u00a711.1",
+    "\u00a711.3",
+    "\u00a711.4",
+    "\u00a713.4 stages 4\u20136",
+    "\u00a713.2 rtx.frameId",
+    "CLAUDE.md non-negotiable 3"
+   ],
+   "description": "Wire the detector, noise and ISP module functions into the pipeline with a PipelineState carrying: previous-frame bolometer signal S_{n\u22121}, fixed 2-D FPN field + row/column vectors with random-walk drift, bad-pixel map, NUC coefficients and FFC timer, frame index used as the noise seed (mirroring rtx.frameId), AGC histogram. Noise is applied to \u03a6/electron signal, never to a Kelvin buffer. Produces all four outputs.",
+   "depends_on": [
+    "IU-07",
+    "detector: bolometer/photon transfer S(\u03a6) and IIR step",
+    "noise: 3D-noise generator anchored to NETD, bad pixels, NUC residual",
+    "isp: plateau EQ, linear AGC, DDE, palettes"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_frame_reproducibility \u2014 running the pipeline twice from the same state with the same frame index gives bit-identical outputs; frame index+1 gives different TVH noise but identical VH/V/H fields (the fixed-pattern components must not re-roll per frame).",
+    "test_iir_step_response \u2014 a 300\u2192320 K step on the uniform fixture at 60 Hz with \u03c4_th = 10 ms reaches (1 \u2212 e^{\u22121}) of the step after 0.6 frames-equivalent, i.e. after 1 frame the response fraction equals 1 \u2212 exp(\u221216.67/10) = 0.811 \u00b1 0.005; \u03c4_th = 0 reproduces the ideal signal exactly.",
+    "test_netd_falls_with_scene_temperature \u2014 two-blackbody NETD from 100 frames at 300 K matches config 50 mK within 10 %; NETD at 373 K is < 0.8 \u00d7 NETD at 300 K (noise added in Kelvin would give a ratio of 1.0 \u2014 non-negotiable 3).",
+    "test_3d_noise_ratios_recovered \u2014 decompose 100 frames of the uniform fixture per NVESD; \u03c3_VH/\u03c3_TVH = 0.30, \u03c3_H/\u03c3_TVH = 0.15, \u03c3_V/\u03c3_TVH = 0.08 each within 15 %.",
+    "test_agc_global_collapse \u2014 inserting a 600 K exhaust patch into a 300 K scene reduces the 8-bit contrast of a 302 K pedestrian patch against background by > 50 % under linear AGC (\u00a715 Tier 3 'hot exhaust collapses AGC')."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "IU-09",
+   "title": "Golden end-to-end regression fixture for the CPU reference pipeline",
+   "spec_refs": [
+    "ir-sim-testing skill 'Golden / regression fixtures'",
+    "Makefile golden-update",
+    "\u00a715 Tier 2"
+   ],
+   "description": "tests/golden/ gets the four outputs of run_frame on gbuffer_ramp with the Boson config, stored as float32 .npy + config sha256 sidecar; a test compares with stated tolerances (radiance 1e-5 rel, apparent T 1 mK, DN16 \u00b11 LSB, display8 \u00b11 code) and on failure writes actual/expected paths. Implement the --update-golden option referenced by the Makefile.",
+   "depends_on": [
+    "IU-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/golden/test_pipeline_golden.py \u2014 any silent change in radiometry (e.g. a LUT regenerated with a shifted grid) moves apparent T by > 1 mK and fails with an inspectable diff.",
+    "test_golden_stale_config_detected \u2014 changing the config hash makes the test report 'stale', not 'failing'."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-10",
+   "title": "Isaac Sim environment probe integration test",
+   "spec_refs": [
+    "\u00a713.2 '--enable omni.rtx.spg'",
+    "\u00a713.6",
+    "skill Path B deprecations",
+    "pyproject markers"
+   ],
+   "description": "tests/integration/test_env.py (marker isaac): asserts the Kit app is running, omni.rtx.spg extension is enabled (or records that it is unavailable), isaacsim.sensors.experimental.rtx imports and exposes RtxCamera/CameraSensor/TiledCameraSensor, the deprecated isaacsim.sensors.camera is NOT imported by irsim_isaac, and warp reports a CUDA device. Records the exact Isaac Sim version string into the test log for ADR/traceability.",
+   "depends_on": [
+    "IU-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_spg_extension_enabled \u2014 extension manager reports omni.rtx.spg enabled; without it every SPG item is meaningless.",
+    "test_experimental_rtx_api_present \u2014 the three classes exist and CameraSensor has get_data; a rename in a 6.x point release fails here first instead of deep in a pipeline test.",
+    "test_no_deprecated_sensor_imports \u2014 AST scan of src/irsim_isaac for isaacsim.sensors.camera / isaacsim.sensors.rtx (engine-free part of the test can run in unit suite)."
+   ],
+   "engine_free": false,
+   "size": "S"
+  },
+  {
+   "id": "IU-11",
+   "title": "GATE: temperature encode/decode round trip through an Isaac AOV (build-order step 2)",
+   "spec_refs": [
+    "\u00a713.3 'Verify empirically \u2026 before writing any other code'",
+    "\u00a713.1 step 1\u20132",
+    "\u00a716.4 step 2",
+    "\u00a715 Tier 1",
+    "skill 'Temperature encoding \u2014 verify this before anything else'"
+   ],
+   "description": "irsim_isaac/pipeline/scene_probe.py builds a stage of N flat quads (N \u2265 64) each with an OmniPBR material whose emissive colour = (c, c, c), emissive intensity 1.0, all lights and dome light disabled, for T on a ramp 200\u20131000 K; creates a CameraSensor and attaches the PtSelfIllumination annotator (fallback: HdrColor with max bounces 0). tests/integration/test_temperature_encoding.py renders, decodes with irsim decode_temperature, asserts dtype and error. This is the stop-and-fix gate: nothing downstream is started until it passes.",
+   "depends_on": [
+    "IU-01",
+    "IU-10"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_ramp_round_trip_under_10mK \u2014 max |decoded \u2212 authored| < 10 mK across the 200\u20131000 K ramp (fp16 anywhere in the path gives \u2265 0.25 K at 300 K; unorm gives 0.78 K).",
+    "test_aov_dtype_is_float32 \u2014 the annotator array dtype is float32 (non-negotiable 2, asserted at the boundary).",
+    "test_no_bounce_contamination \u2014 a 1000 K quad adjacent to a 250 K quad changes the cold quad's decoded T by < 10 mK (HdrColor with bounces > 0, or an enabled light, fails this).",
+    "test_linear_not_gamma \u2014 c = 0.5 authored reads back 0.5 \u00b1 1e-6, ruling out colour management/gamma on the AOV.",
+    "test_out_of_range_clamps_loudly \u2014 a quad at 1100 K (c = 1.125) either round-trips or the decoder raises; silent clamping to 1000 K is a failure."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-12",
+   "title": "Material mapping resolver + audit script (engine-free part of the USD import problem)",
+   "spec_refs": [
+    "thermal-materials skill 'The USD import problem'",
+    "\u00a712.3",
+    "\u00a713.3 material-ID row"
+   ],
+   "description": "irsim.materials.mapping.resolve(prim_like) implementing the four-step resolution order (explicit thermal:material attribute \u2192 semantic class \u2192 material-name pattern \u2192 loud default with a recorded miss) over a duck-typed prim description (path, material name, semantic labels, custom attributes) so it is unit-testable without pxr; assigns stable integer material_ids from the library order and emits the per-band (\u03b50, a, p) table consumed by stage 1. scripts/audit_materials.py prints unmapped prims grouped and a coverage %, failing below a threshold.",
+   "depends_on": [
+    "materials: library loader with per-band Level-B parameters"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_resolution_order \u2014 an asset with both a thermal:material override and a matching name pattern resolves to the override; with only *glass* in the name resolves to glass; unknown names resolve to the default AND appear in the miss list (silent defaulting fails).",
+    "test_material_ids_stable \u2014 ids are deterministic across two loads of the same library and change only when the library changes (the GPU table index must match).",
+    "test_audit_coverage_threshold \u2014 a fake asset with 3/10 unmapped prims reports 70 % and exits non-zero at threshold 90 %."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "IU-13",
+   "title": "Material-ID AOV transport and magenta debug mode",
+   "spec_refs": [
+    "\u00a713.3 table row 'DiffuseAlbedo or material-ID'",
+    "\u00a713.2 stdlib integer-format limitation",
+    "\u00a713.5 line 1062 tex2D<float>(matId)",
+    "thermal-materials skill line 128"
+   ],
+   "description": "Choose and implement one transport (ADR): (a) write material_id/255 into OmniPBR diffuse colour R and read DiffuseAlbedo, (b) use the semantic/instance segmentation annotator plus an id\u2192material table, or (c) a custom AOV. Provide irsim_isaac/pipeline/material_ids.py that produces the int32 material_id plane of the GBuffer and a debug render mode that sets emissive/diffuse magenta on every prim the resolver flagged as unmapped.",
+   "depends_on": [
+    "IU-11",
+    "IU-12"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_three_materials_decode_exactly \u2014 three quads with ids 0/7/200 decode to exactly those integers on every pixel (a unorm-quantised or filtered transport that returns 199.6 fails).",
+    "test_ids_survive_supersample_box \u2014 ids are read from the un-filtered id plane, not box-filtered: an edge between id 0 and id 7 never yields 3 or 4.",
+    "test_unmapped_prim_is_magenta \u2014 the debug render of an asset with an unmapped prim has magenta pixels only on that prim's segmentation mask."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-14",
+   "title": "Geometry AOVs \u2192 GBuffer assembly (normal\u00b7view, distance, sky-view, motion, semantic) from CameraSensor annotators",
+   "spec_refs": [
+    "\u00a713.3 table",
+    "\u00a713.5 normalTex .w",
+    "\u00a713.6 step 2",
+    "\u00a75.3 (a) V_s definition",
+    "skill 'AOV set'"
+   ],
+   "description": "irsim_isaac/pipeline/gbuffer_isaac.py: attach Normals, DistanceToCamera (not DistanceToImagePlane), AmbientOcclusion, MotionVectors and SemanticSegmentation annotators to the CameraSensor; compute normal_dot_view = |n_world \u00b7 v_world| per pixel from the camera pose (the packed float4 with dot in .w of \u00a713.5 does not exist as a stock AOV); map AO \u2192 V_s; convert motion vectors to pixels/frame; assert dtypes (distance float32); assemble an irsim GBuffer. Keep warp arrays on device when get_data returns warp.",
+   "depends_on": [
+    "IU-11",
+    "IU-02"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_distance_is_ray_length \u2014 a quad tilted 45\u00b0 at 10 m: corner-pixel distance equals the analytic ray length, not the planar depth (difference > 5 % at the image corner for a 32\u00b0 HFOV); tolerance 1 cm.",
+    "test_normal_dot_view_sphere_analytic \u2014 a unit sphere centred on axis at 5 m: normal_dot_view matches sqrt(1 \u2212 (r/R)\u00b2) per pixel within 0.01; a view-space/world-space mix-up shows as a systematic bias > 0.05 off-axis.",
+    "test_sky_view_open_vs_covered \u2014 an open horizontal quad gives V_s > 0.95; the same quad under a 10\u00d7 wider roof gives V_s < 0.2 (documents how far AO deviates from true hemispheric sky visibility; the numbers are recorded in the ADR).",
+    "test_motion_vector_units \u2014 a quad translated by exactly 3 px/frame reports 3.0 \u00b1 0.1 px/frame."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-15",
+   "title": "Thermal tick \u2192 per-prim encoded-emission writer (Python tick)",
+   "spec_refs": [
+    "\u00a713.1 step 1",
+    "\u00a76.4 line 412 'decouple from render loop'",
+    "\u00a714 table 'Thermal solver: Python tick'",
+    "thermal-solver skill line 61",
+    "CLAUDE.md non-negotiable 6"
+   ],
+   "description": "irsim_isaac/thermal_bridge.py: holds the mapping prim \u2192 TemperatureSolver, runs the solver on a fixed 1 Hz tick driven by the single WeatherSeries, linearly interpolates to frame time, encodes with irsim encode_temperature and writes the float32 value into each prim's emissive colour attribute in one batched USD edit per frame (Sdf.ChangeBlock). Takes exactly one WeatherSeries object shared with the atmosphere/sky stage.",
+   "depends_on": [
+    "IU-11",
+    "thermal: TemperatureSolver interface (Prescribed/NewtonCooling/LumpedTwoNode) and WeatherSeries"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_prescribed_temperature_reaches_aov \u2014 set a PrescribedSolver to 317.25 K; decoded AOV on the prim's pixels equals 317.25 K \u00b1 10 mK on the next rendered frame.",
+    "test_newton_cooling_tracks_solver \u2014 a NewtonCoolingSolver prim over 120 frames at 60 Hz with \u03ba = 0.01 s\u207b\u00b9: per-frame decoded T matches the solver's interpolated value to < 10 mK and the analytic exponential to < 50 mK.",
+    "test_single_weather_object \u2014 constructing the bridge with a WeatherSeries different from the one given to the atmosphere stage raises (API takes one object; the test asserts identity)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-16",
+   "title": "Warp stage 1 (band_radiance) kernel and equivalence harness against the CPU reference",
+   "spec_refs": [
+    "\u00a713.6 step 3",
+    "\u00a713.5",
+    "skill 'Verification discipline' (1e-4 rel / 5 mK)",
+    "skill Path B"
+   ],
+   "description": "irsim_isaac/pipeline/warp_stages.py: wp.kernel band_radiance taking wp.array2d(float32) encoded T, int32/float material ids, normal_dot_view, sky_view, a wp.array(float32) LUT uploaded once, a (\u03b50, a, p) table, and scalars L_sky/L_ground/T_ref/T_span; mirrors the \u00a713.5 index/clamp formula exactly. A gpu-marked test harness converts each synthetic G-buffer fixture to warp arrays, runs the kernel, and compares to irsim.pipeline stage 1.",
+   "depends_on": [
+    "IU-06",
+    "IU-03",
+    "IU-04"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/integration/test_warp_stage1.py::test_matches_cpu_reference \u2014 on ramp, sphere and two-material fixtures: max relative radiance error \u2264 1e-4 and apparent-T error \u2264 5 mK (fp32 LUT interpolation vs float64 reference).",
+    "test_lut_uploaded_once \u2014 the LUT device array identity is unchanged across 10 frames (mirrors cuda.static); re-upload per frame fails.",
+    "test_kirchhoff_identity_on_gpu \u2014 T_s = T_sky = T_ground gives Lb(T) for all \u03b5 to 1e-5 relative (fp32)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-17",
+   "title": "Warp stages 2\u20133 (atmosphere, optics incl. box downsample) with equivalence tests",
+   "spec_refs": [
+    "\u00a713.4 stages 2\u20133",
+    "\u00a77.1",
+    "\u00a78.1\u20138.3",
+    "\u00a713.4 line 1030"
+   ],
+   "description": "Warp kernels for \u03c4 = exp(\u2212\u03b3d), path radiance, aperture/cos\u2074/self-emission (aperture factor passed in as a scalar computed by irsim.optics \u2014 the kernel never recomputes 4F\u00b2+1), and a block-mean downsample from k\u00d7 to native. Same harness as IU-16.",
+   "depends_on": [
+    "IU-16",
+    "IU-07"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_stages_2_3_match_cpu \u2014 \u2264 1e-4 relative on \u03a6 for the ramp fixture at d = 50 m and the corner-vignetted field; \u2264 5 mK on apparent T.",
+    "test_aperture_factor_is_injected \u2014 kernel source string contains no '4.0*F*F'/'4.f*F*F'; changing irsim.optics.aperture_factor changes the GPU output (non-negotiable 5 single definition).",
+    "test_box_downsample_exact \u2014 a 4\u00d7 supersampled step edge downsampled on GPU equals the CPU block mean bit-for-bit on float32."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-18",
+   "title": "Warp stage 4 (detector) with persistent bolometer IIR state on device",
+   "spec_refs": [
+    "\u00a79.2",
+    "\u00a713.4 stage 4",
+    "\u00a713.6"
+   ],
+   "description": "Warp kernel for S_n = S_{n\u22121} + (S_ideal \u2212 S_{n\u22121})(1 \u2212 e^{\u2212\u0394t/\u03c4_th}) writing in place to a persistent wp.array owned by a WarpPipelineState, plus the photon-detector path (electrons, well, ADC) selected by fpa.type. State survives across frames without host round trips.",
+   "depends_on": [
+    "IU-17",
+    "IU-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_iir_matches_cpu_over_20_frames \u2014 step input; per-frame GPU vs CPU reference \u2264 1e-5 relative; the frame-1 response fraction equals 0.811 \u00b1 0.002 for 60 Hz / 10 ms.",
+    "test_state_persists_on_device \u2014 the state array's device pointer is unchanged across frames and never copied to host (would show as a large per-frame time and a changed pointer).",
+    "test_photon_path_quantisation \u2014 for a photon config, DN saturates at 2^bits \u2212 1 when N_e \u2265 N_well and matches CPU floor() exactly."
+   ],
+   "engine_free": false,
+   "size": "S"
+  },
+  {
+   "id": "IU-19",
+   "title": "Warp stage 5 (3D noise, NUC residual, bad pixels) seeded per frame; statistical equivalence to CPU",
+   "spec_refs": [
+    "\u00a710.2\u201310.4",
+    "\u00a711.2",
+    "\u00a713.4 stage 5",
+    "\u00a713.2 rtx.frameId",
+    "CLAUDE.md non-negotiable 3"
+   ],
+   "description": "Warp kernels using wp.rand_init(seed, frame_id\u00b7H\u00b7W + pixel) for TVH, per-row/col streams for TV/TH, and device-resident fixed fields (VH, V, H) with random-walk drift; bad-pixel replacement; NUC residual with FFC freeze/reset. Noise is applied to \u03a6/electrons, never to T. Because CPU (numpy Generator) and GPU RNG streams differ, equivalence is statistical, not bitwise (record in ADR).",
+   "depends_on": [
+    "IU-18",
+    "noise: anchored 3D-noise magnitudes and drift model"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_frame_id_reproducible \u2014 same frame_id twice \u2192 bit-identical noise; frame_id+1 \u2192 different TVH, identical VH/V/H.",
+    "test_netd_and_ratios_vs_cpu \u2014 from 200 uniform frames: GPU NETD at 300 K within 5 % of the CPU reference and within 10 % of config; \u03c3_VH:\u03c3_H:\u03c3_V ratios within 15 %; NETD(373 K)/NETD(300 K) < 0.8.",
+    "test_noise_psd_shape_matches_cpu \u2014 row/column PSD of a flat frame matches the CPU reference within a factor 1.5 at every spatial frequency (the Tier 4(c) diagnostic, applied CPU vs GPU)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-20",
+   "title": "Warp stage 6 (AGC/plateau EQ with device histogram, DDE, polarity, palette) \u2192 DN16 + RGBA8",
+   "spec_refs": [
+    "\u00a711.3",
+    "\u00a711.4",
+    "\u00a713.4 stage 6",
+    "\u00a713.2 cuda.empty statistics buffers"
+   ],
+   "description": "Histogram reduction kernel (atomic adds into a wp.array of bins), CDF with plateau clip on device or host (bins are tiny), LUT application kernel, unsharp-mask DDE, polarity and palette LUT kernel producing RGBA8; DN16 linear output preserved separately.",
+   "depends_on": [
+    "IU-19",
+    "isp: plateau EQ, DDE, palettes reference implementations"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_display8_matches_cpu \u2014 for the ramp + hot-patch fixture, GPU 8-bit output equals the CPU reference within \u00b11 code on \u2265 99.9 % of pixels for linear AGC and plateau EQ (a wrong plateau clip changes hundreds of codes).",
+    "test_dn16_untouched_by_agc \u2014 DN16 output is identical with AGC linear vs plateau (the linear branch must not be affected by the display branch).",
+    "test_exhaust_collapse_on_gpu \u2014 pedestrian-vs-background 8-bit contrast drops > 50 % when a 600 K patch enters frame (same assertion as CPU IU-08)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-21",
+   "title": "End-to-end Isaac wiring (CameraSensor \u2192 GBuffer \u2192 Warp stages \u2192 four outputs) with in-sim SITF and NETD bench",
+   "spec_refs": [
+    "\u00a713.6",
+    "\u00a713.4 outputs",
+    "\u00a716.4 step 3\u20134",
+    "\u00a715 Tier 2 SITF/NETD",
+    "\u00a712.2 outputs"
+   ],
+   "description": "irsim_isaac/pipeline/ir_camera.py: IrCamera(sensor_yaml, atmosphere_preset, weather) that creates the RtxCamera/CameraSensor at the supersampled resolution, assembles the GBuffer each frame, runs stages 1\u20136 on warp arrays, and exposes get_outputs() \u2192 {IrRadiance f32, IrApparentT f32, IrDN16 u16, IrDisplay8 rgba8}. Bench script scripts/bench_sitf.py renders blackbody quads at 10 temperatures.",
+   "depends_on": [
+    "IU-13",
+    "IU-14",
+    "IU-15",
+    "IU-20"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/integration/test_sitf_in_sim.py \u2014 DN16 vs blackbody T for 10 temperatures 250\u2013450 K equals the CPU reference SITF to 1e-4 relative after removing noise by 100-frame averaging; DN is strictly increasing.",
+    "test_apparent_t_of_blackbody_quad \u2014 \u03b5 = 1 quad at 300 K, no atmosphere: IrApparentT = 300.000 \u00b1 0.005 K after averaging (any encoding, LUT, aperture or box-filter error shows here).",
+    "test_netd_in_sim \u2014 two-blackbody NETD within 10 % of netd_mk_at_300k and falling at 373 K.",
+    "test_output_dtypes_end_to_end \u2014 the four arrays have dtypes float32/float32/uint16/uint8 on device and after any host copy."
+   ],
+   "engine_free": false,
+   "size": "L"
+  },
+  {
+   "id": "IU-22",
+   "title": "Supersampled render product (3\u20134\u00d7) and slant-edge MTF / aliasing verification in-sim",
+   "spec_refs": [
+    "\u00a78.3",
+    "\u00a713.4 line 1030",
+    "\u00a713.8",
+    "\u00a715 Tier 2 MTF",
+    "skill 'MTF and aliasing'"
+   ],
+   "description": "Make render-product resolution = supersample \u00d7 sensor resolution (config render.supersample, default 4), confirm CameraSensor accepts a resolution independent of the sensor config, and reproduce the \u00a715 slant-edge geometry (5.5\u00b0 tilted aluminium sheet in front of a 373 K plate) in-sim.",
+   "depends_on": [
+    "IU-21"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_slant_edge_mtf_nyquist \u2014 ISO-12233-style ESF from the rendered edge: MTF at \u03be_N within 0.64 \u00b1 0.06 (detector footprint, \u00a78.3 worked case) for supersample 4; rendering at 1\u00d7 with a Gaussian blur fails (it cannot produce the sinc null structure).",
+    "test_aliasing_present \u2014 a bar target at 1.2 \u03be_N produces a measurable beat frequency in the native image; absent \u2192 test fails.",
+    "test_supersample_cost_scaling \u2014 per-frame render time at 4\u00d7 is within 3\u20136\u00d7 of 1\u00d7 (documents the \u00a713.8 budget; catches accidental 16\u00d7 or unchanged resolution)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-23",
+   "title": "Reflection option 2: low-resolution encoded-T cubemap probe \u2192 specular environment lookup",
+   "spec_refs": [
+    "\u00a713.7 option 2",
+    "\u00a75.3 (b)",
+    "\u00a74.3 per-band roughness",
+    "Appendix A item 4",
+    "skill 'The reflection problem' (ADR required)"
+   ],
+   "description": "Second render product (6 faces, 64\u00d764 each, encoded-T with the same OmniPBR emission) from a probe near the camera; convert faces to band radiance via the LUT; for materials flagged specular in the band (roughness_per_band below threshold) replace L_env by a mirror-direction cubemap sample blended with the sky-view term by roughness. Both encodings (T vs radiance) must never mix \u2014 the probe stays in T-space and is converted in Warp.",
+   "depends_on": [
+    "IU-21",
+    "materials: roughness_per_band and specular flag"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_mirror_sees_emitter \u2014 an \u03b5 = 0.09 quad facing a 350 K uniform enclosure: apparent T = Lb\u207b\u00b9(0.09\u00b7Lb(300) + 0.91\u00b7Lb(350)) \u00b1 0.5 K; facing a 230 K sky: the analogous value \u00b1 0.5 K (sky-view-only blending would sit at the V_s-weighted mean and miss by > 5 K).",
+    "test_asphalt_unchanged \u2014 an asphalt quad (rough, a = 0) shows < 50 mK change with the probe enabled vs disabled.",
+    "test_probe_encoding_isolated \u2014 the probe's raw faces decode to kinetic temperatures (< 10 mK) \u2014 proving the T-encoding is intact and radiance conversion happens only in the kernel."
+   ],
+   "engine_free": false,
+   "size": "L"
+  },
+  {
+   "id": "IU-24",
+   "title": "SPG stage 1 asset triple (band_radiance.cu / .cu.lua / .usda) + engine-free naming-invariant test + in-sim equivalence",
+   "spec_refs": [
+    "\u00a713.2",
+    "\u00a713.5",
+    "\u00a713.6 'port hot stages'",
+    "skill Path A (three co-located files, naming invariant, orderedVars)"
+   ],
+   "description": "Author src/irsim_isaac/spg/band_radiance.{cu,cu.lua,usda} following the \u00a713.5 sketch but with (\u03b50, a, p) per material and the LUT read from the IU-04 binary via cuda.static; a scene .usda wiring RenderVars \u2192 Shader \u2192 RenderVar with orderedVars listing every var. Add a unit test (no engine) that parses the triple and asserts the CUDA entry point, the Lua function name and info:spg:sourceAsset:subIdentifier are identical and that the .usda inputs match the kernel signature order. Integration test compares SPG output to the Warp stage 1 on the same scene.",
+   "depends_on": [
+    "IU-16",
+    "IU-04",
+    "IU-10"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/unit/test_spg_assets.py::test_triple_naming_invariant \u2014 mismatched names (the #1 SPG silent failure) fail before any GPU is involved.",
+    "tests/integration/test_spg_stage1.py::test_matches_warp_stage1 \u2014 captured SPG RenderVar (via FileCapture, float32) vs Warp output on the blackbody-quad scene: \u2264 1e-4 relative radiance; also asserts the captured file dtype is float32.",
+    "test_lut_static_reuse \u2014 frame timing shows no per-frame LUT rebuild (second frame < 20 % of first-frame cost) and identical output across frames for a static scene."
+   ],
+   "engine_free": false,
+   "size": "L"
+  },
+  {
+   "id": "IU-25",
+   "title": "SPG stages 2\u20136 (one commit each: atmosphere, optics+box, detector with persistent IIR, noise seeded by rtx.frameId, isp with stats buffer) and the display RenderVar",
+   "spec_refs": [
+    "\u00a713.4",
+    "\u00a713.2 rtx.frameId / cuda.empty / display_render_var",
+    "\u00a711.3 histogram",
+    "\u00a713.8"
+   ],
+   "description": "Port the remaining stages to SPG as five separate commits, each chaining output\u2192input with no intermediate RenderVar, producing IrRadiance, IrApparentT, IrDN16 (float/uint16 via FileCapture) and IrDisplay8 as an RGBA unorm RenderVar so the viewport can display it. Each commit carries its own equivalence test versus the corresponding Warp stage. The bolometer IIR needs a persistent device buffer whose SPG mechanism must be established experimentally first (see risks).",
+   "depends_on": [
+    "IU-24",
+    "IU-17",
+    "IU-18",
+    "IU-19",
+    "IU-20"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_spg_stage_k_matches_warp \u2014 per stage \u2264 1e-4 relative (deterministic stages) or statistical equivalence (noise: NETD within 5 %, ratios within 15 %).",
+    "test_spg_noise_reproducible_by_frameId \u2014 re-rendering the same rtx.frameId (scrubbing the timeline) yields bit-identical noise.",
+    "test_display_rendervar_visible \u2014 IrDisplay8 appears in the viewport as RGBA unorm while float RenderVars are captured only to disk (documents the \u00a713.2 limitation as a test)."
+   ],
+   "engine_free": false,
+   "size": "L"
+  },
+  {
+   "id": "IU-26",
+   "title": "Float32-preserving output writers (disk export) and dataset bundling with semantic labels",
+   "spec_refs": [
+    "\u00a713.3 SemanticSegmentation row",
+    "\u00a713.2 FileCapture",
+    "\u00a712.2 outputs",
+    "CLAUDE.md non-negotiable 2 'any file you write to disk'"
+   ],
+   "description": "irsim.io (engine-free) writers for IrRadiance/IrApparentT as float32 .npy or float32 EXR (never 16-bit PNG for those), IrDN16 as uint16 PNG, IrDisplay8 as RGBA8 PNG, semantic labels as uint32 + JSON id map, with a per-frame JSON sidecar (sensor config hash, weather timestamp, frame id). irsim_isaac glue calls the writers on the annotator outputs.",
+   "depends_on": [
+    "IU-21"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "tests/unit/test_io_dtypes.py::test_apparent_t_file_round_trip \u2014 write/read of a 250\u2013450 K ramp preserves values to < 1 mK and dtype float32; attempting to write a float16 array raises.",
+    "test_writer_refuses_fp16_exr \u2014 an EXR half-float request for radiance is rejected.",
+    "integration: test_exported_frame_matches_live \u2014 the file read back equals the live IrApparentT array to < 1 mK."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "IU-27",
+   "title": "ROS 2 publishing of the four outputs",
+   "spec_refs": [
+    "\u00a713.4 line 1027 '\u2192 ROS 2'",
+    "\u00a713.6 step 4"
+   ],
+   "description": "irsim_isaac/ros2_bridge.py publishing sensor_msgs/Image with encodings 32FC1 (IrRadiance, IrApparentT), mono16 (IrDN16), rgba8 (IrDisplay8) plus CameraInfo from the RtxCamera intrinsics/distortion; frame id and stamp from the sim clock.",
+   "depends_on": [
+    "IU-21"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_ros_encoding_preserves_mK \u2014 subscribe and decode IrApparentT; equals the source array to < 1 mK (a mono16/8UC1 downcast would fail).",
+    "test_camera_info_matches_config \u2014 fx = focal_length_mm/pitch_um\u00b71000/supersample\u2026 i.e. fx = f/p in pixels for the native resolution within 0.1 %; distortion model string matches optics.distortion.model."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-28",
+   "title": "Automated Tier-3 phenomenology assertions in-sim (cold roof, exhaust AGC collapse, LWIR motion smear)",
+   "spec_refs": [
+    "\u00a715 Tier 3 checklist",
+    "\u00a716.4 steps 7 and 9",
+    "ir-sim-testing skill Tier 3 'automate the scalar ones'"
+   ],
+   "description": "A small demo scene (road, parked car with painted roof and glass, pedestrian, exhaust tip) driven by two WeatherSeries presets (clear night, overcast night) and a scripted moving bar; tests/integration/test_phenomenology.py asserts the scalar phenomena.",
+   "depends_on": [
+    "IU-21",
+    "IU-15",
+    "thermal: scene thermal solvers and weather presets"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_clear_sky_darkens_roof \u2014 roof apparent T (clear) is \u2265 3 K below roof apparent T (overcast) at equal kinetic T; glass shows the same sign.",
+    "test_exhaust_collapses_agc \u2014 8-bit pedestrian/background contrast drops > 50 % when the exhaust tip is in frame; DN16 contrast unchanged.",
+    "test_motion_smear_lwir_only \u2014 a bar moving 4 px/frame has an edge width \u2265 1.5 px wider with \u03c4_th = 10 ms than with \u03c4_th = 0 (cooled MWIR config shows < 0.2 px difference)."
+   ],
+   "engine_free": false,
+   "size": "M"
+  },
+  {
+   "id": "IU-29",
+   "title": "Engine-agnostic interface contract and Unreal port ADR/doc",
+   "spec_refs": [
+    "\u00a714 (whole section)",
+    "\u00a713.3 encoding",
+    "\u00a73.2 LUT",
+    "CLAUDE.md 'Unreal port is a rewrite of the glue only'"
+   ],
+   "description": "docs/decisions/00xx-engine-interface-contract.md + docs/porting-unreal.md: the contract is (GBuffer in: T encoding constants, material-id semantics, normal\u00b7view, ray distance, V_s, motion px/frame) \u2192 (six stages with the irsim CPU reference as oracle) \u2192 (four outputs, float32/uint16/RGBA8). Maps each \u00a714 table row to the irsim function it must call or replicate, lists the float32 requirements (PF_R32_FLOAT LUT texture, float32 render targets, persistent RT ping-pong for IIR), and states which irsim artefacts are consumed verbatim (binary LUT from IU-04, material table, config YAML). No engine code.",
+   "depends_on": [
+    "IU-04",
+    "IU-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_contract_doc_lists_every_stage_and_output \u2014 a unit test parses the doc's tables and asserts every irsim.pipeline stage name and every output name appears (keeps the port doc from silently lagging the code).",
+    "test_layering_still_green \u2014 the layering test (IU-03) proves the contract boundary: no engine import in irsim, no irsim_isaac import in irsim."
+   ],
+   "engine_free": true,
+   "size": "S"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Path B (annotators + Warp) first, SPG (CUDA+Lua+USD) only for verified hot stages",
+   "why": "\u00a713.6 and the skill both say prototype in Warp and port later, but the criterion for 'later' (frame budget? feature parity? dataset scale?) is unstated, and maintaining two GPU implementations of six stages doubles the test surface. Outlives every kernel commit.",
+   "options": [
+    "Warp only, never port (accept ~1 ms/frame Python dispatch)",
+    "Warp first, port stages 1\u20133 to SPG when in-pipeline execution is needed (e.g. TiledCameraSensor datasets), keep Warp as the tested fallback",
+    "SPG from day one (NVIDIA's recommendation; worst debugging surface)"
+   ]
+  },
+  {
+   "title": "Temperature transport: AOV choice and encoding",
+   "why": "PtSelfIllumination vs HdrColor-with-zero-bounces vs a custom AOV, and linear c=(T\u2212200)/800 float32 vs coarse/fine fp16 pair. The choice fixes the precision floor of the whole simulator (non-negotiable 2) and every downstream kernel decodes it.",
+   "options": [
+    "PtSelfIllumination float32, linear encoding (default if IU-11 passes)",
+    "HdrColor with max bounces 0 and all lights disabled",
+    "Custom float32 AOV/RenderVar via SPG",
+    "Coarse/fine fp16 split if no float32 channel exists"
+   ]
+  },
+  {
+   "title": "Reflection strategy and its fidelity level",
+   "why": "The skill (line 165) explicitly requires an ADR: it is the largest remaining approximation (Appendix A item 4). Option 1 (AO-as-V_s) has an error that cannot be bounded for specular vehicles/glass; option 2 costs a second render product.",
+   "options": [
+    "Option 1 sky-view blend only (L2)",
+    "Option 1 + option 2 T-cubemap probe for specular materials (L2.5)",
+    "Option 3 second radiance-domain render with bounces (L3)",
+    "Option 4 Warp ray cast for flagged materials"
+   ]
+  },
+  {
+   "title": "Material-ID transport through the renderer",
+   "why": "\u00a713.3 offers DiffuseAlbedo or material-ID; \u00a713.5 reads ids as float; stdlib integer formats are unsupported. Hijacking DiffuseAlbedo breaks the visible render; segmentation annotators give instance/semantic ids that need a table; ids must be stable across runs for the GPU table.",
+   "options": [
+    "Diffuse colour R channel = id/255 read via DiffuseAlbedo (\u2264 256 materials, float transport)",
+    "Semantic/instance segmentation annotator + id\u2192material table",
+    "Custom float32 AOV carrying the id"
+   ]
+  },
+  {
+   "title": "Supersampling factor and where the box filter runs",
+   "why": "\u00a78.3 and \u00a713.4 allow SPG#0 (supersample-then-box) or rendering at 3\u20134\u00d7 and filtering in stage 3; the factor multiplies renderer cost 9\u201316\u00d7 (\u00a713.8) and decides whether aliasing is physically correct.",
+   "options": [
+    "Render at 4\u00d7, box-filter in stage 3 (spec's recommended, simplest)",
+    "Render at 3\u00d7 (cheaper, slightly worse MTF/aliasing fidelity)",
+    "Native resolution + MTF blur (no aliasing \u2014 explicitly discouraged by \u00a78.3)"
+   ]
+  },
+  {
+   "title": "Location and status of the CPU reference pipeline (irsim.pipeline) and the GBuffer contract",
+   "why": "CLAUDE.md's layout has no irsim/pipeline and calls irsim_isaac/pipeline the 'Warp-based reference pipeline', while both skills say the irsim CPU implementation is the oracle. Which one is 'reference' determines what every equivalence test asserts against.",
+   "options": [
+    "Add engine-free irsim.pipeline (NumPy composition + GBuffer) as the oracle; Warp/SPG are fast paths validated against it",
+    "Keep Warp as reference (requires warp in the unit gate; violates 'no GPU' for tests/unit unless Warp CPU device is used)"
+   ]
+  },
+  {
+   "title": "warp-lang as an optional dependency and the gpu-vs-isaac test split",
+   "why": "Warp kernels can be tested on any CUDA machine (or even Warp's CPU device) without Isaac Sim, which would let most kernel bugs be found outside the simulator; but adding warp to the default gate breaks 'plain pytest on any machine'.",
+   "options": [
+    "`isaac` extra with warp-lang; Warp equivalence tests under @pytest.mark.gpu, skipped by default",
+    "Run Warp tests on wp.get_device('cpu') inside the unit gate (warp becomes a hard dev dependency)",
+    "No Warp tests outside Isaac Sim (all under isaac marker)"
+   ]
+  },
+  {
+   "title": "Binary LUT asset format shared by SPG (Lua) and Unreal (PF_R32_FLOAT)",
+   "why": "The spec says 'load it as a binary asset' without a format; generate_luts.py plans .npy which neither Lua nor Unreal read natively. The format must encode T0/T1/N and a config hash to keep the stale-LUT guard.",
+   "options": [
+    "Raw little-endian float32 + JSON sidecar (T0,T1,N,hash)",
+    "Keep .npy and parse the 128-byte header in Lua",
+    "EXR/DDS single-channel float texture"
+   ]
+  },
+  {
+   "title": "Persistent per-frame state on the GPU (bolometer IIR, FPN drift, AGC histogram) in Warp vs SPG",
+   "why": "\u00a79.2 and \u00a710.3 need memory across frames; Warp state is trivial (owned arrays) but the SPG mechanism (cuda.static caching by argument, cuda.empty buffers) is undocumented for mutable state. Decides which stages can ever move to SPG.",
+   "options": [
+    "Stages 4\u20135 stay in Warp; SPG hosts only stateless stages 1\u20133",
+    "Establish an SPG persistence idiom experimentally (cuda.static returning a buffer mutated in place) and document it",
+    "Frame-to-frame state via a RenderVar feedback loop (may be unsupported)"
+   ]
+  },
+  {
+   "title": "Noise reproducibility contract across CPU/Warp/SPG paths",
+   "why": "numpy Generator, wp.rand_init and a CUDA RNG produce different streams, so CPU-vs-GPU noise equivalence can only be statistical (NETD, 3D ratios, PSD), not bitwise; the seed source (frame index vs rtx.frameId) must match across paths for dataset reproducibility.",
+   "options": [
+    "Statistical equivalence tolerances (NETD 5 %, ratios 15 %, PSD \u00d71.5) + per-path bitwise reproducibility on seed",
+    "Port one counter-based RNG (e.g. Philox) to all three paths for bitwise agreement"
+   ]
+  },
+  {
+   "title": "Sky-view factor source: AO AOV vs computed hemispheric visibility",
+   "why": "\u00a75.3(a) defines V_s as cosine-weighted sky visibility; the AO AOV is a short-radius occlusion term. The mapping error is unbounded on covered surfaces (under bridges, inside garages) and directly sets roof/glass apparent temperatures.",
+   "options": [
+    "AO AOV as V_s (cheap, \u00a713.7 option 1 as written)",
+    "Baked per-vertex sky visibility (offline ray cast) written as a primvar/custom AOV",
+    "Normal-only V_s = (1 + n\u00b7up)/2 with no occlusion"
+   ]
+  },
+  {
+   "title": "Thermal-to-renderer coupling: per-prim emission attribute writes at 1 Hz tick with per-frame interpolation",
+   "why": "\u00a713.1 step 1 implies one OmniPBR material per surface carrying T; writing thousands of attributes per frame has a cost and interacts with material-ID transport (if T lives on the material, materials become per-prim). Decides scene authoring rules for every asset.",
+   "options": [
+    "Per-prim material instance, emissive colour written each frame inside an Sdf.ChangeBlock",
+    "Per-prim primvar read by a custom MDL/OmniPBR emission input (one shared material)",
+    "Write only on thermal tick (1 Hz) and accept step changes between ticks"
+   ]
+  },
+  {
+   "title": "Distortion applied by the engine (\u00a78.4) rather than in irsim.optics",
+   "why": "CLAUDE.md layout lists distortion under irsim/optics; \u00a78.4 says use Isaac's camera models. Doing both double-distorts; doing neither in the CPU reference makes the reference pipeline not comparable with the rendered image at the edges.",
+   "options": [
+    "Engine-only distortion; irsim.optics carries only the model/coeff schema and CameraInfo export",
+    "irsim.optics implements distortion for the CPU reference/Unreal and the engine camera is left rectilinear"
+   ]
+  },
+  {
+   "title": "Pinning Isaac Sim 6.0 GA and the experimental.rtx API, with the deprecated-extension policy",
+   "why": "The skill flags that the SPG docs say the API may evolve across releases and that isaacsim.sensors.camera/.rtx are deprecated; the integration tests encode API names.",
+   "options": [
+    "Pin 6.0 GA, record version in IU-10 and fail fast on mismatch",
+    "Support a range with feature probes"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "Whether PtSelfIllumination exists and is float32 in Isaac Sim 6.0's RTX Real-Time renderer, or only in the Path-Traced mode (the 'Pt' prefix suggests path tracer), and whether its values are linear (no tone-map/exposure/gamma) and unscaled by emissive intensity.",
+   "how_to_verify": "IU-11: enumerate available annotators/AOVs in both render modes via the Replicator annotator registry; author c = 0.5 and c = 0.125 quads; assert dtype float32 and read-back equals authored to 1e-6 with intensity 1.0; repeat with intensity 2.0 to learn the scaling."
+  },
+  {
+   "description": "HdrColor-with-max-bounces-0 fallback: direct lighting from any light or dome light adds to emission, contaminating T; also HdrColor may be fp16.",
+   "how_to_verify": "IU-11 contamination test: hot quad next to cold quad with and without a light; assert < 10 mK shift; print the annotator dtype."
+  },
+  {
+   "description": "Colour management on emissive colour: OmniPBR emissive_color may be interpreted as sRGB and linearised, turning c into c^2.2.",
+   "how_to_verify": "Author c = 0.5 \u2192 expect 0.5; if ~0.218 comes back, apply the inverse in the writer and add the linearity test permanently."
+  },
+  {
+   "description": "SPG API surface (cuda.static, rtx.frameId, cuda.image, cuda.TextureObject/SurfaceObject, .value inputs) is documented as incomplete and may change; whether custom shaders can read float32 single-channel textures (the stdlib limitation may or may not apply to custom kernels).",
+   "how_to_verify": "A minimal pass-through shader (out = in) on a float32 AOV captured via FileCapture; compare bytes; run under the pinned 6.0 GA and log the extension version."
+  },
+  {
+   "description": "Persistent cross-frame state in SPG (bolometer IIR, FPN drift): no documented mechanism; cuda.static caches by argument value and may be re-created on any change.",
+   "how_to_verify": "Experiment: a kernel that increments a cuda.static-allocated counter buffer each frame; check it survives 100 frames, timeline scrubbing and resolution changes. If it does not, decision 'Stages 4\u20135 stay in Warp'."
+  },
+  {
+   "description": "Loading a binary LUT from the Lua launch script: whether Lua file I/O (io.open) is available in the SPG sandbox and how paths resolve relative to the .usda.",
+   "how_to_verify": "Experiment: read a 64 kB float32 file in the .cu.lua, upload with cuda.array, echo the first entry through a kernel; compare to numpy."
+  },
+  {
+   "description": "Material-ID transport: DiffuseAlbedo hijack conflicts with the visible-band render and may be affected by texture filtering/anti-aliasing at 4\u00d7 supersampling; segmentation annotators yield instance/semantic ids, not material ids.",
+   "how_to_verify": "IU-13 exactness test on three ids at an edge with supersampling on; inspect what annotators CameraSensor exposes in 6.0."
+  },
+  {
+   "description": "Normal AOV space (world vs view) and the non-existent 'float4 with view-dot in .w' texture of \u00a713.5; also whether the Normals annotator is fp16 (fine per \u00a713.3) but with sign conventions that flip on back faces.",
+   "how_to_verify": "IU-14 sphere test: analytic cos\u03b8 within 0.01 over the disc; check both spaces by transforming with the camera view matrix and picking the one that matches."
+  },
+  {
+   "description": "AmbientOcclusion AOV as sky-view factor: AO is a short-radius occlusion, not hemispheric sky visibility (\u00a75.3a); on covered surfaces the error is unbounded.",
+   "how_to_verify": "IU-14 open-vs-covered quad test; record actual AO values in the ADR; if AO under a roof is > 0.5 the approximation is unusable and the baked-visibility option is needed."
+  },
+  {
+   "description": "DistanceToCamera vs DistanceToImagePlane: \u00a713.3 wants path length d; choosing depth under-attenuates corners (up to ~4 % at 16\u00b0 half-FOV) and grows with FOV.",
+   "how_to_verify": "IU-14 tilted-quad test against the analytic ray length to 1 cm."
+  },
+  {
+   "description": "CameraSensor.get_data() warp-array details: device, dtype, layout (HWC/CHW), whether the buffer is reused next frame (aliasing across frames would corrupt the IIR state) and whether custom resolution independent of the sensor config is honoured.",
+   "how_to_verify": "IU-10/IU-14: print device/dtype/shape/pointer over 3 frames; render at 2560\u00d72048 for a 640\u00d7512 config and assert output shape."
+  },
+  {
+   "description": "Whether omni.rtx.spg ships with Isaac Sim 6.0 or only with the Kit SDK, and whether the Isaac launcher passes --enable omni.rtx.spg.",
+   "how_to_verify": "IU-10 extension-manager assertion; if absent, all SPG items are deferred and the ADR records Warp-only."
+  },
+  {
+   "description": "Ordering conflict: \u00a713.3 says verify the encoding 'before writing any other code', \u00a716.4 puts it at step 2 after the Planck LUT, and CLAUDE.md says do not build Isaac integration before the radiometry core has passing tests.",
+   "how_to_verify": "Resolve by sequencing: IU-01 (engine-free) immediately, IU-11 immediately after radiometry step 1; the encoding test needs no radiometry, so it does not violate CLAUDE.md."
+  },
+  {
+   "description": "Motion-vector AOV units (pixels vs NDC, per frame vs per second) needed for bolometer smear and motion MTF.",
+   "how_to_verify": "IU-14 test: translate a quad by exactly 3 px/frame; assert 3.0 \u00b1 0.1 after unit conversion."
+  },
+  {
+   "description": "Stage 6 (plateau EQ) and stage 3 (box filter) are not element-wise as \u00a713.8/skill claim: they need a global histogram reduction and a resolution change; SPG stats buffers (cuda.empty) and atomics are undocumented in the spec.",
+   "how_to_verify": "Warp first (atomics trivial); for SPG, prototype a histogram kernel writing into a cuda.empty buffer and read it back on the next frame."
+  },
+  {
+   "description": "Supersampling \u00d74 with a second render product for reflections may exceed the frame budget on the target GPU; TiledCameraSensor may not support custom AOVs.",
+   "how_to_verify": "IU-22 timing test; try TiledCameraSensor with the AOV set and record which annotators tile."
+  },
+  {
+   "description": "Emissive channels are RGB: using only R for c wastes G/B; a future coarse/fine split or material-ID in G would change the decoder contract.",
+   "how_to_verify": "Fix the channel assignment in the encoding ADR; the IU-11 test reads a named channel."
+  },
+  {
+   "description": "The unit gate cannot be run in the current environment (default python lacks numpy/pytest); Isaac Sim presence on the dev machine is unknown.",
+   "how_to_verify": "`python -m venv .venv && make install && make check`; run IU-10 once Isaac Sim is installed and record the version."
+  },
+  {
+   "description": "Kernel equivalence tolerance 1e-4 relative may be too tight at the cold end of the LUT (200 K, small radiance) in fp32 with linear interpolation, or too loose to catch a 0.05 K index shift at 300 K (which is ~0.6 % of dLb/dT\u00b70.05 K\u2026 i.e. ~1e-4 relative already).",
+   "how_to_verify": "Express the kernel tolerance in mK via dLb_dT (\u2264 5 mK) as the primary assertion and keep 1e-4 relative as secondary; measure actual fp32 error on the ramp fixture in IU-16."
+  },
+  {
+   "description": "Sensor YAML has no engine-facing fields; adding them (supersample, T_ref/T_span, AOV names, reflection strategy) changes the \u00a712.2 schema that the config area owns.",
+   "how_to_verify": "Agree with the config area on a `render:` sub-block (engine-agnostic: supersample, encoding, reflection) and keep AOV names inside irsim_isaac, not YAML."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core \u2014 enforced by tests/unit/test_layering.py (existing; FORBIDDEN omni/pxr/isaacsim/warp/carb over src/irsim) and extended in IU-03 to forbid irsim\u2192irsim_isaac imports and to guarantee `import irsim_isaac` works without an engine. The CPU reference pipeline (IU-05..IU-09), GBuffer (IU-02), encoding (IU-01), LUT binary (IU-04), material resolver (IU-12) and writers (IU-26) all live in src/irsim and are NumPy-only; every Warp/SPG/USD/ROS file lives in src/irsim_isaac.",
+  "#2 float32 or better everywhere T/radiance flows \u2014 IU-01 unit round trip < 10 mK with a float16 negative control and dtype-raising test; IU-02 GBuffer dtype guard; IU-11 integration asserts the AOV array dtype is float32 and the rendered-ramp round trip < 10 mK; IU-04 asserts LUT dtype float32; IU-16/IU-24 Warp arrays wp.float32 and SPG cuda.float / FileCapture float32; IU-26 writers refuse fp16; IU-27 ROS encoding 32FC1 round trip < 1 mK; IU-29 records PF_R32_FLOAT/float32 RT requirement for Unreal.",
+  "#3 Noise in radiance or electron space, never Kelvin \u2014 stage 5 in the CPU reference (IU-08) and Warp (IU-19) consumes \u03a6/electrons and never the T buffer; tests assert NETD(373 K)/NETD(300 K) < 0.8 in CPU, Warp and in-sim (IU-21); a Kelvin-space implementation gives 1.0 and fails.",
+  "#4 Kirchhoff closure \u2014 the stage-1 material table is derived from the library's \u03b5 only (\u03c1 = 1 \u2212 \u03b5 for opaque materials, IU-12); IU-06/IU-16 test the kernel-level identity T_s = T_sky = T_ground \u21d2 L = Lb(T) for every \u03b5 and angle, which fails if the kernel's (1 \u2212 \u03b5) term or the table's \u03b5/\u03c1 pair are inconsistent.",
+  "#5 Aperture factor \u03c0/(4F\u00b2+1) defined once in irsim.optics \u2014 IU-07 grep-test that the paraxial/exact form appears only in irsim/optics and a numeric F/1.0 test (\u03c0/5 not \u03c0/4); IU-17/IU-25 pass the factor into Warp/SPG kernels as a scalar computed by irsim.optics and assert the kernel source does not recompute it.",
+  "#6 One WeatherSeries feeds both the thermal tick and the atmosphere/sky radiance \u2014 IU-15 thermal bridge and the stage-1/2 environment inputs (L_sky, T_air, \u03b3(humidity)) take the same object; test asserts identity and that constructing with two different series raises; IU-28 phenomenology tests switch weather presets through that single object."
+ ],
+ "spec_internal_inconsistencies": [
+  "'Reference pipeline' is defined in two places with opposite meanings: CLAUDE.md line 82 (`src/irsim_isaac/pipeline/ # AOV setup, annotators, Warp-based reference pipeline`) and src/irsim_isaac/pipeline/__init__.py call the Warp path the reference, while .claude/skills/isaac-sim-spg/SKILL.md line 170 ('runs the same inputs through the irsim CPU reference') and .claude/skills/ir-sim-testing/SKILL.md line 25 ('CUDA kernel vs. NumPy \u2026 neither is trusted') make the engine-free NumPy implementation the oracle. CLAUDE.md's layout has no irsim/pipeline package to hold that oracle.",
+  "\u00a713.3 table (line 972) says the Normal AOV carries a world/view normal 'fp16 ok', but the \u00a713.5 kernel (line 1064) reads `tex2D<float4>(normalTex, x, y).w` as 'world normal + view dir dot in .w' \u2014 a packed texture no stock AOV produces; the dot must be computed in the glue.",
+  "\u00a713.3 table (line 971) lists material-ID as 'uint8/float'; \u00a713.2 (line 962) says integer texture formats (SINT/UINT) are unsupported by stdlib nodes; \u00a713.5 (line 1062) reads `tex2D<float>(matId)`. Integer transport is therefore not available as written; ids must be carried as float.",
+  "\u00a713.5 Lua sketch computes the LUT in Lua (`planck_band`, line 1088) while the note at line 1111 says generate offline and 'load it as a binary asset'; scripts/generate_luts.py (line 11) writes `.npy` + JSON, a format neither Lua nor Unreal (`PF_R32_FLOAT`, \u00a714 line 1149) reads. No binary format is specified anywhere.",
+  "\u00a713.5 hard-codes the Level-B exponent p = 4 (line 1066 `omc*omc*omc*omc`) and carries only (eps0, a) per material (line 1046), while \u00a74.2 (line 246) says p \u2248 4\u20136 fitted per material class, and \u00a712.3's material schema (lines 915-919) has `angular_model: fresnel/n_k_file` with no (a, p) fields at all \u2014 the per-band Level-B table the kernel needs has no home in the schema.",
+  "Reflection-probe resolution: \u00a713.7 option 2 (line 1131) says 64\u00d764 per face; \u00a75.3(b) (line 316) says 32\u00d732\u00d76.",
+  "Build ordering: \u00a713.3 line 984 'Do this before writing any other code' vs \u00a716.4 step 2 (line 1299, after the Planck LUT) vs CLAUDE.md lines 182-183 'Do not build the Isaac Sim integration before the radiometry core has passing unit tests'.",
+  "\u00a715 Tier 1 table (line 1184) lists 'Temperature encode/decode round trip < 10 mK' under 'Unit tests (no scene, no renderer)', while \u00a713.3 and the isaac-sim-spg skill (line 112) define it as an Isaac Sim integration test `tests/integration/test_temperature_encoding.py`. Both are needed and neither exists.",
+  "\u00a713.4 line 1030 and the skill (line 145) say render at 3\u20134\u00d7 and let stage 3 box-filter, but the \u00a713.4 diagram and the \u00a713.5 launch script allocate outputs at input resolution (`cuda.image(w, h)`) with no resolution change anywhere; \u00a713.8 and the skill line 178 call all six stages 'element-wise', which is false for the box filter (stage 3) and the plateau-EQ histogram (stage 6, \u00a711.3).",
+  "\u00a78.4 (line 586) says use Isaac Sim's camera distortion models instead of reimplementing, while CLAUDE.md line 75 lists `distortion` inside `src/irsim/optics/` and the sensor YAML carries `optics.distortion.coeffs`; nothing states whether the CPU reference applies distortion.",
+  "\u00a713.3 table (line 974) uses the AmbientOcclusion AOV as the sky-view factor V_s '(or custom)', whereas \u00a75.3(a) (line 302) defines V_s as a cosine-weighted hemisphere sky visibility; AO is a short-radius occlusion term and the 'custom' alternative is never specified.",
+  "Output naming differs between \u00a713.4 (line 1027: IrRadiance / IrApparentT / IrDN16 / IrDisplay8) and the \u00a712.2 config keys (lines 894-897: radiance_linear / apparent_temperature / dn_16 / display_8); the skill (line 142) uses the \u00a713.4 names.",
+  "Forbidden-module list: tests/unit/test_layering.py line 12 forbids {omni, pxr, isaacsim, warp, carb}; CLAUDE.md line 29 and src/irsim/__init__.py line 3 list only omni, pxr, isaacsim, warp (no carb). Test is stricter than the documented rule.",
+  "\u00a713.1 step 1 (line 933) says 'assign an OmniPBR material per surface with emission \u2026 to carry the object's temperature', which makes materials per-prim, while \u00a713.3 proposes DiffuseAlbedo (a material property) as the material-ID carrier \u2014 if T lives on the material, then every prim needs its own material instance and the id transport must be per-prim too; \u00a714's 'Thermal solver: Python tick' row (line 1155) never says how per-prim T reaches the emission attribute each frame.",
+  "\u00a713.2 (line 954) says execution order comes from the dependency graph; the skill (lines 43-44) adds 'Every RenderVar consumed or produced must appear in orderedVars' \u2014 a requirement absent from the spec.",
+  "The isaac-sim-spg skill (line 88) records the deprecation of isaacsim.sensors.camera / isaacsim.sensors.rtx in 6.0; \u00a713.6 (line 1117) does not mention it.",
+  "ir-sim-testing skill (line 96) requires at least five G-buffer fixtures (uniform, ramp, two-material split, grazing-angle sphere, step edge); tests/conftest.py provides only `gbuffer_uniform` and `gbuffer_ramp` and its docstring says the fixtures 'live here'.",
+  "The sensor YAML (configs/sensors/flir_boson_640_lwir.yaml line 13) references `spectra/boson_vox.csv` and \u00a712.2 (line 832) references `responses/boson_vox.csv` \u2014 different directory names; neither file exists (data/spectra/ has only .gitkeep)."
+ ]
+}

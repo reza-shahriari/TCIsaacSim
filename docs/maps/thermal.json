@@ -1,0 +1,637 @@
+{
+ "area": "thermal",
+ "existing_state": "Nothing implemented. Exact inventory:\n\nCODE\n- /home/hunter/irsim-scaffold/src/irsim/thermal/__init__.py \u2014 one line: `\"\"\"See docs/physics-model.md.\"\"\"`. No submodules, no classes, no functions.\n- No WeatherSeries, no TemperatureSolver interface, no solver, no convection function, no sky-longwave function, no spin-up, no vehicle model, no heat-trace overlay anywhere in src/.\n- src/irsim/config/__init__.py, src/irsim/atmosphere/__init__.py, src/irsim/materials/__init__.py are the same one-line docstring \u2014 no pydantic schemas, no material loader, no atmosphere object exists yet for the weather-sharing contract.\n- src/irsim_isaac/ has only package docstrings and spg/README.md (one line). No thermal tick driver.\n- Reusable pieces that DO exist: `irsim.radiometry.constants.SIGMA_SB = 5.670374419e-8`, `TEMPERATURE_MIN_K/MAX_K` plausibility guards, `EXP_ARG_MAX`; `irsim.radiometry.planck` (spectral_radiance, band_radiance_tophat) \u2014 needed only if the sky model is done in radiance rather than temperature space.\n\nTESTS\n- tests/unit/ contains only test_planck.py and test_layering.py. test_layering.py is parametrised over `src/irsim/**/*.py` and forbids imports of {omni, pxr, isaacsim, warp, carb}, so any new thermal module is covered automatically.\n- tests/conftest.py provides `rng` (seeded 20260910) and two G-buffer fixtures (`gbuffer_ramp`, `gbuffer_uniform`) that carry a `sky_view_factor` float32 channel \u2014 no weather or thermal fixtures.\n- tests/integration/ and tests/golden/ hold only .gitkeep.\n- Baseline `make check` could not be verified in this environment: `python -m pytest` reports \"No module named pytest\" (make install has not been run here).\n\nDATA / CONFIG\n- data/weather/ contains only .gitkeep \u2014 no weather file, no format defined anywhere in the repo or spec.\n- configs/materials/ contains only .gitkeep \u2014 no thermal properties (rho, c_p, k, thickness, alpha_sol) authored; the only source of values is the \u00a716.2 table in docs/physics-model.md lines 1260\u20131278.\n- configs/sensors/flir_boson_640_lwir.yaml exists but has no scene/weather/thermal section (\u00a712.2 schema is sensor-only).\n- .gitignore ignores data/lut/*.npy and *.json only; weather CSVs would be tracked.\n- pyproject.toml: runtime deps numpy, scipy, pydantic, pyyaml (scipy.optimize.brentq / scipy.linalg.expm are available for independent-oracle tests); dev deps include matplotlib for a diurnal validation plot. mypy strict on src/irsim.\n\nDOCS\n- README.md status table row: `thermal | \u2b1c not started | \u2014 |`. CHANGELOG has no thermal entry. Only ADR is 0001 (the template).\n- Spec \u00a76 (lines 345\u2013445) and .claude/skills/thermal-solver/SKILL.md are the only specifications; the skill adds the five-solver taxonomy, the cabin-air node, heat traces, weather field list, and eight named tests with tolerances.",
+ "key_equations_and_data": [
+  "\u00a76.1 surface energy balance (area-normalised): C\u00b7dT_s/dt = \u03b1_sol\u00b7Q_sol + \u03b5\u00b7Q_LW\u2193 \u2212 \u03b5\u00b7\u03c3\u00b7T_s\u2074 \u2212 h\u00b7(T_s \u2212 T_air) \u2212 k\u00b7\u2202T/\u2202z|\u2080 + q_int, with C = \u03c1\u00b7c_p\u00b7\u03b4 [J\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9]. Implement absorbed solar as \u03b1_sol\u00b7Q_sol (prose line 363), NOT the (1\u2212\u03b1_sol)^c form printed in the equation at line 355.",
+  "\u00a76.1 / [R15] per-facet solar term (only hinted by the spec): Q_sol,facet = S\u00b7\u03c8\u00b7E_direct_normal + V_s\u00b7E_diffuse (+ optional ground-reflected albedo term), \u03c8 = max(0, n\u0302\u00b7\u015d) illumination cosine, S \u2208 {0,1} shadow flag. Requires a sun direction \u015d(t) from latitude, longitude and time \u2014 no solar-position algorithm is given anywhere in the spec.",
+  "\u00a76.2 authored parameter set per material: h (derived, not authored), k [W\u00b7m\u207b\u00b9\u00b7K\u207b\u00b9], \u03b5 [\u2013], \u03b1_sol [\u2013], c_p [J\u00b7kg\u207b\u00b9\u00b7K\u207b\u00b9], \u03c1 [kg\u00b7m\u207b\u00b3]; plus \u03b4 from \u00a712.3 `thickness_m`. Two-node needs \u03b41 and \u03b42 (\u00a76.4) but \u00a712.3 supplies one thickness.",
+  "\u00a76.2 convection: h = max(h_free, a + b\u00b7v_wind^n), h_free = c\u00b7|T_s \u2212 T_air|^{1/3}; a = 5, b = 4, n = 0.8, c = 1.5 (SI, v in m/s). v_wind must be the relative air speed = wind + vehicle speed. Hand values: h(v=0, \u0394T=0) = 5.00; h(v=28 m/s) = 62.52 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9; free branch wins at v=0 only for |\u0394T| > (a/c)\u00b3 = 37.0 K.",
+  "\u00a76.3 thermal inertia P = sqrt(k\u00b7\u03c1\u00b7c_p) [J\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9\u00b7s\u207b\u00bd]; diurnal swing amplitude decreases and phase lag increases with P; crossover (contrast collapse) near sunrise/sunset is the acceptance phenomenon.",
+  "\u00a76.4 two-node model: C1\u00b7dT1/dt = \u03b1_sol\u00b7Q_sol + \u03b5\u00b7Q_LW\u2193 \u2212 \u03b5\u00b7\u03c3\u00b7T1\u2074 \u2212 h\u00b7(T1 \u2212 T_air) \u2212 (T1 \u2212 T2)/R12 + q_int; C2\u00b7dT2/dt = (T1 \u2212 T2)/R12 \u2212 (T2 \u2212 T_deep)/R2d; R12 = \u03b41/(2k) + \u03b42/(2k). R2d and T_deep are used but never defined \u2014 must be defined (proposal: R2d = \u03b42/(2k) + \u03b4_deep/k_deep, T_deep = running mean of T_air over the spin-up window).",
+  "\u00a76.4 integrator and stability: explicit RK2, \u0394t in 1\u201360 s, stability \u0394t < 2\u00b7C1/(h + 4\u00b7\u03b5\u00b7\u03c3\u00b7T\u00b3 + 1/R12). Guard must be evaluated against the worst case over the weather series (max wind \u2192 max h, max plausible T) because h is time-varying. With \u00a716.2 car-paint numbers (\u03c1=7800, c_p=470, k=45, \u03b4=1.2 mm) C1 = 4399 J\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9 and 1/R12 = 37,500, giving \u0394t_max = 0.24 s \u2014 not the 60\u2013200 s the spec claims (see inconsistencies).",
+  "\u00a76.4 thermal tick: solver runs on a fixed tick (~1 Hz) decoupled from the render loop; render-time temperature is linearly interpolated between ticks.",
+  "\u00a76.4 + skill: spin-up \u2014 initialise every node to T_air(t0 \u2212 H) with H = 24\u201348 h and integrate forward to t0; cache results keyed by (material hash, weather hash, start time).",
+  "\u00a76.5 Newton cooling: dT/dt = \u2212\u03ba\u00b7(T \u2212 T\u221e); analytic T(t) = T\u221e + (T0 \u2212 T\u221e)\u00b7e^{\u2212\u03bat}. Scope: scripted actors and no-solar relaxation only.",
+  "\u00a76.6 active-source table (config defaults for PrescribedSolver schedules): engine bay +40\u2026+90 K, \u03c4 5\u201320 min; exhaust tip +80\u2026+250 K, \u03c4 2\u201310 min; tyres +10\u2026+35 K, \u03c4 10\u201330 min; brake discs +50\u2026+400 K, 30 s heat / 5 min cool; catalytic converter +100\u2026+300 K, 3\u201310 min; clothed human +8\u2026+15 K (\u03b5\u22480.98); recently parked vehicle +5\u2026+25 K decaying 20\u201360 min (Newton); road under departed vehicle \u22123\u2026\u22128 K, 5\u201320 min.",
+  "Skill (heat traces): warm tyre trace +3\u2026+10 K decaying over 5\u201320 min; cool body shadow \u22123\u2026\u22128 K; implemented as additive decaying overlays on the ground temperature field.",
+  "Skill (vehicle regimes): five regimes \u2014 skin panels (LumpedTwoNode, environment driven), engine bay (Prescribed), driveline manifold\u2192tips (Prescribed gradient), brakes & tyres (Prescribed from vehicle dynamics), glazing (LumpedTwoNode coupled to cabin) \u2014 plus a cabin-air node (greenhouse) that drives roof and glass from inside.",
+  "\u00a75.3 sky temperature (needed for Q_LW\u2193): T_sky(\u03b8_el) = T_air \u2212 \u0394T_clear\u00b7(1 \u2212 cloud)\u00b7cos^q(\u03b8_el); \u0394T_clear \u2248 55\u201370 K (dry clear), 5\u201310 K (overcast/humid); q \u2248 0.5\u20131.0. The energy balance needs the hemispheric irradiance Q_LW\u2193 = \u222b_hemisphere \u03c3\u00b7T_sky(\u03b8)\u2074 cos\u03b8 d\u03a9 blended with (1 \u2212 V_s)\u00b7\u03c3\u00b7T_surround\u2074 \u2014 this integral is not written in the spec and must be derived. Identity to test: cloud = 1 \u21d2 Q_LW\u2193 = \u03c3\u00b7T_air\u2074 (= 390.1 W\u00b7m\u207b\u00b2 at 288 K).",
+  "\u00a77.3 Magnus formula e_s(T) = 6.112\u00b7exp(17.67\u00b7T_C/(T_C + 243.5)) hPa, w = 216.7\u00b7RH\u00b7e_s/T_K \u2014 consumed by the atmosphere area from the SAME WeatherSeries (T_air, RH). Not implemented in thermal, but the WeatherSeries must carry RH for it.",
+  "\u00a716.2 material thermal columns (starting values, literature): asphalt dry \u03b1=0.90 \u03c1=2200 c_p=920 k=0.75; concrete 0.65/2300/880/1.4; car paint black 0.94/7800/470/45; car paint white 0.28/7800/470/45; bare aluminium 0.15/2700/900/205; rusted steel 0.80/7800/470/45; glass 0.10/2500/840/1.0; rubber 0.94/1100/2000/0.16; skin 0.65/1050/3500/0.37; cotton 0.70/300/1300/0.06; leaf 0.50/700/3000/0.30; soil dry 0.75/1500/800/0.30; soil wet 0.85/2000/1500/1.5; water 0.93/1000/4180/0.60; snow 0.15/300/2100/0.20 (\u03b5_LWIR in the same table).",
+  "\u00a716.3 \u03c3 = 5.670 374 419 \u00d7 10\u207b\u2078 W\u00b7m\u207b\u00b2\u00b7K\u207b\u2074 \u2014 already `irsim.radiometry.constants.SIGMA_SB`; thermal code imports it, never redefines it.",
+  "\u00a712.3 material `thermal:` block fields: density_kg_m3, specific_heat_j_kgk, conductivity_w_mk, thickness_m, solar_absorptivity. No emissivity key here \u2014 \u03b5 comes from `optical.spectral_emissivity` (Kirchhoff non-negotiable).",
+  "Skill weather fields (no spec schema exists): time, air temperature [K], relative humidity [0\u20131], wind speed [m/s], cloud fraction [0\u20131], direct(-normal) and diffuse(-horizontal) solar irradiance [W\u00b7m\u207b\u00b2], optional precipitation. Hourly is enough; interpolate. Data file location: data/weather/*.csv (format to be defined by ADR).",
+  "New scene/thermal config fields (absent from \u00a712.2, required to run \u00a76): latitude_deg, longitude_deg, utc_offset_h (or tz), start_datetime, weather_file, spin_up_hours (default 48), thermal_tick_s (default 1.0), vehicle speed source for h.",
+  "Non-negotiable #2 at the thermal boundary: integrate in float64, emit float32 minimum; encoded AOV boundary (\u00a713.3) c = (T \u2212 200)/800 is owned by the isaac area but consumes this field.",
+  "Downstream consumers of WeatherSeries (must be injectable, not file-reading): atmosphere \u00a77 (T_air, RH, visibility), sky radiance \u00a75.3 (T_air, cloud), optics self-emission \u00a78.2 (T_housing coupled to ambient), detector \u00a79.2 (T_FPA lumped model from ambient + power).",
+  "Tolerances from spec \u00a715 Tier 1 and the skills: energy-balance equilibrium analytic vs numeric < 0.1 K; per-step energy conservation 1e-6 relative; spin-up 48 h vs 96 h < 0.5 K at t = 0; crossover within 1 h of dawn and dusk; float32 boundary < 10 mK."
+ ],
+ "work_items": [
+  {
+   "id": "THM-01",
+   "title": "WeatherSeries container with validation, interpolation and content hash",
+   "spec_refs": [
+    "\u00a76.4",
+    "\u00a77.3",
+    "CLAUDE.md non-negotiable 6",
+    "thermal-solver skill 'Weather and spin-up'"
+   ],
+   "description": "Create src/irsim/thermal/weather.py with an immutable `WeatherSeries` (float64 arrays: time_s monotonic, T_air_K, rh, wind_m_s, cloud_frac, solar_direct_normal_W_m2, solar_diffuse_W_m2, optional precip_mm_h) built from arrays only \u2014 it never opens a file. Provide `at(t)` linear interpolation returning a `WeatherSample`, `time_range`, and a SHA-256 `content_hash` used later as the spin-up cache key and as the atmosphere/thermal coupling check. Assert plausibility at construction (T_air within TEMPERATURE_MIN_K..MAX_K and > 150 K to catch Celsius, rh and cloud in [0,1], irradiance \u2265 0, time strictly increasing). Refuse extrapolation outside the series (raise). This object is the single source of weather for thermal AND atmosphere (non-negotiable 6).",
+   "depends_on": [
+    "radiometry: constants module (exists: TEMPERATURE_MIN_K/MAX_K)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Interpolation identity: value at every sample node equals the stored value to 1e-12; value at the midpoint between two hourly samples equals the arithmetic mean of the neighbours to 1e-12 (catches off-by-one and wrong-axis interpolation).",
+    "Unit guard: T_air = 15.0 (Celsius passed as kelvin) raises ValueError; rh = 55 (percent instead of fraction) raises; negative irradiance raises; non-monotonic time raises.",
+    "No silent extrapolation: `at(t)` outside [t0, t1] raises rather than clamping.",
+    "Hash contract: two series differing by 0.01 K in a single T_air sample have different content_hash; the same arrays constructed twice give identical hashes (spin-up cache correctness depends on this)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-02",
+   "title": "Weather CSV loader, synthetic diurnal generator, and a checked-in sample weather file",
+   "spec_refs": [
+    "\u00a76.4",
+    "Appendix A item 8",
+    "thermal-solver skill 'Weather and spin-up'"
+   ],
+   "description": "Define the data/weather CSV format (ADR): header row, ISO-8601 UTC timestamps plus utc_offset, columns in SI (K, fraction, m/s, W/m\u00b2), hourly. Implement `load_weather_csv(path) -> WeatherSeries` in irsim.thermal.weather_io (loader is separate from the container so the container never reads files) with Celsius\u2192K conversion only when the header unit says so. Add `synthetic_clear_day(T_mean, T_amp, sunrise_h, sunset_h, E_peak, wind, cloud, days)` producing a sinusoidal T_air and a half-sine direct-normal irradiance profile for tests. Check in data/weather/clear_midlat_summer_48h.csv (values documented as synthetic/estimated, not measured).",
+   "depends_on": [
+    "THM-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Round trip: write a WeatherSeries to CSV, reload, compare all arrays bit-exact (float64) and content_hash equal.",
+    "Synthetic generator energy identity: daily integral of the half-sine direct irradiance equals 2\u00b7E_peak\u00b7(t_set \u2212 t_rise)/\u03c0 analytically to 0.1%; irradiance is exactly zero between sunset and sunrise.",
+    "Known-answer fixture: the checked-in file loads with the documented T_air min/max (to 0.01 K) and exactly 49 hourly rows; a file with a '\u00b0C' header loads with +273.15 applied, a file with 'K' header does not (a double conversion would be off by 273 K).",
+    "Malformed input: missing required column or non-monotonic timestamps raise, never silently fill."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-03",
+   "title": "Convection coefficient h(T_s, T_air, v_relative) with vehicle speed",
+   "spec_refs": [
+    "\u00a76.2",
+    "thermal-solver skill 'Convection coefficient'"
+   ],
+   "description": "src/irsim/thermal/convection.py: `h_convection(T_s, T_air, v_wind, v_vehicle=0.0, a=5, b=4, n=0.8, c=1.5)` = max(c\u00b7|T_s\u2212T_air|^{1/3}, a + b\u00b7v_rel^n), v_rel = |v_wind| + |v_vehicle| at L2 (scalar composition; vector composition with heading deferred). NumPy-broadcastable over facets. Coefficients live in a `ConvectionParams` dataclass with the \u00a76.2 defaults, not inline. Docstring records that h is the largest uncertainty (\u00a76.2).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Known answers (independent hand calculation): h(\u0394T=0, v=0) = 5.000 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9; h(\u0394T=0, v=28 m/s) = 62.52 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9 to 1e-9 relative.",
+    "Free/forced crossover at v = 0 occurs at |\u0394T| = (a/c)\u00b3 = 37.0 K: h(\u0394T=36 K) = a exactly, h(\u0394T=38 K) > a (a wrong exponent or wrong max() moves this).",
+    "Monotonicity: h non-decreasing in v_rel and in |\u0394T| over a 50\u00d750 grid; symmetric in the sign of \u0394T.",
+    "Vehicle-speed effect: h(v_wind=2, v_vehicle=28) == h(v_wind=30, v_vehicle=0) to 1e-12, and h at 28 m/s exceeds h at 0 m/s by more than a factor of 10 (skill: 'first-order effect for automotive IR')."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-04",
+   "title": "Solar geometry and per-facet solar loading Q_sol = S\u00b7\u03c8\u00b7E_dir + V_s\u00b7E_dif",
+   "spec_refs": [
+    "\u00a76.1 ([R15] shadow flag S and illumination cosine \u03c8)",
+    "\u00a75.4 (cos \u03b8_s, shadow term S)",
+    "\u00a76.2 \u03b1_sol"
+   ],
+   "description": "src/irsim/thermal/solar.py: (1) `sun_direction(lat_deg, lon_deg, datetime_utc)` returning elevation/azimuth and a unit vector via a standard low-cost algorithm (NOAA/Spencer-class, \u00b10.5\u00b0 adequate for heat loading \u2014 ADR); (2) `solar_loading(normal, sun_dir, E_direct_normal, E_diffuse, sky_view, shadow)` returning Q_sol [W\u00b7m\u207b\u00b2] per facet with \u03c8 = max(0, n\u0302\u00b7\u015d), S \u2208 {0,1}; optional ground-reflected term albedo\u00b7E_global\u00b7(1\u2212V_s)/2. The absorbed term is \u03b1_sol\u00b7Q_sol, applied in the solver, not here. Engine-free: the shadow flag is an input (renderer or analytic supplies it).",
+   "depends_on": [
+    "THM-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Solar-noon elevation on the equinox equals 90\u00b0 \u2212 |latitude| to 0.5\u00b0 at latitudes 0\u00b0, 45\u00b0N, 60\u00b0S; declination on 21 June within 0.1\u00b0 of +23.44\u00b0; elevation at solar midnight at 45\u00b0N is negative all year (wrong sign conventions or a swapped lat/lon fail these).",
+    "Known-answer vs NOAA solar calculator at three recorded (date, lat, lon, UTC) points: elevation and azimuth within 0.5\u00b0 (reference numbers recorded in the test with their source).",
+    "Facet cosine identities: horizontal facet \u03c8 = sin(elevation) to 1e-12; south-facing vertical facet at solar noon in the northern hemisphere \u03c8 = cos(elevation); north-facing vertical facet at that instant \u03c8 = 0.",
+    "Shadow and energy: S = 0 removes exactly the direct term (residual equals V_s\u00b7E_dif); daily integral of Q_sol on a horizontal unshaded facet under the THM-02 synthetic day equals the analytic \u222bE_dir\u00b7sin(el)dt + \u222bE_dif dt to 0.1%."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-05",
+   "title": "Longwave downwelling irradiance Q_LW\u2193 from the \u00a75.3 sky-temperature model",
+   "spec_refs": [
+    "\u00a75.3",
+    "\u00a76.1 (\u03b5\u00b7Q_LW\u2193 term)",
+    "\u00a76.2 (\u03b5)"
+   ],
+   "description": "src/irsim/thermal/sky_longwave.py: `T_sky_elevation(T_air, cloud, theta_el, dT_clear=60, q=1)` (the single parametrisation shared with the radiance-path sky model \u2014 same function, one home) and `longwave_down(T_air, cloud, sky_view, T_surround, dT_clear, q)` = V_s\u00b7\u222b_hemi \u03c3\u00b7T_sky(\u03b8)\u2074\u00b7cos\u03b8 d\u03a9/\u03c0-normalised + (1 \u2212 V_s)\u00b7\u03c3\u00b7T_surround\u2074, evaluated by fixed Gauss\u2013Legendre quadrature in \u03b8 (closed form is not available for general q). Document that \u00a75.3's T_sky is an LWIR brightness-temperature parametrisation being used as a broadband proxy (ADR).",
+   "depends_on": [
+    "THM-01",
+    "radiometry/atmosphere: \u00a75.3 sky radiance model must import this same T_sky_elevation function (no second parametrisation)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Overcast identity: cloud = 1 \u21d2 Q_LW\u2193 = \u03c3\u00b7T_air\u2074 to 1e-9 relative (= 390.1 W\u00b7m\u207b\u00b2 at 288 K); any hemispheric-weighting bug breaks this.",
+    "Sky-view identity: V_s = 0 \u21d2 Q_LW\u2193 = \u03c3\u00b7T_surround\u2074 to 1e-9; V_s = 1, cloud = 1, T_surround \u2260 T_air \u21d2 no dependence on T_surround.",
+    "Independent quadrature: Gauss\u2013Legendre result vs brute-force 2-D trapezoid over (\u03b8, \u03c6) on a 2000\u00d72000 grid agree to < 0.1 W\u00b7m\u207b\u00b2 (\u2248 20 mK equivalent since dQ/dT = 4\u03c3T\u00b3 \u2248 5.4 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9 at 288 K).",
+    "Known-answer range: clear dry sky, T_air = 288 K, \u0394T_clear = 60 K, q = 1, V_s = 1 gives Q_LW\u2193 in [230, 320] W\u00b7m\u207b\u00b2 (published clear-sky range) and at least 60 W\u00b7m\u207b\u00b2 below the overcast value; Q_LW\u2193 is monotonically increasing in cloud fraction."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-06",
+   "title": "TemperatureSolver protocol plus PrescribedSolver and NewtonCoolingSolver",
+   "spec_refs": [
+    "\u00a76.5",
+    "\u00a76.6 (recently parked vehicle row)",
+    "thermal-solver skill 'Solver architecture'"
+   ],
+   "description": "src/irsim/thermal/solvers/base.py: `TemperatureSolver` Protocol \u2014 `advance(t, dt)`, `temperature() -> float64 array`, `state` (for caching), `dtype` guarantee. src/irsim/thermal/solvers/scripted.py: `PrescribedSolver` (time-series or callable of vehicle state, linear interpolation) and `NewtonCoolingSolver` (dT/dt = \u2212\u03ba(T \u2212 T\u221e), integrated with the exact exponential update so it is unconditionally stable; \u03ba or \u03c4 = 1/\u03ba from config). Docstring states the scope limit from \u00a76.5: no solar, no cold-sky exchange.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Newton vs analytic: T(t) = T\u221e + (T0 \u2212 T\u221e)\u00b7e^{\u2212\u03bat} at t = 3/\u03ba agrees to < 1 mK for dt = \u03c4/100, and the exact-update scheme also agrees to < 1 mK for dt = 5\u03c4 (no overshoot below T\u221e \u2014 a naive explicit Euler would go negative here).",
+    "Time-varying T\u221e: with T\u221e(t) stepping at t1, the response after the step equals the analytic solution restarted from T(t1) to < 1 mK.",
+    "Prescribed: values at schedule nodes exact; between nodes equal to linear interpolation to 1e-12; a schedule with non-monotonic time raises.",
+    "Interface: every solver class in the package satisfies the Protocol under mypy strict (structural check), and `temperature()` never returns float16 (dtype assert)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-07",
+   "title": "Single-node surface energy balance: RHS, RK2 step, analytic steady state",
+   "spec_refs": [
+    "\u00a76.1",
+    "\u00a76.2",
+    "\u00a715 Tier 1 'Energy balance equilibrium < 0.1 K'"
+   ],
+   "description": "src/irsim/thermal/energy_balance.py: `ThermalProperties` dataclass (density, specific_heat, conductivity, thickness, solar_absorptivity, emissivity \u2014 the last populated FROM the material's optical data by the materials loader, never authored in the thermal block), `SurfaceForcing` (Q_sol, Q_LW_down, T_air, v_rel, q_int), `net_flux(T, props, forcing)` implementing \u00a76.1 without the conduction term, `rk2_step`, and `steady_state_temperature(props, forcing)` solving \u03b5\u00b7Q_LW\u2193 + \u03b1\u00b7Q_sol + q_int \u2212 \u03b5\u03c3T\u2074 \u2212 h(T)(T \u2212 T_air) = 0 by bracketing (scipy.optimize.brentq). Scalar reference implementation; float64.",
+   "depends_on": [
+    "THM-03",
+    "THM-05",
+    "THM-06",
+    "radiometry: SIGMA_SB (exists)",
+    "materials: (soft) ThermalProperties will be populated by the material loader; until then tests use \u00a716.2 values in a fixture"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Analytic equilibrium: constant forcing, no solar, q_int = 0 \u2014 the solver run to t = 20\u00b7C/(h + 4\u03b5\u03c3T\u00b3) converges to the brentq root of the balance to < 0.1 K (\u00a715 Tier 1); repeat with q_int = 50 W\u00b7m\u207b\u00b2 and with Q_sol = 600 W\u00b7m\u207b\u00b2 (root shifts; both < 0.1 K).",
+    "Energy conservation per step: C\u00b7(T_{n+1} \u2212 T_n) equals the RK2 quadrature of the net flux over the step to 1e-6 relative (skill test), for 1000 consecutive steps.",
+    "Linearised relaxation: a 1 K perturbation from equilibrium decays with e-folding time \u03c4 = C/(h + 4\u03b5\u03c3T_eq\u00b3); fitted \u03c4 within 1% of analytic (checks the T\u2074 derivative and the sign of every term).",
+    "Monotone sensitivities: raising Q_sol raises T_eq; raising h moves T_eq toward T_air; \u03b5 = 0 removes both radiative terms exactly (T_eq \u2192 T_air + (\u03b1Q_sol + q_int)/h to 1e-9)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-08",
+   "title": "LumpedTwoNodeSolver (surface + substrate) with stability guard \u2014 scalar reference",
+   "spec_refs": [
+    "\u00a76.3",
+    "\u00a76.4",
+    "thermal-solver skill 'The two-node model'"
+   ],
+   "description": "src/irsim/thermal/solvers/two_node.py: the \u00a76.4 system with R12 = \u03b41/(2k1) + \u03b42/(2k2) (allow distinct k per node, defaulting to one k), an explicitly defined R2d and T_deep (ADR: R2d = \u03b42/(2k2) + \u03b4_deep/k2; T_deep = running mean of T_air over the spin-up window or a config value), RK2 integration, and a constructor guard raising ValueError when \u0394t \u2265 2\u00b7C1/(h_max + 4\u03b5\u03c3T_max\u00b3 + 1/R12) using the worst-case h over the injected WeatherSeries (max wind + vehicle speed) and T_max = 400 K; also a per-step assert. Emit total stored energy for conservation tests.",
+   "depends_on": [
+    "THM-07",
+    "THM-01"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Reduction: R12 \u2192 \u221e (substrate decoupled) reproduces the THM-07 single-node trajectory to < 0.1 mK over 24 h; C2 \u2192 \u221e with T2 = T_deep reproduces a single node with an added conductive sink whose analytic equilibrium is checked by brentq to < 0.1 K.",
+    "Two-node analytic equilibrium: constant forcing \u2014 eliminate T2 = (T1/R12 + T_deep/R2d)/(1/R12 + 1/R2d), brentq the scalar residual, run solver to steady state: both nodes within 0.1 K of the roots.",
+    "Linear-limit oracle: with the radiation term linearised about T_eq (\u0394T \u2264 2 K) the 2\u00d72 linear system solved by scipy.linalg.expm matches the RK2 trajectory to < 10 mK over 6 h at \u0394t = 10 s.",
+    "Stability guard: dt = 1.1 \u00d7 bound raises ValueError at construction; dt = 0.9 \u00d7 bound does not; with \u00a716.2 car-paint numbers and a 1.2 mm substrate the computed bound is 0.235 \u00b1 0.005 s (documents the spec's inconsistency numerically).",
+    "Energy conservation: C1\u00b7\u0394T1 + C2\u00b7\u0394T2 over the run equals the integrated boundary fluxes (solar + LW \u2212 emission \u2212 convection \u2212 deep conduction) to 1e-6 relative.",
+    "Thermal inertia ordering (\u00a76.3): under identical sinusoidal forcing, the T1 swing amplitude strictly decreases and the phase lag strictly increases across dry soil (P\u2248600), asphalt (P\u22481230), concrete (P\u22481680), water (P\u22481580 with \u03b4) \u2014 assert ordering by P."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-09",
+   "title": "Vectorised facet solver (N facets, per-facet properties and forcing) validated against the scalar reference",
+   "spec_refs": [
+    "\u00a76.4",
+    "CLAUDE.md 'Prefer a scalar reference implementation first'"
+   ],
+   "description": "src/irsim/thermal/solvers/two_node_array.py: same equations as THM-08 over NumPy arrays of facets (shape (N,)), with per-facet ThermalProperties arrays, per-facet normal/sky_view/shadow from THM-04/05 and shared WeatherSeries scalars broadcast. Internal float64. This is what the thermal tick runs on. The scalar solver remains the oracle.",
+   "depends_on": [
+    "THM-08",
+    "THM-04",
+    "THM-05"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Independent implementation: 64 facets with seeded random properties (within \u00a716.2 ranges), random normals and sky-view factors, integrated 6 h \u2014 equals 64 scalar THM-08 runs to < 0.1 mK max abs difference.",
+    "Broadcast correctness: a per-facet forcing array where one facet is shadowed (S = 0) changes only that facet's trajectory; others bit-identical to the unshadowed run.",
+    "dtype: float16 property or forcing arrays raise; internal state dtype is float64 (assert)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-10",
+   "title": "Spin-up with cache keyed by (material hash, weather hash, start time)",
+   "spec_refs": [
+    "\u00a76.4 'Spin-up matters'",
+    "thermal-solver skill 'Weather and spin-up'"
+   ],
+   "description": "src/irsim/thermal/spinup.py: `spin_up(solver_factory, weather, t0, hours=48)` initialises all nodes to T_air(t0 \u2212 hours) and integrates to t0 using the same tick; an in-memory (optionally on-disk under an ignored cache dir \u2014 ADR) cache keyed by (ThermalProperties hash, WeatherSeries.content_hash, t0, hours, dt). Per material class \u00d7 orientation bin, not per facet, at L2 (ADR).",
+   "depends_on": [
+    "THM-02",
+    "THM-08",
+    "THM-09"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Convergence: 48 h vs 96 h spin-up agree at t0 to < 0.5 K for dry asphalt and thin painted steel under the checked-in weather file (skill); for 0.3 m concrete the difference is reported and asserted < 1.0 K (documented looser bound \u2014 high inertia).",
+    "Initial condition: at t0 \u2212 hours every node equals T_air(t0 \u2212 hours) exactly; with a constant-weather series the spun-up state equals the THM-08 analytic equilibrium to < 0.1 K.",
+    "Cache semantics: a second call with identical keys returns bit-identical state and performs zero integration steps (step counter spy); perturbing one weather sample by 0.01 K or changing t0 by 1 s invalidates the cache."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-11",
+   "title": "ThermalField tick scheduler with render-time interpolation and float32 output boundary",
+   "spec_refs": [
+    "\u00a76.4 'Decouple this from the render loop'",
+    "\u00a71 'separate the temperature problem from the radiance problem'",
+    "CLAUDE.md non-negotiable 2"
+   ],
+   "description": "src/irsim/thermal/field.py: `ThermalField` owns the facet solver, advances on a fixed tick (default 1.0 s) driven by scene time, and answers `temperature_at(t_render) -> float32 array` by linear interpolation between the last two ticks; queries never mutate state. Asserts output dtype is float32 or float64 (never float16). This is the object the isaac glue reads each frame.",
+   "depends_on": [
+    "THM-09",
+    "THM-10"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Interpolation identity: at t between ticks t_k and t_{k+1}, output equals (1\u2212w)\u00b7T_k + w\u00b7T_{k+1} to 1e-12 (computed independently from the recorded tick values); at tick instants exact.",
+    "Precision boundary: float64 internal trajectory vs the float32 output over a 48 h run differs by < 10 mK everywhere (ir-sim-testing encode/decode tolerance); requesting float16 raises.",
+    "Decoupling and determinism: 3600 render queries at 60 Hz between two ticks leave the solver state hash unchanged; two runs with identical inputs are bit-identical (there is no randomness in the thermal path \u2014 noise belongs in radiance space, non-negotiable 3)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-12",
+   "title": "Tier-3 diurnal phenomenology tests and validation script (crossover, inertia, overcast, wind, vehicle speed)",
+   "spec_refs": [
+    "\u00a76.3",
+    "\u00a715 Tier 3 checklist rows 1\u20133",
+    "\u00a716.4 step 6",
+    "thermal-solver skill 'Tests'"
+   ],
+   "description": "tests/unit/test_thermal_diurnal.py (marked slow if > 1 s, but must stay inside the 30 s unit budget \u2014 use \u0394t = 60 s) plus scripts/validate_thermal_diurnal.py producing a 24 h plot for the manual pass. Uses the checked-in clear-day weather at 45\u00b0N with solar noon at 12:00 local, \u00a716.2 materials, and the full THM-04/05/08/10 chain.",
+   "depends_on": [
+    "THM-02",
+    "THM-04",
+    "THM-05",
+    "THM-08",
+    "THM-10",
+    "THM-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Diurnal shape (dry asphalt): T_max occurs within [13:00, 16:00] local and T_min within \u00b190 min of sunrise; peak-to-peak swing in [15, 40] K on a clear summer day (a solver that is not running gives ~0 swing; a missing inertia term peaks at noon).",
+    "Thermal crossover: sign of (T_asphalt \u2212 T_thin_painted_steel) changes within \u00b160 min of sunrise and again within \u00b160 min of sunset (skill tolerance 1 h).",
+    "Overcast flattens: cloud = 1 reduces the asphalt swing by > 30% and the night-time |T_asphalt \u2212 T_metal| by > 30% relative to clear sky (\u00a75.3 'flat on cloudy days').",
+    "Wind: doubling wind speed from 2 to 4 m/s lowers the asphalt T_max by > 1 K; vehicle-speed effect: a black painted hood panel at 28 m/s vs 0 m/s under 800 W\u00b7m\u207b\u00b2 differs by > 3 K at 14:00 (skill 'meaningful margin', quantified).",
+    "Wet vs dry soil (\u00a716.2 rows): wet soil daytime T_max is lower than dry soil by > 2 K and its swing is smaller (Tier 3 'wet reads colder than dry')."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-13",
+   "title": "Cabin-air node coupled to panels and glazing (vehicle greenhouse)",
+   "spec_refs": [
+    "\u00a76.6",
+    "thermal-solver skill 'five regimes' + cabin air",
+    "\u00a74.4 (glass transmittance for solar gain)"
+   ],
+   "description": "src/irsim/thermal/vehicle/cabin.py: one lumped cabin-air node C_cab with solar gain through glazing (\u03c4_glass_solar from the material), convective exchange with the interior faces of roof, doors, glass (h_int \u2248 3\u20135 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9, config), and infiltration/HVAC term to ambient; panels become single-node (thin metal, no substrate \u2014 see ADR on stiffness) with the cabin node as their back-side boundary instead of T_deep. Glazing solved as LumpedTwoNode coupled to cabin.",
+   "depends_on": [
+    "THM-08",
+    "THM-04",
+    "THM-09",
+    "materials: glass solar transmittance per band (soft; test uses a constant)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Greenhouse effect: at 14:00 under the clear day, roof T with the cabin node enabled exceeds roof T with the back side held at T_air by > 2 K (skill: without it 'daytime roofs come out too cold').",
+    "Coupled analytic equilibrium: constant forcing \u2014 cabin and each panel converge to the roots of the coupled algebraic system (solved independently with scipy.optimize.fsolve) to < 0.1 K.",
+    "Energy conservation of the coupled system (panels + glass + cabin): stored energy change equals integrated boundary fluxes to 1e-6 relative.",
+    "Night relaxation: with no solar, cabin excess over ambient decays with the analytic time constant of the coupled linearised system to 2%."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-14",
+   "title": "Prescribed vehicle heat-source schedules: engine bay, driveline gradient, brakes, tyres",
+   "spec_refs": [
+    "\u00a76.6",
+    "thermal-solver skill 'The vehicle: five regimes'"
+   ],
+   "description": "src/irsim/thermal/vehicle/sources.py: `EngineBaySchedule` (\u0394T(t) = \u0394T_max\u00b7(1 \u2212 e^{\u2212t/\u03c4}) on ignition, Newton decay on shutdown), `DrivelineGradient` (monotone \u0394T along manifold\u2192cat\u2192pipe\u2192tip, each an exponential warm-up with its own \u03c4), `BrakeDisc` (heat input from braking power P = m\u00b7v\u00b7a\u00b7share / n_discs into m_disc\u00b7c_p, Newton cooling with \u03c4_cool), `TyreSchedule` (\u0394T = \u0394T_max\u00b7(1 \u2212 e^{\u2212t/\u03c4}) scaled by speed and lateral load). All are PrescribedSolver implementations driven by a `VehicleState(t, speed, accel, ignition, braking)` trace. Defaults from the \u00a76.6 table, marked ESTIMATED.",
+   "depends_on": [
+    "THM-06"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Engine warm-up: \u0394T at t = \u03c4 equals (1 \u2212 e\u207b\u00b9)\u00b7\u0394T_max to 1 mK; steady \u0394T within +40\u2026+90 K for defaults; on shutdown the decay matches the Newton analytic to 1 mK.",
+    "Brake energy balance: for a 1500 kg vehicle braking 28 \u2192 0 m/s with 70% front share on two discs of 8 kg steel, \u0394T_disc = E/(m\u00b7c_p) analytically (independent arithmetic in the test) to 1e-6 relative, then Newton cool-down analytic to 1 mK; peak within +50\u2026+400 K.",
+    "Tyre: \u0394T strictly increasing with speed, saturating within +10\u2026+35 K for defaults; zero speed for > 3\u03c4 returns to ambient within 1 mK.",
+    "Driveline: T_manifold > T_cat > T_pipe > T_tip at all times after warm-up; tip \u0394T within +80\u2026+250 K; catalytic converter within +100\u2026+300 K.",
+    "Determinism: identical VehicleState traces give bit-identical schedules."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-15",
+   "title": "Environmental heat-trace overlays on the ground temperature field (tyre traces, body shadows)",
+   "spec_refs": [
+    "\u00a76.6 last row 'Road under a departed vehicle'",
+    "\u00a715 Tier 3 'departed vehicle leaves a warm tyre trace and a cool body shadow'",
+    "thermal-solver skill 'Environmental heat traces'"
+   ],
+   "description": "src/irsim/thermal/traces.py: `HeatTraceLayer` holding a list of (footprint mask on a 2-D ground grid, amplitude \u0394T0, \u03c4, t_start) events; `apply(T_ground, t)` adds \u03a3 \u0394T0\u00b7e^{\u2212(t \u2212 t_start)/\u03c4} on each footprint. `tyre_trace_from_trajectory(points, track_width, tyre_width, grid)` and `body_shadow_from_pose(rect, grid)` rasterise footprints. Defaults: tyre +5 K \u03c4 10 min, shadow \u22125 K \u03c4 10 min (skill ranges). Engine-free on NumPy arrays; the isaac glue only supplies trajectories.",
+   "depends_on": [
+    "THM-06",
+    "THM-11"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Exponential decay: overlay amplitude at t = t_start + \u03c4 equals \u0394T0/e to 1 mK; at t = t_start + 5\u03c4 below 1% of \u0394T0.",
+    "Superposition and locality: two overlapping traces add linearly to 1e-12; cells outside every footprint are bit-identical to the input field.",
+    "Rasterisation known answer: a straight trajectory along x with track width 1.5 m and tyre width 0.2 m on a 0.1 m grid marks exactly the two expected stripes (mask equality with an independently constructed mask).",
+    "Sign and range: tyre traces are positive and within +3\u2026+10 K, body shadows negative and within \u22123\u2026\u22128 K for defaults."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "THM-16",
+   "title": "SlabSolver (1-D N-node diffusion, THERM-class) \u2014 L3 upgrade path and two-node error bound",
+   "spec_refs": [
+    "\u00a71 fidelity ladder L3",
+    "\u00a76.4 'Full 1-D diffusion is overkill for L2'",
+    "thermal-solver skill 'SlabSolver'"
+   ],
+   "description": "src/irsim/thermal/solvers/slab.py: N-node 1-D conduction with the \u00a76.1 surface boundary condition at node 0 and a fixed-T or zero-flux bottom boundary, implicit (backward Euler or Crank\u2013Nicolson) conduction so \u0394t is not stiffness-limited, explicit surface fluxes. Same TemperatureSolver interface. Its main purpose at this stage is to quantify the two-node approximation error for the ADR; it is optional for L2.",
+   "depends_on": [
+    "THM-08",
+    "THM-07"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Semi-infinite periodic known answer: with surface T forced sinusoidally at period 24 h, amplitude at depth z decays as e^{\u2212z/d} and lags by z/d, d = sqrt(2\u03b1/\u03c9), \u03b1 = k/(\u03c1c_p): amplitude ratio within 2%, phase within 5\u00b0 at z = d and z = 2d.",
+    "Steady conduction: fixed end temperatures give a linear profile to 1e-9 K; energy conservation to 1e-6 relative.",
+    "Two-node error bound: for dry asphalt over the checked-in 48 h weather, slab vs two-node surface temperature RMS difference < 1.5 K and max < 3 K (the number goes into the ADR; failure means the two-node \u03b41/\u03b42 defaults are wrong).",
+    "Stiffness: a 1 mm steel slab at \u0394t = 60 s integrates without divergence (implicit conduction), unlike the explicit two-node bound of 0.24 s."
+   ],
+   "engine_free": true,
+   "size": "L"
+  },
+  {
+   "id": "THM-17",
+   "title": "ImportedSolver: precomputed per-facet temperature series from an external tool",
+   "spec_refs": [
+    "\u00a76.5 (DIRSIG data-driven vs predictive split)",
+    "thermal-solver skill 'ImportedSolver'"
+   ],
+   "description": "src/irsim/thermal/solvers/imported.py: loads a .npz (time_s, facet_ids, T_K float32/float64) and serves linearly interpolated temperatures through the TemperatureSolver interface; refuses float16 or non-Kelvin data (plausibility guard).",
+   "depends_on": [
+    "THM-06",
+    "THM-11"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Round trip: a series written from a THM-09 run and re-imported reproduces the solver output bit-exact at sample times and to 1e-12 of linear interpolation between them.",
+    "Guards: a float16 array raises; values of 20.0 (Celsius) raise; facet id mismatch with the scene raises loudly rather than defaulting."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-18",
+   "title": "Thermal configuration schema: material thermal block, scene/site/time, weather binding \u2014 and the single-weather-object contract",
+   "spec_refs": [
+    "\u00a712.3 thermal block",
+    "\u00a712.2 (no scene schema exists \u2014 extension)",
+    "CLAUDE.md non-negotiable 6",
+    "thermal-solver skill 'Weather coupling' test"
+   ],
+   "description": "src/irsim/config/thermal.py (pydantic v2): `MaterialThermalConfig` (density_kg_m3 > 0, specific_heat_j_kgk > 0, conductivity_w_mk > 0, thickness_m > 0, optional substrate_thickness_m, solar_absorptivity \u2208 [0,1]; `extra='forbid'` so an `emissivity` key inside `thermal:` is rejected \u2014 \u03b5 is derived from optical data), `ThermalSceneConfig` (latitude_deg, longitude_deg, utc_offset_h, start_datetime, weather_file, spin_up_hours=48, thermal_tick_s=1.0, deep_temperature_mode). A `Scene` builder loads the weather ONCE and injects the same WeatherSeries instance into ThermalField and the atmosphere object; neither accepts a path.",
+   "depends_on": [
+    "config: pydantic schema base / loader conventions",
+    "THM-01",
+    "THM-02",
+    "atmosphere: Atmosphere constructor must take a WeatherSeries (contract, not code dependency)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Schema physics guards: negative thickness, \u03b1_sol = 1.2, missing conductivity, and an `emissivity` key under `thermal:` all raise ValidationError; the \u00a712.3 example block validates and round-trips into ThermalProperties with the correct SI values (density 7800, thickness 0.0012).",
+    "Non-negotiable 6 by construction: ThermalField(...) and Atmosphere(...) constructors have no `weather_file` parameter (introspection test) and require a WeatherSeries; building a Scene yields `thermal.weather is atmosphere.weather` (identity) and equal content_hash; a Scene helper given two different weather objects raises.",
+    "Time handling: a start_datetime without timezone info is rejected; the resolved UTC start maps to the correct row of the weather file (known-answer)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "THM-19",
+   "title": "Isaac Sim thermal tick driver: push ThermalField temperatures to per-prim encoded emission and read per-prim sky-view/shadow",
+   "spec_refs": [
+    "\u00a713.1",
+    "\u00a713.3",
+    "\u00a713.4",
+    "\u00a716.4 steps 2 and 6",
+    "\u00a76.4 'fixed thermal tick and interpolate'"
+   ],
+   "description": "src/irsim_isaac/thermal_driver.py: maps scene prims \u2192 facet indices (material class \u00d7 orientation bin \u00d7 shadow state), reads baked per-prim sky-view factor and a per-tick solar shadow flag (from a shadow probe or analytic), advances ThermalField on the physics tick, and writes the encoded temperature c = (T \u2212 200)/800 into the float32 emission channel each render frame. Integration tests under tests/integration marked @pytest.mark.isaac.",
+   "depends_on": [
+    "isaac: temperature encode/decode round trip < 10 mK (\u00a716.4 step 2) must pass first",
+    "isaac: per-prim material mapping layer (materials area) providing material class per prim",
+    "THM-11",
+    "THM-18",
+    "THM-04 (shadow flag consumer)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "Round trip through the renderer: assign solver temperatures to 100 prims spanning 250\u2013450 K, render, decode the AOV, compare to ThermalField output: max error < 10 mK (a float16 emission path fails at 0.25 K).",
+    "Tier-3 crossover on a demo scene (asphalt, concrete, painted vehicle, grass): automated contrast metric \u2014 standard deviation of decoded apparent temperature across material classes at 06:00 and 19:00 local is < 40% of its 13:00 value (spec \u00a76.3 'does the scene go flat at 0600 and 1900').",
+    "Tick/frame consistency: temperatures decoded from two consecutive frames within one thermal tick differ by exactly the interpolation increment predicted by THM-11 (to 10 mK).",
+    "Performance guard: a 1 Hz update of 10,000 prims completes in < 100 ms (measured; if it fails, the per-prim attribute strategy must change \u2014 see risks)."
+   ],
+   "engine_free": false,
+   "size": "L"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Time integrator and stiffness handling for the two-node model (explicit RK2 vs semi-implicit conduction / exponential integrator)",
+   "why": "The spec prescribes explicit RK2 at 1\u201360 s, but with \u00a716.2 thin-metal numbers and a substrate node the stability bound is 0.24 s (1/R12 = 37,500 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9). Either thin panels are modelled as single nodes with a resistive back boundary (cabin/air), or conduction coupling is treated implicitly. This choice fixes the tick rate, the cost of spin-up, and which materials are representable.",
+   "options": [
+    "Explicit RK2 as specified, with a constructor guard, and panels as single nodes coupled resistively to the cabin node (R = 1/h_int) rather than through \u03b4/(2k)",
+    "Semi-implicit scheme: implicit (linear) conduction coupling and linearised radiation, explicit solar/convection \u2014 unconditionally stable at 1\u201360 s for every material",
+    "Exponential (Rosenbrock/ETD) integrator on the linearised system \u2014 exact for the stiff linear part, more code"
+   ]
+  },
+  {
+   "title": "Two-node lumped model as the L2 fidelity level, with defined R2d, T_deep, \u03b41/\u03b42 and a quantified error bound",
+   "why": "The spec leaves R2d and T_deep undefined and gives one `thickness_m` per material while the model needs two. The two-node vs 1-D slab error (target < 1.5 K RMS for asphalt) must be measured and recorded so a reviewer can tell a deliberate approximation from a bug.",
+   "options": [
+    "Two-node with \u03b41 = authored thickness, \u03b42 = per-material default (e.g. 0.2 m ground, none for panels), R2d = \u03b42/(2k) + \u03b4_deep/k, T_deep = spin-up-window mean of T_air",
+    "Two-node with T_deep authored per scene (config) and R2d authored per material",
+    "Skip two-node and go straight to the implicit slab solver for ground materials (L3 for the ground only)"
+   ]
+  },
+  {
+   "title": "Convection parameterisation: spec \u00a76.2 max(free, a + b\u00b7v^n) with a=5, b=4, n=0.8, c=1.5, relative speed as |wind| + |vehicle speed|",
+   "why": "h is the largest uncertainty in the whole temperature prediction (\u00a76.2). The chosen form makes the free-convection branch irrelevant below |\u0394T| = 37 K at rest, and scalar speed composition ignores heading. Alternatives (J\u00fcrges/McAdams 5.7 + 3.8v, Palyvos, surface-orientation-dependent correlations) give 20\u201340% different h; the consequence is a multi-kelvin bias that Tier 4 will attribute elsewhere.",
+   "options": [
+    "Spec form exactly (a, b, n, c as constants in a params dataclass)",
+    "Spec form with vector wind composition (wind vector minus vehicle velocity, per-facet orientation factor)",
+    "Surface-class-specific correlations (horizontal up/down, vertical) from ASHRAE/Palyvos"
+   ]
+  },
+  {
+   "title": "Weather data file format and interpolation contract",
+   "why": "data/weather is empty and no format is specified. The format decides unit conventions (K vs \u00b0C, RH fraction vs percent, direct-normal vs global-horizontal irradiance), time-zone handling, and whether EPW/TMY files can be used directly. Interpolation (linear hourly) determines the temporal smoothness of the forcing.",
+   "options": [
+    "Project CSV: ISO-8601 UTC timestamps, SI columns, direct-normal + diffuse-horizontal, hourly, linear interpolation",
+    "EPW (EnergyPlus weather) files with a converter \u2014 richer, widely available, but \u00b0C, Wh/m\u00b2, local-time rows and no cloud fraction as such",
+    "Both: EPW \u2192 project CSV conversion script, and only the project CSV is loaded at runtime"
+   ]
+  },
+  {
+   "title": "Solar geometry source and shadow-flag source",
+   "why": "The energy balance needs sun direction per facet and a shadow flag; the spec never says how to obtain either. Computing sun position requires site latitude/longitude/time in the scene config (not in \u00a712.2); shadows over the 48 h spin-up cannot come from the renderer.",
+   "options": [
+    "Compute sun position in irsim (NOAA/Spencer algorithm, \u00b10.5\u00b0) and take the shadow flag as an input: analytic (unshadowed) during spin-up, renderer-derived at run time",
+    "Read sun elevation/azimuth columns from the weather file (no algorithm, but every file must carry them)",
+    "Depend on an external library (pvlib/astropy) \u2014 accurate but adds a dependency to the engine-free core"
+   ]
+  },
+  {
+   "title": "Longwave sky model: one T_sky(\u03b8_el) parametrisation (\u00a75.3) shared by the radiance path and the energy balance, integrated hemispherically; LWIR-band \u03b5 used as the broadband \u03b5",
+   "why": "\u00a75.3's T_sky is explicitly an LWIR brightness temperature, while \u00a76.1 needs broadband Q_LW\u2193 [W\u00b7m\u207b\u00b2]; standard alternatives (Brunt, Swinbank, Idso\u2013Jackson sky emissivity from T_air and vapour pressure) are broadband but would introduce a second sky model that can drift from the one the camera sees. Which \u03b5 enters the balance (LWIR band vs total hemispherical) is also undefined.",
+   "options": [
+    "Single \u00a75.3 parametrisation, hemispherically integrated by Gauss\u2013Legendre, \u03b5_LWIR as broadband proxy (consistent but approximate)",
+    "Broadband sky-emissivity correlation (Brunt/Idso) for Q_LW\u2193 and \u00a75.3 for the radiance path, with a consistency test between them",
+    "Spectral sky model integrated per band and broadband \u2014 correct, expensive, needs data not in the repo"
+   ]
+  },
+  {
+   "title": "Numerical precision policy for the thermal path: float64 internally, float32 at the field boundary",
+   "why": "Non-negotiable 2 requires float32 or better; 48 h at 1 s ticks is 172,800 steps and float32 accumulation of ~1e-3 K increments can lose 10 mK-class precision. The decision also fixes the dtype the isaac encoding consumes.",
+   "options": [
+    "float64 internal state, float32 output with assert (recommended)",
+    "float32 throughout with Kahan/compensated accumulation",
+    "float64 throughout including the encoded AOV (if the renderer supports it)"
+   ]
+  },
+  {
+   "title": "Thermal tick rate, interpolation, and solve granularity (per material class \u00d7 orientation bin vs per facet)",
+   "why": "Per-facet solving of a whole scene through a 48 h spin-up is expensive; per-material-class solving ignores orientation-dependent solar loading (south wall vs north wall) and per-facet shadowing. The choice bounds both the compute cost and the spatial realism of the temperature field.",
+   "options": [
+    "Class \u00d7 orientation-bin \u00d7 shadow-state solve at 1 Hz, linear interpolation (L2)",
+    "Per-facet solve at 1 Hz for objects, class-level for terrain",
+    "Per-facet everywhere, GPU-side (Warp) \u2014 engine-bound, contradicts engine-free core unless mirrored in NumPy"
+   ]
+  },
+  {
+   "title": "Spin-up default length (48 h) and cache location/policy",
+   "why": "Spin-up is mandatory (\u00a76.4) and its result is keyed on weather content; caching to disk changes reproducibility and repository hygiene (which paths are ignored), and the default length trades correctness for high-inertia materials (concrete, water) against cost.",
+   "options": [
+    "48 h default, in-memory LRU cache only",
+    "48 h default, on-disk cache under an ignored directory keyed by hash, invalidated by content_hash",
+    "Adaptive: extend spin-up until the 24 h-apart state difference < 0.5 K"
+   ]
+  },
+  {
+   "title": "Vehicle thermal architecture: prescribed (measured) schedules for engine bay, driveline, brakes, tyres; solved panels and glazing; one cabin-air node",
+   "why": "This is the 'measure, don't model' decision from the skill and \u00a76.6. It puts the largest scene signal on data (thermocouple warm-up curves) rather than physics, defines what a vehicle asset must be annotated with, and sets the L2 boundary that Appendix A item 1 (no 3-D conduction) describes.",
+   "options": [
+    "Prescribed schedules with \u00a76.6 defaults marked ESTIMATED, replaced by measured curves later",
+    "Lumped multi-node engine/exhaust model with internal generation (more physics, largest uncertainty)",
+    "Import per-facet temperatures from MuSES/DIRSIG-class tools (ImportedSolver) for vehicles only"
+   ]
+  },
+  {
+   "title": "Environmental heat traces as decaying additive overlays rather than solved ground conduction",
+   "why": "Overlays are cheap and match the phenomenology (\u00a715 Tier 3), but they are not energy-conserving and their amplitudes/time constants are authored, not predicted. A reviewer must know this is deliberate.",
+   "options": [
+    "Additive exponential overlays with authored ranges (skill values)",
+    "Local perturbation of the ground solver's surface node (energy-consistent, needs footprint history in the solver state)",
+    "No traces at L2 (documented gap)"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "\u00a76.1 prints absorbed solar as (1\u2212\u03b1_sol)^c\u00b7Q_sol (line 355) while the prose (line 363), \u00a76.4 (line 406) and the skill use \u03b1_sol\u00b7Q_sol. The printed form also has a stray superscript c.",
+   "how_to_verify": "Implement \u03b1_sol\u00b7Q_sol; add the monotone test in THM-07 (raising \u03b1_sol raises T_eq) \u2014 the complement form would make it fall. Note the resolution in the THM-07 docstring."
+  },
+  {
+   "description": "\u00a76.4's stability worked example ('thin painted metal, C1 ~ 5 kJ\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9 \u2026 60\u2013200 s') is only true if the 1/R12 term is dropped. With \u00a716.2 car paint (k = 45, \u03b4 = 1.2 mm) 1/R12 = 37,500 and \u0394t_max = 0.235 s; the '60\u2013200 s' figure corresponds to a lone node (837 s) with no substrate coupling.",
+   "how_to_verify": "The THM-08 stability test computes the bound from \u00a716.2 numbers and asserts 0.235 \u00b1 0.005 s. Resolve via the integrator ADR (panels as single nodes with resistive back boundary, or implicit conduction)."
+  },
+  {
+   "description": "R2d and T_deep appear in \u00a76.4 but are never defined; \u00a712.3 supplies a single `thickness_m` whereas the two-node model needs \u03b41 and \u03b42.",
+   "how_to_verify": "Define both in the two-node ADR; THM-16 (slab) quantifies the error of the chosen \u03b42/R2d/T_deep defaults for asphalt (< 1.5 K RMS) \u2014 if that fails, the defaults are wrong."
+  },
+  {
+   "description": "Q_LW\u2193 is not given as a formula. \u00a75.3's T_sky(\u03b8_el) is an LWIR brightness-temperature model ('reads above +10 \u00b0C in MWIR'), not broadband; using it in the \u00a76.1 energy balance is a proxy. The value of \u0394T_clear also depends on humidity, which the spec mentions qualitatively only.",
+   "how_to_verify": "THM-05 known-answer range test (230\u2013320 W\u00b7m\u207b\u00b2 clear at 288 K, 390 W\u00b7m\u207b\u00b2 overcast) against published clear-sky longwave values; compare the proxy against a Brunt/Idso correlation across T_air 260\u2013310 K and record the discrepancy in the sky-model ADR."
+  },
+  {
+   "description": "No solar-position algorithm, site coordinates, or time-zone handling exists anywhere in the spec; Q_sol per facet (direct/diffuse split, illumination cosine, shadow flag) is only hinted via [R15]. The skill's weather fields include direct and diffuse irradiance but not how they combine with facet orientation.",
+   "how_to_verify": "THM-04 known-answer tests against NOAA solar calculator values (record three reference points with source) and the equinox/solstice identities; ADR on solar geometry source."
+  },
+  {
+   "description": "Weather file format, units and interpolation are undefined; data/weather is empty. EPW files are in \u00b0C, Wh/m\u00b2, local time, and lack a cloud fraction column, so a na\u00efve loader will silently mis-scale.",
+   "how_to_verify": "THM-02 loader tests with explicit unit headers (a '\u00b0C' file must load 273.15 higher than a 'K' file with the same numbers); define the format in an ADR before any weather-dependent test is written."
+  },
+  {
+   "description": "The skill says to assert the stability limit 'at solver construction', but h depends on wind (time-varying) and vehicle speed, and the T\u00b3 term on the current temperature \u2014 a construction-time check needs a worst-case bound the spec does not specify.",
+   "how_to_verify": "THM-08 evaluates the bound with max wind + max vehicle speed over the injected WeatherSeries and T_max = 400 K at construction, and re-asserts per step; a test constructs with a weather series whose max wind pushes dt over the bound and expects ValueError."
+  },
+  {
+   "description": "Which emissivity enters the energy balance is undefined: \u00a76.2 calls \u03b5 'spectral', but the balance needs a single hemispherical broadband \u03b5; the material library authors \u03b5(\u03bb) or \u03c1(\u03bb) (Kirchhoff). Using LWIR-band \u03b5 for both absorption of Q_LW\u2193 and emission is an approximation (true for grey bodies only).",
+   "how_to_verify": "Populate ThermalProperties.emissivity from the material's authored optical data in the loader (never a separate thermal-block key \u2014 THM-18 rejects one); compare LWIR-band \u03b5 vs a 3\u201350 \u00b5m weighted \u03b5 for a spectrally structured material (glass) once spectra exist and record the difference."
+  },
+  {
+   "description": "Spin-up convergence tolerance (48 h vs 96 h < 0.5 K) may not hold for high-inertia materials (0.3 m concrete, deep water) whose substrate time constant exceeds 48 h.",
+   "how_to_verify": "THM-10 reports the 48-vs-96 h difference per material; if concrete exceeds 0.5 K, either lengthen the default or make spin-up adaptive (ADR), rather than loosening the tolerance."
+  },
+  {
+   "description": "The Tier-3 diurnal test criteria ('max near 1400\u20131500 local', 'crossover within an hour of dawn/dusk', 'meaningful margin' for vehicle speed) are qualitative and depend on the chosen solar-noon/time-zone convention and on \u00a716.2 literature values that the spec itself says to replace.",
+   "how_to_verify": "THM-12 fixes the site so solar noon = 12:00 local, widens the window to 13:00\u201316:00 with a comment, and quantifies 'meaningful' as > 3 K; the validation script produces the plot for a manual pass so a failure can be inspected rather than guessed at."
+  },
+  {
+   "description": "The convection form makes free convection essentially inactive (needs |\u0394T| > 37 K at rest), so a still-air night surface cools only through radiation and a=5 forced floor \u2014 plausible but unvalidated; h is the largest single uncertainty (\u00a76.2).",
+   "how_to_verify": "Sensitivity report in scripts/validate_thermal_diurnal.py: asphalt T_min under a = 3, 5, 7 \u2014 if night-time T_min moves by > 2 K, flag for Tier-4 calibration and record in the convection ADR."
+  },
+  {
+   "description": "Isaac Sim 6.0: how the per-prim temperature reaches the renderer each tick is uncertain \u2014 per-prim OmniPBR emissive-colour writes (\u00a713.1) are USD attribute updates whose float32 precision and per-frame cost for thousands of prims are undocumented; PtSelfIllumination availability/format as float32 is asserted by the spec but not verified.",
+   "how_to_verify": "The isaac area's encode/decode round-trip test (< 10 mK) must pass before THM-19; THM-19 adds a timing guard (10k prims at 1 Hz < 100 ms). If either fails, switch to a per-material-class temperature texture/atlas indexed by material ID instead of per-prim attributes."
+  },
+  {
+   "description": "The thermal solver needs per-facet sky-view factor and solar shadow state over the whole spin-up history; the renderer's AO AOV is per-pixel at render time only and cannot provide history.",
+   "how_to_verify": "THM-19 design: bake a per-prim sky-view factor attribute once per scene and use an analytic/unshadowed flag during spin-up; measure the resulting t0 bias against a run with true shadow history on a small scene (expect < 1 K for open ground, larger under overhangs) and document in the granularity ADR."
+  },
+  {
+   "description": "Skill line 36 lists NewtonCoolingSolver for 'a parked car cooling' and \u00a76.6 says 'Newton cooling is exactly right' for a recently parked vehicle, but \u00a76.5 says Newton is wrong for anything 'exchanging with a cold sky' \u2014 a parked car's skin at night does exactly that. Newton is right for the residual engine heat, not for the panels.",
+   "how_to_verify": "Assign regimes explicitly in THM-13/14: engine-bay residual heat \u2192 Newton; skin panels \u2192 energy balance. A THM-12 test compares a parked black panel at night under clear vs overcast sky and requires a > 1 K difference (Newton alone would give 0)."
+  },
+  {
+   "description": "Local environment: pytest is not installed for the python on PATH, so `make check` has not been verified as green at the scaffold baseline.",
+   "how_to_verify": "Run `make install && make check` before the first thermal commit; if the baseline fails, fix it in a separate chore commit."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core \u2014 every thermal module (weather, convection, solar, sky_longwave, energy_balance, solvers/*, spinup, field, vehicle/*, traces) is pure NumPy/SciPy under src/irsim/thermal; tests/unit/test_layering.py already parametrises over src/irsim/**/*.py and forbids omni/pxr/isaacsim/warp/carb, so every new file is enforced automatically. Only THM-19 (thermal tick driver) lives in src/irsim_isaac and is @pytest.mark.isaac.",
+  "#2 float32 or better where temperature flows \u2014 solvers integrate in float64; ThermalField.temperature_at returns float32 with a dtype assertion and raises on float16 (THM-11 test: float64-vs-float32 < 10 mK over 48 h; float16 raises). THM-09 and THM-17 reject float16 inputs and imported files. The encoded-T boundary c = (T\u2212200)/800 stays float32 (isaac area's < 10 mK round-trip test, THM-19).",
+  "#3 Noise in radiance/electron space, never Kelvin \u2014 not exercised by this area, but enforced negatively: the thermal path is fully deterministic (THM-11 bit-identical rerun test); no random term exists anywhere in src/irsim/thermal.",
+  "#4 Kirchhoff closure \u2014 the thermal layer must not author a second emissivity: ThermalProperties.emissivity is populated from the material's optical data by the loader, and THM-18's MaterialThermalConfig uses extra='forbid' so an `emissivity` key inside `thermal:` is a ValidationError (test in THM-18). The library-wide closure test itself belongs to the materials area.",
+  "#6 One WeatherSeries feeds thermal and atmosphere \u2014 WeatherSeries is defined in irsim.thermal.weather (THM-01) as an array-only object with a content_hash; the loader is a separate function (THM-02); ThermalField and Atmosphere constructors take the object and have no file-path parameter; the Scene builder injects the same instance into both and asserts identity (THM-18 tests: introspection of constructor signatures, `thermal.weather is atmosphere.weather`, mismatched objects raise). The hash also keys the spin-up cache (THM-10) so a weather change can never reuse stale thermal history.",
+  "#5 Aperture factor \u2014 not touched by this area."
+ ],
+ "spec_internal_inconsistencies": [
+  "docs/physics-model.md \u00a76.1 line 355 writes absorbed solar as (1\u2212\u03b1_sol)^{c}\u00b7Q_sol, but line 363 says to write it as \u03b1_sol\u00b7Q_sol 'and drop the confusing complement'; \u00a76.4 line 406 and thermal-solver SKILL.md line 18 use \u03b1_sol\u00b7Q_sol. The equation contradicts its own prose and carries a stray exponent c.",
+  "docs/physics-model.md \u00a76.4 line 410 claims the RK2 stability limit 'for thin painted metal (C1 ~ 5 kJ\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9) lands around 60\u2013200 s' while prescribing a 1\u201360 s step. With the \u00a716.2 car-paint row (line 1265: \u03c1 7800, c_p 470, k 45) and \u00a712.3's thickness 1.2 mm (line 913), C1 = 4399 J\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9 and 1/R12 = 37,500 W\u00b7m\u207b\u00b2\u00b7K\u207b\u00b9, so the bound is 0.24 s; 60\u2013200 s (actually 837 s) only holds if the 1/R12 conduction term is omitted. The example, the step range and the two-node model cannot all be true for the material the example names.",
+  "docs/physics-model.md \u00a76.4 lines 406\u2013409 use R2d and T_deep without defining them, and require \u03b41 and \u03b42, while the \u00a712.3 material schema (lines 909\u2013914) and thermal-materials SKILL.md line 143 provide a single `thickness_m`.",
+  "docs/physics-model.md \u00a76.2 line 376 labels \u03b5 'spectral; drives both heat balance and radiance', but the \u00a76.1/\u00a76.4 balance uses one scalar \u03b5 for both absorbed longwave and emission, and no broadband/hemispherical \u03b5 is defined anywhere; \u00a74/\u00a712.3 author \u03b5(\u03bb) only.",
+  "docs/physics-model.md \u00a75.3 lines 311\u2013314 define T_sky(\u03b8_el) explicitly as an LWIR quantity (line 298: '\u221240 \u00b0C \u2026 in LWIR, while the same sky reads above +10 \u00b0C in MWIR'), yet it is the only sky model available for the broadband Q_LW\u2193 of \u00a76.1 line 352; using it there is an undocumented approximation.",
+  "thermal-solver SKILL.md line 97 lists 'direct and diffuse solar irradiance' as weather fields, but docs/physics-model.md \u00a76.1 has a single Q_sol and never states how direct/diffuse combine with facet orientation, shadowing or sun position; no solar-position method, latitude/longitude or time-zone field exists in \u00a712.2 (lines 822\u2013900) or anywhere else.",
+  "thermal-solver SKILL.md line 58 says to assert the stability limit 'at solver construction', but h in the limit (SKILL line 55, spec line 410) depends on wind speed and vehicle speed, which vary in time, and on T\u00b3 \u2014 the construction-time bound is unspecified.",
+  "thermal-solver SKILL.md line 36 recommends NewtonCoolingSolver for 'a parked car cooling' and docs/physics-model.md \u00a76.6 line 437 says Newton 'is exactly right' for a recently parked vehicle, while \u00a76.5 line 423 says Newton is wrong for anything 'exchanging with a cold sky' \u2014 a parked car's panels at night do. The statements are reconcilable only if Newton is applied to the residual engine heat and not to the skin.",
+  "docs/physics-model.md \u00a716.4 step 6 places the thermal solver after AGC (step 5), while \u00a76 line 347 says this section 'deserves more of your effort than any other' and \u00a71 line 60 calls the temperature/radiance separation the decision that 'drives everything'; CLAUDE.md's 'physics before pixels' ordering is consistent with \u00a716.4 but planners should not read step 6 as low priority.",
+  "thermal-solver SKILL.md lines 33\u201339 define five solvers (Prescribed, NewtonCooling, LumpedTwoNode, Slab, Imported); docs/physics-model.md \u00a76.5 line 423 describes a two-solver split (scripted vs environment) and mentions the 1-D slab only as L3 (\u00a71 line 55). Not a contradiction, but the Slab and Imported solvers have no spec text, so their behaviour is defined only by the skill.",
+  "README.md line 77 and Appendix A item 8 (line 1393) say weather is prescribed from a data file, but no file format, location convention beyond the empty data/weather directory, or loader is specified anywhere; CLAUDE.md non-negotiable 6 and SKILL.md line 95 require that the WeatherSeries object 'neither reads a file itself', which the spec does not mention."
+ ]
+}

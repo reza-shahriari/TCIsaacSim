@@ -1,0 +1,500 @@
+{
+ "area": "isp",
+ "existing_state": "Nothing of the ISP exists beyond a stub. Precisely:\n\nCODE\n- /home/hunter/irsim-scaffold/src/irsim/isp/__init__.py \u2014 one line: `\"\"\"See docs/physics-model.md.\"\"\"`. No functions, no classes.\n- /home/hunter/irsim-scaffold/src/irsim/noise/__init__.py, src/irsim/detector/__init__.py, src/irsim/config/__init__.py \u2014 identical 1-line stubs. So none of the ISP's upstream (DN producer, bad-pixel map, FPN fields, pydantic schema) exists either.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/planck.py (175 lines) \u2014 spectral_radiance, spectral_photon_radiance, d_spectral_radiance_dT, fractional_exitance, band_radiance_tophat. float64 reference implementation. NO band LUT and NO inverse Lb\u207b\u00b9 yet (needed by the radiometric branch, \u00a73.3).\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py \u2014 physical constants only; nothing ISP-relevant (no palette tables, no bit-depth constants).\n- /home/hunter/irsim-scaffold/scripts/generate_luts.py \u2014 prints \"not implemented\" and exits 1.\n\nTESTS\n- /home/hunter/irsim-scaffold/tests/unit/test_layering.py \u2014 AST-walks every src/irsim/**/*.py for imports of {omni, pxr, isaacsim, warp, carb}; will automatically cover any new isp module.\n- /home/hunter/irsim-scaffold/tests/unit/test_planck.py \u2014 radiometry only.\n- /home/hunter/irsim-scaffold/tests/conftest.py \u2014 fixtures `rng` (default_rng(20260910)), `gbuffer_ramp` (256x256, T ramp 250-450 K along width, float32), `gbuffer_uniform` (64x64 at 300 K). No step-edge fixture, no DN/uint16 fixture, no multi-frame fixture, no `pytest_addoption`.\n- tests/golden/ and tests/integration/ contain only .gitkeep. No golden infrastructure: Makefile line 30 runs `pytest tests/golden -q --update-golden` but no conftest registers `--update-golden`, so `make golden-update` would error with \"unrecognized arguments\".\n- No test mentions AGC, NUC, FFC, palette, DDE or bad pixels.\n\nCONFIG / DATA\n- /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml \u2014 the only sensor config. ISP-relevant fields present: `fpa.bit_depth: 16`, `fpa.frame_rate_hz: 60`, `noise.bad_pixel_fraction: 0.0015`, `noise.bad_pixel_cluster_lambda: 1.6`, `noise.fpn_drift_tau_s: 120.0`, `nuc: {mode: shuttered, ffc_interval_s: 180, ffc_freeze_ms: 700, residual_gain_ppm_per_k: 900 (ESTIMATED), residual_offset_mk_per_k: 45 (ESTIMATED)}`, `isp: {agc: plateau_equalization, plateau: 0.012, clip_percentiles: [0.005, 0.995], gamma: 1.0, dde_gain: 0.35, polarity: white_hot, palette: gray}`, `outputs: {radiance_linear: true, apparent_temperature: true, dn_16: true, display_8: true}`. No pydantic model validates any of it.\n- data/ has only .gitkeep files under lut/, nk/, spectra/, weather/. There is no palettes directory and no palette LUT data anywhere in the repo.\n- .gitignore ignores data/lut/*.npy and *.json (LUTs are generated, not committed).\n\nDOCS / STATUS\n- README.md status table line 26: `isp | \u2b1c not started | \u2014 |`.\n- CHANGELOG.md [Unreleased] has no ISP entry.\n- docs/decisions/ has only 0001 (the ADR template). No ADR touches AGC, NUC, palettes or pipeline order.\n- pyproject.toml: deps numpy>=1.24, scipy>=1.11, pydantic>=2.5, pyyaml; mypy strict; ruff with NPY rules. Markers isaac/gpu/slow registered; `addopts = -m 'not isaac and not gpu'`.\n\nENVIRONMENT\n- `python -c \"import numpy\"` fails in the current shell (pydantic 2.10.3 is importable, numpy/scipy are not). `make install` has evidently not been run in this environment, so `make check` cannot pass today regardless of code.\n\nGit: single commit 3b653b3 \"Project Structure Created\"; working tree clean.",
+ "key_equations_and_data": [
+  "\u00a711.1 pipeline order (spec lines 750-752): raw DN \u2192 bad-pixel replace \u2192 NUC (2-pt gain/offset) \u2192 temporal filter \u2192 [radiometric linearisation \u2192 T_app] (radiometric branch) \u2192 AGC/DRC \u2192 gamma \u2192 polarity \u2192 palette \u2192 8-bit. Both branches must be emitted (line 755). NOTE: DDE is absent from this line; see inconsistencies.",
+  "\u00a711.2 two-point NUC (lines 759-763): DN^corr_ij = G_ij (DN_ij \u2212 O_ij); G_ij = (mean(DN^H) \u2212 mean(DN^L)) / (DN^H_ij \u2212 DN^L_ij); O_ij = DN^L_ij, calibrated against two blackbody temperatures. Corrected cold-blackbody image is exactly 0 under this form.",
+  "\u00a711.2 NUC residual model (lines 767-770) and \u00a72 line 106 (g_ij, o_ij 'post-NUC residual'): residual drift \u221d (T_FPA \u2212 T_FPA^cal); residual non-uniformity grows between FFC events; parameterised by \u00a712.2 `nuc.residual_gain_ppm_per_k` (900) and `nuc.residual_offset_mk_per_k` (45). The mK/K offset must be converted to DN via (\u2202DN/\u2202T) at the 300 K reference (detector \u00a79.4 / radiometry \u00a73.4) and applied in DN space \u2014 never as a Kelvin offset (non-negotiable #3).",
+  "\u00a79.2 lines 642-644: bolometer gain(T_FPA), offset(T_FPA) as low-order polynomials with T_FPA from a lumped thermal model (ambient + dissipation) \u2014 the physical driver of the \u00a711.2 residual drift. T_FPA is a per-frame input to the ISP, not a config constant.",
+  "\u00a711.2 FFC event (line 770) + \u00a712.2 `nuc` block (lines 877-882): `mode \u2208 {shuttered, shutterless, ideal}`, `ffc_interval_s` (180), `ffc_freeze_ms` (700). Shuttered: output held for round(ffc_freeze_ms\u00b7frame_rate_hz/1000) frames (= 42 at 60 Hz), then residual pattern resets (T_cal := T_FPA). Shutterless (line 772, [R32][R33]): slow drift + scene-based correction residual, no freeze. ideal: no residual, no freeze. Needs `fpa.frame_rate_hz`.",
+  "\u00a711.3 linear AGC (line 780): y = clip((x \u2212 x_{p_lo})/(x_{p_hi} \u2212 x_{p_lo}), 0, 1)^{1/\u03b3}; \u00a712.2 `isp.clip_percentiles: [0.005, 0.995]`, `isp.gamma: 1.0` (exponent is 1/\u03b3, not \u03b3).",
+  "\u00a711.3 plateau equalisation (line 784): histogram h[b] over the DN range; h_clip[b] = min(h[b], P); CDF[b] = \u03a3_{b'\u2264b} h_clip[b']; y = (CDF[b(x)] \u2212 CDF_min)/(CDF_max \u2212 CDF_min). Low P \u2192 linear, high P \u2192 full HE. \u00a712.2 `isp.plateau: 0.012` (dimensionless \u2014 interpreted as fraction of N_pixels per bin; see ambiguities). Bin count must follow `fpa.bit_depth` (2^bits), not the uint16 container.",
+  "\u00a711.3 line 786: AGC is GLOBAL by default (whole-frame histogram) so a hot exhaust collapses contrast everywhere \u2014 a required failure mode (\u00a715 Tier 3 line 1207). ROI-weighted (weighted histogram) and locally-adaptive (tiled CDF with interpolation) variants are optional; \u00a712.2 `isp.agc \u2208 {linear, plateau_equalization, none}`.",
+  "\u00a711.3 DDE (line 788): unsharp mask y' = clip(y + g\u00b7(y \u2212 K\u2217y), 0, 1) with `isp.dde_gain` (0.35). Blur kernel K is unspecified in spec and config.",
+  "\u00a711.4 polarity (line 792): black-hot = 1 \u2212 white-hot (y_bh = 1 \u2212 y_wh, equivalently LUT[255 \u2212 DN8]); `isp.polarity \u2208 {white_hot, black_hot}`.",
+  "\u00a711.4 palettes (line 792) vs \u00a712.2 line 891: 256\u00d73 uint8 colour LUTs \u2014 gray, ironbow, rainbow, lava (\u00a712.2 enum) plus Arctic (\u00a711.4 only). DN8 = round(255\u00b7y), display = LUT[DN8]. No palette data exists in the repo; must be authored (public approximations; FLIR's are proprietary).",
+  "\u00a73.3 radiometric linearisation (lines 176-180): T_app = L_B^{-1}(L_measured). ISP inverts the camera transfer: DN_corr \u2192 L (via calibrated SITF, \u00a715 Tier 2 line 1190) \u2192 T_app via the radiometry band-LUT inverse. Must return APPARENT temperature (\u03b5, reflection, atmosphere error included), never ground-truth T.",
+  "\u00a712.2 outputs block (lines 893-897) and \u00a713.4 line 1027 / isaac-sim-spg skill line 142: four outputs \u2014 IrRadiance float32 W/m\u00b2/sr, IrApparentT float32 K, IrDN16 uint16, IrDisplay8 uint8 RGBA8. `outputs.{radiance_linear, apparent_temperature, dn_16, display_8}` booleans select them. Non-radiometric core = apparent_temperature false (no explicit flag exists).",
+  "\u00a79.1 line 606 / \u00a712.2 `fpa.bit_depth`: DN_max = 2^bits \u2212 1; `agc: none` path must be DN8 = DN16 >> (bits \u2212 8); a 14-bit core in a uint16 container must not be normalised by 65535.",
+  "\u00a710.4 (line 738) bad-pixel replacement: neighbour interpolation (4- or 8-neighbour mean, iterated for clusters) leaving a detectable smoothed footprint; bad-pixel MAP comes from noise (`noise.bad_pixel_fraction`, `noise.bad_pixel_cluster_lambda`, Poisson cluster process). Types: dead, hot, flickering, blinking \u2014 replacement must handle a per-frame mask for the intermittent ones.",
+  "\u00a710.3 line 731 + \u00a712.2 `noise.fpn_drift_tau_s` (120 s): fixed-pattern terms random-walk between NUC events \u2014 the FFC reset in the ISP must re-zero this drift too (cross-module hook), or the drift is double-counted with the \u00a711.2 residual.",
+  "\u00a713.4 line 1023-1024: SPG#6 isp.cu consumes post-noise DN and emits DN16 (linear) + DISP8; the engine-free NumPy version is the oracle that the later Warp/SPG kernel is tested against (isaac skill line 170: 1e-4 relative / 5 mK).",
+  "\u00a715 Tier 3 scalar phenomenology owned by the ISP: (line 1207) hot exhaust entering frame collapses global AGC contrast; (line 1208) FFC event freezes the image and resets the fixed pattern. \u00a715 Tier 5 caution 2 (line 1233): AGC algorithm, plateau and palette must match train/deploy \u2014 so every output should carry the isp config hash as metadata.",
+  "sensor-noise-chain skill tests (lines 168-172) the ISP must satisfy: determinism (same seed + frame id \u2192 bit-identical); plateau\u21920 behaves like linear and entropy non-decreasing with plateau; FFC freeze of configured duration at configured interval and residual reset afterwards.",
+  "ir-sim-testing skill line 100: 'an AGC output' is the canonical golden-fixture candidate \u2014 needs the `--update-golden` option (Makefile line 30) actually registered in tests/conftest.py, and a config-hash sidecar per golden array."
+ ],
+ "work_items": [
+  {
+   "id": "ISP-01",
+   "title": "Linear AGC with percentile clipping and gamma",
+   "spec_refs": [
+    "\u00a711.3 line 780-782",
+    "\u00a712.2 isp.clip_percentiles, isp.gamma",
+    "\u00a711.1"
+   ],
+   "description": "src/irsim/isp/agc.py: `agc_linear(x: uint16|float32 2-D, p_lo, p_hi, gamma) -> float32 in [0,1]` implementing y = clip((x \u2212 x_plo)/(x_phi \u2212 x_plo),0,1)^(1/\u03b3). Percentiles over the whole frame (global). Define the degenerate case x_phi == x_plo (return 0.5 or 0, documented). Reject float16 input; compute in float32. Docstring cites \u00a711.3.",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_agc_linear_matches_percentile_oracle: on a 250-450 K ramp (uniform histogram) the pixel at percentile p maps to (p \u2212 0.005)/0.99 within 1e-6 (independent np.percentile route).",
+    "test_agc_linear_clip_fractions: fraction of pixels at exactly 0 equals p_lo and at exactly 1 equals 1 \u2212 p_hi, each within \u00b11/N_pixels.",
+    "test_agc_linear_gamma_midpoint: \u03b3 = 2.2 \u2192 median pixel maps to 0.5^(1/2.2) = 0.7297 within 1e-6 (would fail if exponent were \u03b3 instead of 1/\u03b3).",
+    "test_agc_linear_affine_invariance: y(3.7\u00b7x + 1234 DN) == y(x) within 1e-6 for every pixel (fails if clip thresholds are absolute or percentiles computed per-row).",
+    "test_agc_linear_constant_image_finite: constant frame \u2192 finite output, no NaN.",
+    "test_agc_dtype_guard: float16 input raises; uint16 and float32 accepted; output dtype float32."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-02",
+   "title": "Plateau-equalisation AGC (global)",
+   "spec_refs": [
+    "\u00a711.3 line 784-786",
+    "\u00a712.2 isp.plateau, isp.agc",
+    "\u00a715 Tier 3 line 1207",
+    "sensor-noise-chain skill line 170"
+   ],
+   "description": "src/irsim/isp/agc.py: `agc_plateau(x, plateau, bit_depth) -> float32 [0,1]`: histogram over 2^bit_depth bins (or a documented coarser binning), clip each bin at P = plateau\u00b7N_pixels, integrate CDF, normalise between CDF_min and CDF_max. Global histogram by default. Requires the plateau-units ADR (ISP-ADR-2) first.",
+   "depends_on": [
+    "ISP-01",
+    "ADR: plateau units + bin count + P\u21920 limit"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_plateau_full_he_matches_rank_oracle: plateau \u2265 1.0 on a tie-free random float32 image \u2192 y == rank/(N\u22121) within 1/n_bins (independent argsort implementation).",
+    "test_plateau_small_limit_is_linear_stretch: with P = 1/N_pixels on an image whose histogram occupies every bin between min and max, y == (x \u2212 x_min)/(x_max \u2212 x_min) within one bin width (fails if clipping is applied after CDF or normalisation is wrong).",
+    "test_plateau_output_monotone_in_input: for P in {1e-4,1e-2,1}, x1 \u2264 x2 \u21d2 y1 \u2264 y2 for all pixel pairs (exact).",
+    "test_plateau_entropy_nondecreasing: 8-bit output entropy over P \u2208 {1e-4,1e-3,1e-2,1e-1,1} on a bimodal 280/300 K scene is non-decreasing within 0.01 bit.",
+    "test_hot_exhaust_collapses_global_contrast: 290-300 K background (DN via radiometry) + 5 % of pixels at 600 K: linear AGC background 8-bit std falls to < 20 % of the no-exhaust baseline; plateau EQ (P=0.012) retains > 50 % of baseline \u2014 both asserted (\u00a715 Tier 3 phenomenology as a scalar).",
+    "test_plateau_respects_bit_depth: 14-bit data in a uint16 container: max-valued pixel (16383) maps to 1.0, not 0.25."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ISP-03",
+   "title": "Digital detail enhancement (unsharp mask)",
+   "spec_refs": [
+    "\u00a711.3 line 788",
+    "\u00a712.2 isp.dde_gain"
+   ],
+   "description": "src/irsim/isp/dde.py: `dde(y: float32 [0,1], gain, kernel) -> float32 [0,1]`: y + gain\u00b7(y \u2212 K\u2217y), clipped. Kernel per ADR (3\u00d73 box or Gaussian \u03c3) with edge handling documented. Adds a `gbuffer_step_edge` fixture to tests/conftest.py (ir-sim-testing skill line 96 asks for one).",
+   "depends_on": [
+    "ADR: DDE kernel and pipeline position (ISP-ADR-1, ISP-ADR-5)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_dde_gain_zero_identity: bit-identical passthrough.",
+    "test_dde_constant_preserved: constant frame unchanged for gain \u2208 {0.35, 2.0} within 1e-7 (mean-preserving high-pass).",
+    "test_dde_step_overshoot_analytic: 0.25\u21920.75 step with 3\u00d73 box kernel \u2192 overshoot at the pixels adjacent to the edge equals \u00b1gain\u00b7(0.5)/3 within 1e-6 (or the equivalent closed form for the chosen kernel); fails if the high-pass sign or kernel normalisation is wrong.",
+    "test_dde_transfer_function: on white noise, output/input PSD ratio equals |1 + g(1 \u2212 K\u0302(f))|\u00b2 within 3 % averaged over 100 seeded realisations (independent FFT route).",
+    "test_dde_output_clipped: output \u2208 [0,1] for gain = 5 on a step."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-04",
+   "title": "Polarity, palette LUTs and 8-bit quantisation",
+   "spec_refs": [
+    "\u00a711.4 line 792",
+    "\u00a712.2 isp.polarity, isp.palette",
+    "\u00a713.4 line 1027 IrDisplay8"
+   ],
+   "description": "src/irsim/isp/palette.py: 256\u00d73 uint8 tables for gray, ironbow, rainbow, lava (+ arctic per ADR), with source citation for each approximation; `to_display8(y, polarity, palette) -> uint8 (H,W,3|4)`; DN8 = round(255\u00b7clip(y)); black_hot = LUT[255 \u2212 DN8]. Channel count (RGB vs RGBA) per ADR ISP-ADR-6 \u2014 the isaac skill (line 66) says viewport display needs RGBA unorm.",
+   "depends_on": [
+    "ADR: display format + palette provenance (ISP-ADR-6)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_gray_white_hot_exact: every channel == round(255\u00b7y) exactly for y on a 1/1023 grid.",
+    "test_black_hot_is_complement: gray black_hot == 255 \u2212 white_hot exactly; colour palettes == LUT[255 \u2212 DN8] exactly.",
+    "test_palette_tables_endpoints_and_luma: each table is 256\u00d73 uint8; gray[0]=(0,0,0), gray[255]=(255,255,255); ironbow and lava Rec.601 luma non-decreasing along the index (fails on channel swap or misordered rows); rainbow has 256 distinct entries.",
+    "test_quantisation_half_lsb_no_wrap: |255\u00b7y \u2212 DN8| \u2264 0.5 for all y \u2208 [0,1]; y = \u22120.01 \u2192 0 and y = 1.01 \u2192 255 (no wrap-around).",
+    "test_display_dtype_shape: uint8, (H,W,3) or (H,W,4) per ADR, never float."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-05",
+   "title": "Display-branch assembly, `agc: none`, DN16 emission, golden fixture (\u00a716.4 step 5)",
+   "spec_refs": [
+    "\u00a711.1 lines 750-755",
+    "\u00a712.2 isp + outputs blocks",
+    "\u00a713.4 lines 1023-1027",
+    "\u00a715 Tier 5 line 1233",
+    "\u00a716.4 line 1302"
+   ],
+   "description": "src/irsim/isp/pipeline.py: plain dataclasses `IspConfig`, `OutputsConfig` (mirroring \u00a712.2 so isp does not wait on the pydantic layer; config area maps YAML \u2192 these), `run_display_branch(dn16: uint16, cfg) -> uint8` chaining AGC \u2192 gamma \u2192 DDE \u2192 polarity \u2192 palette in the ADR-fixed order; `agc: none` = DN16 >> (bits\u22128); returns an `IspOutputs` bundle with dn_16 (uint16), display_8 (uint8) and the isp config hash as metadata. Adds `pytest_addoption('--update-golden')` and a golden helper (config-hash sidecar, tolerance, actual-vs-expected dump on failure) to tests/conftest.py so Makefile line 30 works. First golden: Boson config on gbuffer_ramp DN.",
+   "depends_on": [
+    "ISP-01",
+    "ISP-02",
+    "ISP-03",
+    "ISP-04",
+    "detector: forward DN16(T) model or, until it lands, a synthetic uint16 DN fixture built from radiometry band radiance (\u00a73.2)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_display_pipeline_identity_ramp: agc linear, \u03b3=1, dde 0, gray, white_hot on a monotone ramp \u2192 DN8 == round(255\u00b7(rank-linear)) within 1 LSB8 at every pixel.",
+    "test_agc_none_is_bit_shift: DN8 == DN16 >> 8 exactly for bit_depth 16; DN16 >> 6 for bit_depth 14.",
+    "test_display_golden_boson: golden array for flir_boson_640_lwir isp block; \u2265 99.9 % of pixels within 1 LSB8; stale golden (config hash mismatch) reported as STALE not FAIL.",
+    "test_pipeline_dtype_boundaries: uint16 in, float32 at every intermediate (asserted via a debug hook), uint8 out; float16 anywhere raises (non-negotiable #2).",
+    "test_outputs_carry_isp_config_hash: output metadata hash changes when plateau or palette changes (train/deploy matching, \u00a715 Tier 5)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ISP-06",
+   "title": "Radiometric branch: DN \u2192 L \u2192 apparent temperature",
+   "spec_refs": [
+    "\u00a73.3 lines 176-180",
+    "\u00a711.1 line 751, 755",
+    "\u00a712.2 outputs.radiance_linear, outputs.apparent_temperature",
+    "\u00a715 Tier 2 line 1190 (SITF)"
+   ],
+   "description": "src/irsim/isp/radiometric.py: `linearise(dn_corr: float32, sitf) -> L float32 W/m\u00b2/sr` using the detector's calibrated DN\u2194L transfer (two-blackbody SITF, consistent with the \u00a711.2 NUC reference level), then `apparent_temperature(L) -> float32 K` via radiometry's Lb\u207b\u00b9. Honour `outputs.apparent_temperature: false` by omitting the branch entirely (skill line 157), not by emitting zeros.",
+   "depends_on": [
+    "radiometry: band LUT Lb(T) with inverse Lb\u207b\u00b9 and dLb/dT, float32, 200-1000 K (\u00a73.2-3.4)",
+    "detector: SITF forward model DN(T_bb) and its inverse / (\u2202DN/\u2202T) at 300 K (\u00a79.1, \u00a79.2, \u00a79.4)",
+    "ISP-08"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_apparent_temperature_round_trip: blackbody \u03b5=1 through the ideal chain (no noise, nuc.mode ideal) at T \u2208 {250,300,350,450} K \u2192 |T_app \u2212 T| < max(10 mK, 0.5 LSB16 expressed in mK at T via \u2202L/\u2202T).",
+    "test_apparent_not_kinetic: \u03b5 = 0.9, environment 260 K \u2192 T_app == Lb\u207b\u00b9(0.9\u00b7Lb(T) + 0.1\u00b7Lb(260)) within 5 mK, and T_app < T by > 1 K at 300 K (fails if ground-truth T leaks through, \u00a73.3 line 180).",
+    "test_radiance_linear_units: radiance_linear for a blackbody equals band_radiance_tophat(T) within 1e-4 relative (independent route).",
+    "test_tapp_dtype_float32: apparent temperature buffer is float32; float16 rejected.",
+    "test_non_radiometric_config_omits_branch: with apparent_temperature false the output bundle has no T_app key."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ISP-07",
+   "title": "Bad-pixel replacement (neighbour interpolation)",
+   "spec_refs": [
+    "\u00a710.4 line 738",
+    "\u00a711.1 line 750",
+    "\u00a716.4 line 1306"
+   ],
+   "description": "src/irsim/isp/badpixel.py: `replace_bad_pixels(dn, mask) -> dn` \u2014 mean of valid 4-neighbours (ADR: 4 vs 8), iterated until clusters are filled; per-frame mask so flickering/blinking pixels (noise area) are replaced only when active. Non-mask pixels untouched. Testable with a synthetic mask before the noise generator exists.",
+   "depends_on": [
+    "ADR: neighbour set and cluster iteration (ISP-ADR-4)",
+    "noise: bad-pixel map generator, Poisson cluster process (\u00a710.4) \u2014 for integration only"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_replacement_exact_on_linear_ramp: |replaced \u2212 true| \u2264 1 LSB16 (neighbour mean of a linear ramp is exact).",
+    "test_replacement_footprint_variance: on i.i.d. Gaussian noise \u03c3, replaced-pixel variance == \u03c3\u00b2/4 within 10 % over \u2265 10\u2074 bad pixels (fails for copy-one-neighbour (\u03c3\u00b2) or 8-neighbour mean (\u03c3\u00b2/8)).",
+    "test_good_pixels_bit_identical outside the mask.",
+    "test_cluster_replacement_no_leak: a 3\u00d73 stuck-at-0 cluster in a uniform 300 K field is fully replaced within 2 LSB16 of the field, no NaN, converges.",
+    "test_footprint_is_detectable: local Laplacian energy at replaced pixels < 1/3 of that at good pixels on white noise \u2014 the \u00a710.4 'detectable smoothed footprint' as a scalar."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-08",
+   "title": "Two-point NUC operator (calibrate + apply)",
+   "spec_refs": [
+    "\u00a711.2 lines 759-765",
+    "\u00a72 line 106",
+    "\u00a712.2 nuc.mode ideal"
+   ],
+   "description": "src/irsim/isp/nuc.py: `TwoPointNuc.calibrate(dn_low, dn_high) -> (G float32, O float32)` per \u00a711.2 formulas; `apply(dn) -> float32 G\u00b7(dn \u2212 O)`. Ideal NUC = these coefficients with no residual. Document that corrected cold-blackbody = 0 (level convention) so ISP-06's SITF is calibrated in the same frame.",
+   "depends_on": [
+    "ADR: NUC level convention / interaction with SITF (ISP-ADR-7)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_two_point_nuc_removes_linear_fpn: synthesised g_ij ~ U[0.9,1.1], o_ij ~ U[\u2212500,500] DN, DN = g\u00b7S(T) + o; calibrate at 293/313 K, apply at 303 K \u2192 spatial std / mean < 1e-6 (analytic identity for a linear response).",
+    "test_gain_offset_match_spec_formula: G_ij and O_ij equal the \u00a711.2 expressions computed independently to 1e-12 relative; corrected DN^L == 0 exactly; mean corrected DN^H == mean(DN^H) \u2212 mean(DN^L).",
+    "test_nuc_is_two_point_not_a_fit: quadratic response \u2192 residual at a third temperature equals the analytic quadratic residual within 1 % (fails if the operator secretly fits more points).",
+    "test_nuc_float32_path: G, O and output float32; float16 rejected."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-09",
+   "title": "NUC residual: T_FPA drift and growth between FFC events",
+   "spec_refs": [
+    "\u00a711.2 lines 767-769",
+    "\u00a79.2 lines 642-644",
+    "\u00a712.2 nuc.residual_gain_ppm_per_k, nuc.residual_offset_mk_per_k",
+    "\u00a72 line 106 g_ij, o_ij",
+    "\u00a73.4 line 190-192"
+   ],
+   "description": "src/irsim/isp/nuc.py: `NucResidual(seed, shape, gain_ppm_per_k, offset_mk_per_k, dDN_dT_ref)` producing deterministic fixed fields u_ij, v_ij (unit variance) and per-frame residual G_res = 1 + 1e-6\u00b7gain_ppm\u00b7\u0394T_FPA\u00b7u_ij, O_res = 1e-3\u00b7offset_mk\u00b7\u0394T_FPA\u00b7dDN_dT_ref\u00b7v_ij, \u0394T_FPA = T_FPA \u2212 T_cal, applied after the ideal correction. T_FPA is a per-frame input (from detector's FPA model, ultimately the WeatherSeries ambient). Requires ISP-ADR-3 to fix ownership vs noise's \u03c3_VH random walk.",
+   "depends_on": [
+    "ISP-08",
+    "ADR: NUC drift ownership (ISP-ADR-3)",
+    "detector: (\u2202DN/\u2202T) at 300 K and T_FPA(t) lumped model (\u00a79.2, \u00a79.4)",
+    "noise: seeding policy (frame_id, sensor_id) and the fixed-field RNG convention (\u00a710.2)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_residual_zero_at_calibration: \u0394T_FPA = 0 \u2192 bit-identical to ideal NUC.",
+    "test_residual_offset_magnitude_matches_config: \u0394T_FPA = 10 K, 45 mK/K \u2192 spatial std of corrected uniform-300 K frame divided by (\u2202DN/\u2202T)_300K == 450 mK within 5 %.",
+    "test_residual_gain_magnitude_and_scene_scaling: 900 ppm/K, \u0394T_FPA = 10 K \u2192 relative spatial std 9000 ppm within 5 %; residual at 350 K / residual at 300 K == (DN350 \u2212 O)/(DN300 \u2212 O) within 2 % (gain residual scales with signal, offset residual does not).",
+    "test_residual_linear_in_delta_tfpa: residual(20 K) == 2\u00b7residual(10 K) within 1e-6 relative.",
+    "test_residual_not_kelvin_flat: the same DN-space offset residual read back as apparent-temperature error at 373 K vs 300 K is smaller by (\u2202L/\u2202T)_300/(\u2202L/\u2202T)_373 within 5 % (non-negotiable #3; fails if the residual were applied in Kelvin).",
+    "test_residual_deterministic: same seed \u2192 bit-identical fields across two constructions."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ISP-10",
+   "title": "FFC controller: schedule, freeze, reset; shutterless and ideal modes",
+   "spec_refs": [
+    "\u00a711.2 line 770-772",
+    "\u00a712.2 nuc.mode, ffc_interval_s, ffc_freeze_ms, fpa.frame_rate_hz",
+    "\u00a715 Tier 3 line 1208",
+    "sensor-noise-chain skill lines 171-172",
+    "\u00a716.4 line 1306"
+   ],
+   "description": "src/irsim/isp/ffc.py: frame-stepped `FfcController(mode, interval_s, freeze_ms, frame_rate_hz)`: shuttered \u2192 at frames k\u00b7round(interval\u00b7fps) hold the last frame for round(freeze_ms\u00b7fps/1000) frames (42 at 60 Hz) and call a reset hook (T_cal := T_FPA; NucResidual and noise FPN random walk re-zeroed); shutterless \u2192 no freeze, residual bounded by a scene-based correction time constant (ADR value); ideal \u2192 no freeze, no residual. Deterministic in frame_id.",
+   "depends_on": [
+    "ISP-09",
+    "noise: FPN random-walk object exposing a reset() hook (\u00a710.3, fpn_drift_tau_s)",
+    "ADR: FFC/ownership + freeze semantics + frame rounding (ISP-ADR-3, ISP-ADR-4)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_ffc_schedule_frame_exact: 60 Hz, 180 s, 700 ms \u2192 freeze starts at frame 10800, lasts exactly 42 frames, next at 21600; held frames bit-identical to frame 10799 while the input scene keeps changing.",
+    "test_ffc_resets_residual: first post-FFC frame residual spatial std < 1 LSB16; at FFC + 179 s with T_FPA drifting 0.05 K/s the residual equals the ISP-09 prediction for \u0394T = 8.95 K within 5 %.",
+    "test_ideal_mode_never_freezes_or_drifts over 3 intervals (bit-identical to ideal NUC every frame).",
+    "test_shutterless_no_freeze_bounded_residual: no two consecutive output frames identical for a changing input; residual std at 540 s \u2264 1.5\u00d7 its value at 180 s (bounded by scene-based correction, \u00a711.2 line 772).",
+    "test_ffc_determinism: same seed and frame_id sequence \u2192 bit-identical outputs.",
+    "test_freeze_rounding_9hz: 9 Hz export variant, 700 ms \u2192 6 frames (ADR rounding rule)."
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "ISP-11",
+   "title": "Temporal filter stage (default identity)",
+   "spec_refs": [
+    "\u00a711.1 line 750 'temporal filter'",
+    "sensor-noise-chain skill line 151"
+   ],
+   "description": "src/irsim/isp/temporal.py: exponential IIR y_n = y_{n\u22121} + \u03b1(x_n \u2212 y_{n\u22121}) with \u03b1 from a new `isp.temporal_alpha` config field (default 1.0 = identity, so existing YAML is unchanged). Only lands after ISP-ADR-8 decides whether an ISP-side temporal filter exists at L2 (the spec's only defined temporal filter is the bolometer IIR, which belongs to detector).",
+   "depends_on": [
+    "ADR: temporal filter existence and form (ISP-ADR-8)",
+    "config: new field agreed with config area",
+    "noise: 3-D noise synthesiser (\u00a710.2) for the discriminating test"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_temporal_filter_step_response: after n frames y_n = 1 \u2212 (1\u2212\u03b1)^n within 1e-6.",
+    "test_temporal_filter_default_identity: \u03b1 = 1 \u2192 bit-identical passthrough.",
+    "test_temporal_filter_reduces_tvh_not_vh: on synthetic 3-D noise, \u03c3_TVH reduced by sqrt(\u03b1/(2\u2212\u03b1)) within 5 % and \u03c3_VH unchanged within 2 % (fails if the filter is spatial, or applied in Kelvin)."
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "ISP-12",
+   "title": "ROI-weighted and locally-adaptive AGC variants",
+   "spec_refs": [
+    "\u00a711.3 line 786",
+    "sensor-noise-chain skill line 142"
+   ],
+   "description": "src/irsim/isp/agc.py: `agc_plateau(..., weights=None)` \u2014 weighted histogram (ROI-weighted); `agc_local_plateau(x, plateau, tiles, ...)` \u2014 per-tile clipped CDFs with bilinear interpolation (CLAHE-style). Config enum extension (`roi_plateau`, `local_plateau`) agreed with config area. Lower priority than everything above; global remains default.",
+   "depends_on": [
+    "ISP-02",
+    "ISP-05",
+    "config: enum extension"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_roi_uniform_weights_equals_global: bit-exact equality with global plateau EQ.",
+    "test_roi_zero_weight_excludes_region: output inside the ROI equals global EQ computed on the ROI alone within 1 LSB8.",
+    "test_local_single_tile_equals_global: bit-exact.",
+    "test_local_preserves_background_under_exhaust: background 8-bit std \u2265 80 % of the no-exhaust baseline, while global (ISP-02) is < 50 %.",
+    "test_local_no_tile_seams: on a smooth ramp, max |\u0394y| across a tile boundary \u2264 2 LSB8."
+   ],
+   "engine_free": true,
+   "size": "M"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "ISP-ADR-1: Display-branch operator order (where DDE sits relative to gamma)",
+   "why": "Three different orders appear: \u00a711.1 line 752 omits DDE entirely; sensor-noise-chain skill line 153 has AGC \u2192 gamma \u2192 DDE \u2192 polarity \u2192 palette; \u00a713.4 line 1023 lists AGC, DDE, gamma. The order changes the 8-bit image and therefore every golden fixture and every trained network; it outlives any commit.",
+   "options": [
+    "AGC \u2192 gamma \u2192 DDE \u2192 polarity \u2192 palette (skill order; DDE on the display-gamma image, matches most real cores which apply DDE late)",
+    "AGC \u2192 DDE \u2192 gamma \u2192 polarity \u2192 palette (\u00a713.4 order; DDE on the linear-normalised image)",
+    "Make it configurable with a documented default and record the choice in the output metadata hash"
+   ]
+  },
+  {
+   "title": "ISP-ADR-2: Plateau parameter semantics, histogram bin count, and the P\u21920 limit",
+   "why": "\u00a711.3 line 784 calls P a per-bin count; \u00a712.2 line 886 gives plateau: 0.012 (dimensionless); the skill's test 'plateau = 0 behaves like linear' is degenerate for a literal zero. The interpretation changes the image and must match the real camera's convention for train/deploy parity (\u00a715 Tier 5).",
+   "options": [
+    "P = plateau \u00d7 N_pixels counts per bin, 2^bit_depth bins, P\u21920 defined as the limit (all occupied bins equal)",
+    "P = plateau \u00d7 max(h) (fraction of the tallest bin)",
+    "P as an absolute count matching FLIR Boson ICD units, with bit-depth-independent 4096-bin histogram"
+   ]
+  },
+  {
+   "title": "ISP-ADR-3: Ownership and single physical source of post-NUC drift",
+   "why": "Four mechanisms describe the same phenomenon: \u00a78.2 line 543 (housing self-emission \u2014 'model it and you get NUC behaviour for free'), \u00a79.2 line 644 (gain/offset polynomials in T_FPA), \u00a711.2 line 768 + \u00a712.2 lines 881-882 (parametric residual ppm/K and mK/K), \u00a710.3 line 731 + \u00a712.2 line 873 (FPN random walk, fpn_drift_tau_s). Implementing more than one without a budget double-counts drift and breaks the NETD anchor; the split between irsim.noise and irsim.isp must be explicit.",
+   "options": [
+    "L2: parametric residual (ISP-09) is the only T_FPA-driven term; noise's \u03c3_VH random walk is the only stochastic between-FFC term; FFC resets both via one hook; \u00a78.2/\u00a79.2 mechanisms reserved for L3",
+    "L2: derive the residual from the detector's gain(T_FPA)/offset(T_FPA) polynomials and drop residual_*_per_k from config",
+    "L3 route now: self-emission \u03a6_self(T_housing) drives offset drift physically; residual_* used only as a check"
+   ]
+  },
+  {
+   "title": "ISP-ADR-4: Module boundary for bad pixels, NUC residual and FFC state (noise vs isp), freeze semantics, and frame rounding",
+   "why": "CLAUDE.md layout gives noise 'bad pixels, NUC residual' and isp 'NUC'; \u00a713.4 line 1019 puts NUC residual + bad pixels in noise.cu, \u00a711.1 puts replacement + NUC in the signal chain. FFC must reset state that lives in the other module. Freeze = hold last frame vs uniform shutter frame, and 700 ms at 9 Hz = 6.3 frames, are behavioural choices perception models will see.",
+   "options": [
+    "noise injects (defect map, FPN fields, drift); isp corrects (replacement, 2-pt NUC, residual application) and owns the FfcController which calls reset() on injected objects",
+    "isp owns the whole NUC/FFC/bad-pixel subsystem including generation; noise only produces the 3-D noise terms",
+    "a third module (irsim.fpa_state) owns all persistent per-camera state"
+   ]
+  },
+  {
+   "title": "ISP-ADR-5: DDE kernel (box 3\u00d73 vs Gaussian \u03c3) and edge handling",
+   "why": "Config exposes only dde_gain; the kernel determines the spatial frequency response and thus the 'crunchy' look networks latch onto (\u00a715 Tier 5 caution 1). Changing it later invalidates goldens and datasets.",
+   "options": [
+    "3\u00d73 box (analytic overshoot gain/3, trivially GPU-portable)",
+    "Gaussian \u03c3 = 1.0 px, radius 2 (closer to real cores, needs a documented closed form)",
+    "configurable kernel with 3\u00d73 box default"
+   ]
+  },
+  {
+   "title": "ISP-ADR-6: Display output format and palette provenance",
+   "why": "\u00a713.4/isaac skill say IrDisplay8 is RGBA8 and the viewport only shows RGBA unorm (skill line 66); \u00a711.4 lists Arctic which \u00a712.2 omits and adds gray. FLIR palettes are proprietary; the approximation used defines the sim-to-real palette match (\u00a711.4 'classic silent failure').",
+   "options": [
+    "Always RGBA8 (H,W,4) with gray replicated, alpha 255; palettes = documented public approximations in code constants; include arctic",
+    "RGB8 (H,W,3) in the core, RGBA added only in the Isaac glue",
+    "single-channel uint8 for gray, 3-channel for colour (shape varies with config \u2014 rejected unless justified)"
+   ]
+  },
+  {
+   "title": "ISP-ADR-7: NUC level convention and radiometric linearisation route",
+   "why": "\u00a711.2 O_ij = DN^L_ij makes the corrected cold-blackbody image 0 (absolute level removed). The DN\u2192L calibration in ISP-06 must be expressed in that frame or the mean DN^L re-added; and DN\u2192T_app can go via L and Lb\u207b\u00b9 or via a direct two-blackbody DN\u2192T table. Also: no config field declares a camera non-radiometric.",
+   "options": [
+    "Keep \u00a711.2 form; SITF calibrated on corrected DN; T_app via L then Lb\u207b\u00b9 (radiometry LUT); non-radiometric = outputs.apparent_temperature false",
+    "Re-centre DN_corr by adding mean(DN^L) so DN_corr is absolute; SITF on absolute DN",
+    "Add an explicit sensor.radiometric: bool to \u00a712.2"
+   ]
+  },
+  {
+   "title": "ISP-ADR-8: Whether an ISP-side temporal filter exists at L2",
+   "why": "\u00a711.1 line 750 names a 'temporal filter' that is defined nowhere and has no config field; the only temporal element in the spec is the bolometer IIR (\u00a79.2), which is pre-ADC and belongs to detector. Adding one changes \u03c3_TVH and the measured NETD (Tier 2), so it must be a deliberate, recorded fidelity choice.",
+   "options": [
+    "No ISP temporal filter at L2 (identity); document that \u00a711.1's 'temporal filter' is the detector IIR",
+    "Optional exponential IIR with isp.temporal_alpha default 1.0 (ISP-11)",
+    "Model FLIR-style temporal noise reduction as a per-pixel motion-gated IIR (L3)"
+   ]
+  },
+  {
+   "title": "ISP-ADR-9: Percentile computation for linear AGC (exact vs histogram-based)",
+   "why": "np.percentile with interpolation and a histogram-bin threshold (what real cores and the GPU port will do) differ by up to one bin on tie-heavy uint16 images; the CPU reference must be what the SPG/Warp kernel is tested against at 1e-4 relative.",
+   "options": [
+    "histogram-based on 2^bit_depth bins (matches GPU and real cores; reference == port)",
+    "exact np.percentile in the reference, tolerance-relaxed kernel test",
+    "both, with the histogram method as the default"
+   ]
+  },
+  {
+   "title": "ISP-ADR-10: Unit conversion of residual_offset_mk_per_k (Kelvin-space parameter) into DN space",
+   "why": "The config expresses a DN-space pattern in mK; non-negotiable #3 forbids applying Kelvin offsets to buffers. The conversion reference (\u2202DN/\u2202T at 300 K, or at the cal blackbody temperature) fixes the residual's scene-temperature behaviour and must be stated once.",
+   "options": [
+    "Convert once via (\u2202DN/\u2202T) at 300 K; apply in DN; document that the mK figure is nominal at 300 K",
+    "Convert via (\u2202DN/\u2202T) at the low calibration blackbody temperature",
+    "Change the config unit to DN (ppm of full scale) and drop the Kelvin figure"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "'temporal filter' (\u00a711.1 line 750, skill line 151) is undefined anywhere in the spec and absent from \u00a712.2; it is unclear whether it means the bolometer IIR (\u00a79.2, pre-ADC, detector's job) or a separate ISP denoiser.",
+   "how_to_verify": "Ask the spec owner; check the FLIR Boson ICD for a temporal-noise-reduction (TNR) setting. Until answered, implement identity and record ISP-ADR-8. Test ISP-11 (\u03c3_TVH reduced, \u03c3_VH unchanged) discriminates the two interpretations."
+  },
+  {
+   "description": "Plateau units: 0.012 is dimensionless while \u00a711.3 calls P a per-bin count. Fraction-of-pixels reading gives 0.012 \u00d7 327 680 \u2248 3 932 counts/bin for a 640\u00d7512 frame; other readings differ by orders of magnitude and change the image completely.",
+   "how_to_verify": "Compute the three candidate interpretations on a bimodal synthetic frame and compare output entropy; check the Boson ICD's plateau-value range; pick one in ISP-ADR-2 and encode it in the golden's config hash."
+  },
+  {
+   "description": "'plateau = 0 behaves like linear' (skill line 170) is degenerate for a literal 0 (every bin clipped to 0, CDF undefined) and, even in the limit, yields a min-max stretch over occupied bins rather than the percentile-clipped linear AGC of \u00a711.3.",
+   "how_to_verify": "Write the ISP-02 small-P test with P = 1/N_pixels against the analytic (x \u2212 x_min)/(x_max \u2212 x_min) and confirm it differs from ISP-01's percentile output on a frame with outliers; document the limit definition in ISP-ADR-2."
+  },
+  {
+   "description": "DDE placement relative to gamma is stated three ways (see inconsistencies); goldens and datasets built before the ADR would be invalidated.",
+   "how_to_verify": "Capture one 16-bit raw frame plus the camera's own 8-bit output from a Boson with known DDE/gamma settings, run both candidate orders, compare MAE; otherwise adopt the skill order and record ISP-ADR-1 before ISP-05."
+  },
+  {
+   "description": "No palette data exists and FLIR's Ironbow/Lava/Rainbow/Arctic tables are proprietary; any approximation is a potential palette mismatch between training and deployment (\u00a711.4).",
+   "how_to_verify": "Author tables from public open-source approximations, cite them in palette.py, run the luma-monotonicity test, and compare histogram of hue vs a real Boson screenshot in the same palette; keep the palette name in the output metadata hash."
+  },
+  {
+   "description": "No config field declares a camera non-radiometric (\u00a711.1 line 755, skill line 157 say the config declares it); the only proxy is outputs.apparent_temperature: false, and it is undefined whether radiance_linear should then also be suppressed.",
+   "how_to_verify": "Decide in ISP-ADR-7; test_non_radiometric_config_omits_branch enforces whichever rule is chosen."
+  },
+  {
+   "description": "\u00a711.2's O_ij = DN^L_ij removes the absolute DN level (cold blackbody \u2192 0). If the detector's SITF is calibrated in absolute DN, the radiometric branch will carry a systematic offset of mean(DN^L).",
+   "how_to_verify": "ISP-06 round-trip test at 250-450 K catches any level offset (< 10 mK); resolve the convention in ISP-ADR-7 before calibrating SITF."
+  },
+  {
+   "description": "Drift double counting: noise's \u03c3_VH random walk (fpn_drift_tau_s), the \u00a711.2 parametric residual, \u00a78.2 self-emission and \u00a79.2 T_FPA polynomials could all add between-FFC drift independently, inflating post-NUC spatial noise beyond the NETD anchor.",
+   "how_to_verify": "Integration-style unit test: uniform 300 K scene, measure post-NUC spatial std 179 s after FFC; assert it equals the single budgeted value (residual \u2295 \u03c3_VH) within 10 %, not the sum of several. ISP-ADR-3 decides ownership."
+  },
+  {
+   "description": "FFC reset touches state owned by another module (noise's FPN fields, detector's T_cal). Without an agreed interface, either module can be built in a way that makes the reset impossible.",
+   "how_to_verify": "Define a small `Resettable` protocol (reset(frame_id)) in irsim before ISP-10 and noise's FPN class land; test_ffc_resets_residual and a noise-side test both call it."
+  },
+  {
+   "description": "residual_offset_mk_per_k is a Kelvin-space parameter for a DN-space pattern \u2014 a non-negotiable #3 boundary. If applied as a Kelvin offset the NETD-vs-scene-temperature slope flattens.",
+   "how_to_verify": "ISP-09 test_residual_not_kelvin_flat (error ratio at 373 K vs 300 K equals (\u2202L/\u2202T) ratio within 5 %) and the detector area's NETD-slope test run after the ISP."
+  },
+  {
+   "description": "Isaac Sim 6.0: the eventual isp.cu needs a whole-frame histogram (a reduction) and persistent cross-frame state (held frame, T_cal). SPG stdlib nodes are element-wise 2-D-texture only (\u00a713.2 line 962, skill lines 60-67), and it is uncertain whether cuda.static permits mutable persistent buffers or whether atomics into a cuda.empty buffer are supported.",
+   "how_to_verify": "Minimal SPG experiment before any port: (1) a kernel that atomicAdd's a frame sum into cuda.empty(1) and a second kernel that reads it; (2) a kernel that writes to a cuda.static buffer and reads it back next frame. Until both pass, keep the ISP on Path B (Warp) where state is trivial."
+  },
+  {
+   "description": "Isaac Sim 6.0: display_render_var only shows RGBA unorm (skill line 66); an RGB8 or single-channel display AOV would render nothing in the viewport, silently.",
+   "how_to_verify": "ISP-ADR-6 chooses RGBA8; the first integration test after the temperature-encoding round trip renders IrDisplay8 to the viewport and to FileCapture and compares to the NumPy pipeline within 1 LSB8."
+  },
+  {
+   "description": "Freeze duration in frames is frame-rate dependent (700 ms = 42.0 frames at 60 Hz but 6.3 at 9 Hz); the rounding rule is unspecified and changes what perception sees.",
+   "how_to_verify": "Fix the rule in ISP-ADR-4; test_freeze_rounding_9hz pins it."
+  },
+  {
+   "description": "Makefile line 30 `--update-golden` is not registered in tests/conftest.py, so the golden workflow the ir-sim-testing skill prescribes for 'an AGC output' does not work today.",
+   "how_to_verify": "Run `make golden-update` (expect 'unrecognized arguments'); ISP-05 adds pytest_addoption and re-runs it."
+  },
+  {
+   "description": "The working environment lacks numpy/scipy (`python -c 'import numpy'` fails) although pydantic is present; `make check` cannot currently pass, so the first ISP commit will be blocked on tooling, not physics.",
+   "how_to_verify": "Run `make install && make check` before starting ISP-01; confirm test_planck.py passes."
+  },
+  {
+   "description": "Whether irsim.isp consumes pydantic models from irsim.config (not yet written) or its own dataclasses is undecided; the wrong choice serialises ISP behind the config area.",
+   "how_to_verify": "Adopt 'isp defines plain dataclasses mirroring \u00a712.2; config maps YAML \u2192 dataclasses' (as in ISP-05) and confirm with the config-area planner that the field names in flir_boson_640_lwir.yaml lines 52-73 are frozen."
+  },
+  {
+   "description": "Bit depth: \u00a711.3 says 14-16 bit; IrDN16 is a uint16 container. A 14-bit core normalised by 65535 would use only a quarter of the display range.",
+   "how_to_verify": "ISP-02 test_plateau_respects_bit_depth and ISP-05 test_agc_none_is_bit_shift with bit_depth 14."
+  },
+  {
+   "description": "Constant or near-constant frames (uniform blackbody bench, \u00a715 Tier 2) make x_phi == x_plo in linear AGC and a single-bin histogram in plateau EQ; behaviour is undefined in the spec and affects the Tier 2 NETD/3-D-noise bench which images uniform fields.",
+   "how_to_verify": "ISP-01 test_agc_linear_constant_image_finite; decide (in code docstring) the output for degenerate frames and make the Tier 2 bench read DN16/T_app, never the 8-bit image."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: every ISP module (agc, dde, palette, pipeline, radiometric, badpixel, nuc, ffc, temporal) is pure NumPy under src/irsim/isp/; tests/unit/test_layering.py parametrises over CORE.rglob('*.py') so each new file is automatically checked for omni/pxr/isaacsim/warp/carb imports. The SPG/Warp isp.cu port lives in src/irsim_isaac and is tested against the NumPy pipeline (isaac skill line 170) \u2014 never the other way round.",
+  "#2 float32 or better where temperature/radiance flows: T_app and radiance_linear outputs are float32; AGC-normalised image, DDE intermediate, NUC G/O fields and residuals are float32; the only sub-float32 buffers are the deliberately quantised outputs DN16 (uint16) and display (uint8). Enforced by ISP-05 test_pipeline_dtype_boundaries (float16 raises at every entry point), ISP-06 test_tapp_dtype_float32 and the < 10 mK round-trip test, ISP-08 test_nuc_float32_path, ISP-01 test_agc_dtype_guard.",
+  "#3 Noise in radiance/electron space, never Kelvin: the ISP adds no noise, but `residual_offset_mk_per_k` is a Kelvin-denominated parameter; it is converted once via (\u2202DN/\u2202T)_300K and applied in DN space (ISP-ADR-10). Enforced by ISP-09 test_residual_not_kelvin_flat (temperature-space error at 373 K vs 300 K scales as the (\u2202L/\u2202T) ratio within 5 %) and by the detector area's NETD-vs-T slope test being run on post-ISP DN16/T_app output. Any optional temporal filter (ISP-11) operates on DN, not T_app.",
+  "#6 One WeatherSeries feeds thermal and atmosphere: the ISP's NUC drift depends on T_FPA, which must come from the detector's lumped FPA model driven by the same WeatherSeries ambient as the thermal solver \u2014 the ISP takes T_FPA as a per-frame input and has no ambient-temperature config of its own (ISP-09 API), so a second weather source cannot be introduced here.",
+  "#4 Kirchhoff closure and #5 aperture factor: not touched by this area (the ISP never sees \u03b5, \u03c1, \u03c4 or F)."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a711.1 line 750-752 pipeline order omits DDE entirely, although \u00a711.3 line 788 defines it as part of the chain; sensor-noise-chain SKILL.md line 153 orders 'AGC/DRC \u2192 gamma \u2192 DDE \u2192 polarity \u2192 palette'; \u00a713.4 lines 1023-1024 lists 'AGC/plateau EQ, DDE, gamma, polarity, palette' (DDE before gamma). Three orderings for one pipeline.",
+  "\u00a711.4 line 792 names palettes 'Ironbow, Rainbow, Lava, Arctic'; \u00a712.2 line 891 enumerates 'gray | ironbow | rainbow | lava' \u2014 Arctic missing, gray added; configs/sensors/flir_boson_640_lwir.yaml line 66 uses gray.",
+  "\u00a711.1 line 750 and skill line 151 include a 'temporal filter' stage that is defined nowhere in docs/physics-model.md and has no field in \u00a712.2 lines 884-891; the only temporal filter in the spec is the bolometer IIR (\u00a79.2 line 637), which sits before the ADC (detector) rather than after it (ISP).",
+  "Four descriptions of the same drift: \u00a78.2 line 543 (self-emission drift \u2014 'model it and you get NUC behaviour for free; skip it and you have to fake NUC drift with an arbitrary random walk'); \u00a79.2 line 644 (gain/offset polynomials in T_FPA); \u00a711.2 line 768 with \u00a712.2 lines 881-882 (parametric residual_gain_ppm_per_k / residual_offset_mk_per_k \u2014 exactly the 'faked' form \u00a78.2 warns against); \u00a710.3 line 731 with \u00a712.2 line 873 (FPN random walk, fpn_drift_tau_s). None states which is authoritative at L2.",
+  "\u00a713.4 line 1019 places 'NUC residual + bad pixels' in SPG#5 noise.cu and line 1023 gives isp.cu no NUC step, whereas \u00a711.1 line 750 puts 'bad-pixel replace \u2192 NUC (2-pt)' in the signal chain. CLAUDE.md layout splits the words too: noise/ = 'FPN, bad pixels, NUC residual', isp/ = 'NUC, AGC, DDE, palette'. Injection vs correction ownership is never stated.",
+  "\u00a711.3 line 784 defines the plateau P as a per-bin count; \u00a712.2 line 886 sets plateau: 0.012 (dimensionless < 1); sensor-noise-chain SKILL.md line 170 asserts 'plateau = 0 behaves like linear', which for a literal zero clips every bin to zero and leaves the CDF undefined.",
+  "\u00a711.2 lines 760-762: O_ij = DN^L_ij makes the corrected cold-blackbody frame exactly 0 (absolute level removed), but \u00a73.3 line 177 and \u00a715 Tier 2 line 1190 assume a DN\u2192L (SITF) calibration whose reference level is never reconciled with this convention.",
+  "\u00a711.1 line 755 and sensor-noise-chain SKILL.md line 157-158 say the camera config 'declares whether it is radiometric'; \u00a712.2 lines 827-897 contain no such field \u2014 only outputs.apparent_temperature: true/false.",
+  "\u00a713.4 line 1027 and isaac-sim-spg SKILL.md line 142 specify IrDisplay8 as RGBA8, while \u00a711.1 line 752 says '8-bit output' and \u00a711.4 makes gray a palette; the channel count for the gray palette is unspecified, and the Isaac viewport constraint (skill line 66: RGBA unorm only) is not reflected in \u00a711.",
+  "\u00a716.4 line 1302 (step 5: AGC + palette + display) precedes line 1306 (step 9: NUC/FFC, bad pixels) although \u00a711.1 orders NUC before AGC; consistent only because \u00a712.2 line 878 provides nuc.mode: ideal \u2014 planners must use that placeholder in step 5.",
+  "Makefile line 30 invokes `pytest tests/golden -q --update-golden` but tests/conftest.py registers no such option; ir-sim-testing SKILL.md lines 100-109 prescribe golden fixtures (explicitly naming 'an AGC output') and 'make golden-update' as the only sanctioned regeneration route.",
+  "\u00a711.3 line 776 says a '14-16 bit' image becomes 8 bits; \u00a712.2 line 853 fixes bit_depth: 16 and \u00a713.4 line 1027 fixes a uint16 IrDN16 container; nothing says the AGC histogram must span 2^bit_depth rather than 2^16, which matters for the 14-bit case."
+ ]
+}

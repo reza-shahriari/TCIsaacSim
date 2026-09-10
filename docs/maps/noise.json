@@ -1,0 +1,506 @@
+{
+ "area": "noise",
+ "existing_state": "Nothing of the noise subsystem is implemented. Exact inventory:\n\nCODE\n- /home/hunter/irsim-scaffold/src/irsim/noise/__init__.py \u2014 one line: `\"\"\"See docs/physics-model.md.\"\"\"`. No functions, no classes.\n- /home/hunter/irsim-scaffold/src/irsim/detector/__init__.py, src/irsim/isp/__init__.py, src/irsim/config/__init__.py \u2014 identical one-line stubs. So there is no detector transfer S(\u03a6), no quantiser, no pydantic sensor schema, no YAML loader for the noise block to hang off.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/planck.py \u2014 the only real physics in the repo. Provides `spectral_radiance`, `spectral_photon_radiance`, `d_spectral_radiance_dT` (spectral \u2202B/\u2202T, \u00a73.4), `fractional_exitance`, `band_radiance_tophat` (energy form, top-hat R(\u03bb), \u00a73.2a). All float64 reference code. There is NO in-band \u2202L/\u2202T table, NO band LUT, NO inverse L_B\u207b\u00b9(L) yet \u2014 the NETD anchor needs the in-band derivative, which today can only be obtained by `np.trapezoid(d_spectral_radiance_dT(lam, T), lam)` over a top-hat grid.\n- /home/hunter/irsim-scaffold/src/irsim/radiometry/constants.py \u2014 has K_BOLTZMANN, Q_E, H_PLANCK, C_LIGHT, SIGMA_SB, C1L, C1Q, C2. Nothing noise-specific is missing from it (Johnson/temperature-fluctuation formulas need only k_B).\n- /home/hunter/irsim-scaffold/scripts/generate_luts.py \u2014 stub that prints its docstring and exits 1. Its docstring promises `data/lut/<sensor>_{Lb,Lb_q,dLb_dT}.npy` float32 plus a SHA-256 sidecar; none exist.\n- /home/hunter/irsim-scaffold/src/irsim_isaac/spg/README.md \u2014 one sentence; no .cu/.cu.lua/.usda files. No Warp pipeline code exists in src/irsim_isaac/pipeline/__init__.py (empty stub).\n\nTESTS\n- /home/hunter/irsim-scaffold/tests/conftest.py \u2014 fixtures `rng` (np.random.default_rng(20260910)) and `gbuffer_uniform` (64x64 float32 at 300 K, docstring: \"Use for noise-decomposition tests\"), `gbuffer_ramp` (256x256, 250-450 K ramp). No noise tests exist anywhere.\n- /home/hunter/irsim-scaffold/tests/unit/test_layering.py \u2014 parametrised over every *.py under src/irsim, forbids imports of {omni, pxr, isaacsim, warp, carb}. New noise files are covered automatically.\n- /home/hunter/irsim-scaffold/tests/unit/test_planck.py \u2014 includes `test_thermal_derivative_rises_with_temperature` (asserts in-band 8-12 \u00b5m \u2202L/\u2202T at 373 K > 1.5x that at 300 K) \u2014 the precursor of the \"NETD falls with scene temperature\" test, but it does not exercise any noise code.\n- tests/golden/ and tests/integration/ contain only .gitkeep.\n\nCONFIG / DATA\n- /home/hunter/irsim-scaffold/configs/sensors/flir_boson_640_lwir.yaml \u2014 the only sensor config. Its `noise:` block: netd_mk_at_300k: 50.0; ratios_3d: {tvh: 1.00, vh: 0.30, h: 0.15, v: 0.08, tv: 0.05, th: 0.05, t: 0.02}; fpn_drift_tau_s: 120.0; bad_pixel_fraction: 0.0015; bad_pixel_cluster_lambda: 1.6. Its `nuc:` block: mode: shuttered; ffc_interval_s: 180; ffc_freeze_ms: 700; residual_gain_ppm_per_k: 900 (ESTIMATED); residual_offset_mk_per_k: 45 (ESTIMATED). fpa block: bolometer, 640x512, 12 \u00b5m, 60 Hz, 16 bit, tau_th 10 ms, tcr -0.021. No schema validates any of this.\n- data/spectra/ and data/lut/ are empty (.gitkeep only) \u2014 `spectra/boson_vox.csv` referenced by the YAML does not exist.\n\nDOCS / BUILD\n- README.md status table: `noise` \u2b1c not started, `detector` \u2b1c, `isp` \u2b1c. CHANGELOG has no noise entry. Only ADR is 0001 (the template). pyproject: numpy>=1.24, scipy, pydantic>=2.5, pyyaml; ruff selects NPY rules (legacy np.random.seed is lint-forbidden \u2014 Generator API required); mypy --strict on src/irsim. Git history is a single commit (3b653b3 \"Project Structure Created\").",
+ "key_equations_and_data": [
+  "\u00a72 master equation: DN_ij = Q[ g_ij\u00b7S(\u03a6_ij) + o_ij + n_ij ] \u2014 noise n_ij and post-NUC residual gain/offset g_ij, o_ij enter BEFORE quantisation Q; the noise stage must therefore run on the pre-quantised signal (radiance or electrons), never on quantised DN.",
+  "\u00a710.2 seven-component NVESD 3D noise synthesis: \u03c3_TVH i.i.d. Gaussian per pixel per frame; \u03c3_VH one fixed 2-D Gaussian field, slowly drifting; \u03c3_V one Gaussian per row, fixed; \u03c3_H one Gaussian per column, fixed; \u03c3_TV new Gaussian per row per frame; \u03c3_TH new Gaussian per column per frame; \u03c3_T one global Gaussian per frame.",
+  "\u00a710.2 variance closure: \u03c3_total\u00b2 = \u03c3_T\u00b2 + \u03c3_V\u00b2 + \u03c3_H\u00b2 + \u03c3_TV\u00b2 + \u03c3_TH\u00b2 + \u03c3_VH\u00b2 + \u03c3_TVH\u00b2 (components independent, zero mean).",
+  "\u00a710.2 starting ratios, uncooled LWIR after NUC, 'all in NETD units': \u03c3_TVH:\u03c3_VH:\u03c3_H:\u03c3_V = 1.0:0.3:0.15:0.08; cooled MWIR: \u03c3_VH smaller, \u03c3_TVH dominant. \u00a712.2 config extends to tv 0.05, th 0.05, t 0.02.",
+  "\u00a712.2 config fields (already present in configs/sensors/flir_boson_640_lwir.yaml): noise.netd_mk_at_300k (anchor, 'scales everything'); noise.ratios_3d.{tvh,vh,h,v,tv,th,t} relative to \u03c3_TVH; noise.fpn_drift_tau_s; noise.bad_pixel_fraction; noise.bad_pixel_cluster_lambda. Adjacent nuc.{mode: shuttered|shutterless|ideal, ffc_interval_s, ffc_freeze_ms, residual_gain_ppm_per_k, residual_offset_mk_per_k}.",
+  "\u00a79.4 NETD photon-count form (the one to implement): NETD = \u03c3_N,total / (\u2202N_e/\u2202T), with \u2202N_e/\u2202T = \u03b7\u00b7A_d\u00b7t_int\u00b7\u03c0\u00b7\u03c4_opt/(4F\u00b2+1)\u00b7(\u2202L_q/\u2202T)_B and \u03c3_N,total\u00b2 = N_e + \u03c3_dark\u00b2 + \u03c3_read\u00b2 + \u03c3_1/f\u00b2. Aperture factor MUST come from irsim.optics (CLAUDE.md #5).",
+  "\u00a79.4 bolometer equivalent (what the LWIR anchor actually uses): \u03c3_L[W m\u207b\u00b2 sr\u207b\u00b9] = NETD[K] \u00d7 (\u2202L/\u2202T)_B(300 K), where (\u2202L/\u2202T)_B = \u222bR(\u03bb)\u00b7\u2202B/\u2202T d\u03bb (\u00a73.4, tabulated alongside L_B by radiometry). Predicted NETD at any scene T: NETD(T) = \u03c3_L / (\u2202L/\u2202T)_B(T).",
+  "\u00a79.4 anchor workflow (steps 1-4): build the physical chain \u2192 compute predicted NETD at 300 K \u2192 scale noise terms so it equals netd_mk_at_300k \u2192 structure is physical, magnitude matches the device. Appendix A.7: NETD is anchored, not predicted.",
+  "\u00a73.4 / \u00a79.4 known answer [R9]: a real uncooled core measured \u224839 mK NETD at ambient and \u224823 mK against a 100 \u00b0C blackbody \u2192 NETD(373 K)/NETD(300 K) \u2248 0.59. Test band: 0.5-0.7.",
+  "\u00a73.4 rule + CLAUDE.md #3: add noise in radiance or electron space, then convert; never Kelvin-space Gaussian noise on a temperature buffer.",
+  "\u00a710.1 physical source table: photon shot Poisson \u221d\u221aN_e (dominant MWIR/SWIR by day); dark shot \u221d\u221a(i_d\u00b7t_int/q); Johnson Gaussian \u221a(4k_B\u00b7T\u00b7R\u00b7\u0394f) (bolometer dominant); temperature fluctuation \u221a(4k_B\u00b7T\u00b2\u00b7G_th\u00b7\u0394f) (bolometer physical floor); read/ROIC Gaussian constant; 1/f pink; FPN gain+offset fixed spatial, scene-dependent, dominant after NUC decay.",
+  "\u00a710.3 temporal structure: fixed-pattern terms evolve by a slow random walk with correlation time seconds-to-minutes (config fpn_drift_tau_s = 120 s) producing 'pattern breathing' between NUC events; temporal stripe noise modelled as a 1-D Gaussian along one image axis [R30].",
+  "\u00a710.4 bad pixels: types dead (stuck low), hot (stuck high), flickering (random telegraph noise), blinking (intermittent); 0.05-0.5 % of pixels; Poisson cluster process (not uniform); camera replaces them by neighbour interpolation leaving a detectable smoothed footprint \u2014 simulate BOTH defect and replacement.",
+  "\u00a711.2 NUC residual (shared with isp): DN_corr = G_ij(DN_ij \u2212 O_ij), G_ij = (mean DN^H \u2212 mean DN^L)/(DN^H_ij \u2212 DN^L_ij), O_ij = DN^L_ij; residual drift \u221d (T_FPA \u2212 T_FPA^cal) with config slopes residual_gain_ppm_per_k and residual_offset_mk_per_k; residual non-uniformity grows between FFC events; FFC event freezes the image 0.5-1 s (ffc_freeze_ms) and resets the pattern.",
+  "\u00a78.2 self-emission \u03a6_self \u2248 A_d\u00b7\u03a9_eff\u00b7(1\u2212\u03c4_opt)\u00b7L_B(T_housing), \u03a9_eff = \u03c0/(4F\u00b2+1) \u2014 the PHYSICAL origin of global offset drift; the noise area must not duplicate this as random walk (only pixel-level pattern drift is the noise area's).",
+  "sensor-noise-chain skill: seed all noise deterministically from (frame_id, sensor_id); \u00a713.2 the SPG Lua global rtx.frameId is the engine-side frame id source.",
+  "\u00a715 Tier 2 bench formulas: NETD_meas = \u0394T\u00b7\u03c3_noise/\u0394DN from two blackbodies a few K apart, must match datasheet within 10 % and must fall with scene T; 3D-noise decomposition of 100+ frames of a uniform blackbody into \u03c3_TVH, \u03c3_VH, \u03c3_V, \u03c3_H [R28]; skill: synthesise with known ratios, decompose 200 frames, recover within 5 %.",
+  "\u00a715 Tier 4(c): noise power spectral density of a flat region, shape within a factor of 2 across spatial frequency \u2014 needs a PSD utility (spatial 2-D PSD with row/column line extraction, temporal PSD per pixel).",
+  "\u00a712.1 band table: dominant noise is shot for NIR/SWIR/MWIR and Johnson+FPN for LWIR \u2014 the noise stage must select electron-space (photon FPA) vs radiance-space (bolometer) from fpa.type, with no band-specific code.",
+  "tests/conftest.py fixtures the tests must use: gbuffer_uniform (64x64, 300 K float32) for decomposition/NETD benches, gbuffer_ramp (256x256, 250-450 K) for gain-residual and replacement tests, rng seed 20260910.",
+  "Physical constants needed (all already in irsim.radiometry.constants): K_BOLTZMANN, Q_E. No new constants required; RNG seeds and default cluster radius are parameters, not constants."
+ ],
+ "work_items": [
+  {
+   "id": "NOISE-01",
+   "title": "NoiseConfig / NucConfig pydantic schemas for the \u00a712.2 noise and nuc blocks",
+   "spec_refs": [
+    "\u00a712.2",
+    "\u00a710.2",
+    "\u00a710.4",
+    "\u00a711.2"
+   ],
+   "description": "Define `irsim.noise.config.NoiseConfig` (netd_mk_at_300k > 0; ratios_3d with all seven keys, tvh must equal 1.0, others \u2265 0; fpn_drift_tau_s > 0; bad_pixel_fraction in [0, 0.01]; bad_pixel_cluster_lambda \u2265 0; a `bad_pixel_type_mix` with defaults summing to 1) and `NucConfig` (mode enum shuttered|shutterless|ideal, ffc_interval_s, ffc_freeze_ms, residual slopes). Provide `sigma_ratios()` returning the ordered 7-vector and `total_over_tvh()` = sqrt(\u03a3 r\u00b2). Register with the config area's SensorConfig root so `configs/sensors/flir_boson_640_lwir.yaml` loads. Files: src/irsim/noise/config.py, tests/unit/test_noise_config.py.",
+   "depends_on": [
+    "config: SensorConfig root pydantic model and YAML loader (irsim.config)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_boson_yaml_loads_and_total_ratio: loading the Boson YAML gives total_over_tvh() = sqrt(1+0.09+0.0225+0.0064+0.0025+0.0025+0.0004) = 1.0604 to 1e-12 relative (variance closure \u00a710.2; fails if a ratio is dropped or ratios are summed linearly)",
+    "test_tvh_must_be_unity: ratios_3d.tvh = 0.9 is rejected (the anchor is defined relative to \u03c3_TVH)",
+    "test_bad_pixel_fraction_bounds: 0.02 is rejected, 0.0015 accepted (\u00a710.4 0.05-0.5 % range, with headroom)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "NOISE-02",
+   "title": "Deterministic per-(sensor_id, frame_id, stream) RNG factory",
+   "spec_refs": [
+    "\u00a713.2 rtx.frameId",
+    "sensor-noise-chain skill 'Seed all noise deterministically'"
+   ],
+   "description": "`irsim.noise.seeding.noise_rng(sensor_seed: int, frame_id: int, stream: NoiseStream) -> np.random.Generator` built on np.random.SeedSequence(sensor_seed, frame_id, stream_id). Enumerate streams (TVH, TV, TH, T, VH_DRIFT, V_DRIFT, H_DRIVE, RTS, ...) and a `sensor_rng(sensor_seed, stream)` for once-per-sensor state (fixed patterns, bad-pixel map). No global state, no legacy np.random. Record the PRNG choice in the ADR from decisions list (item 4).",
+   "depends_on": [],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_same_seed_same_frame_is_bit_identical: two Generators from (7, 42, TVH) produce identical 4096-sample float32 arrays (exact equality)",
+    "test_frames_and_streams_are_independent: samples from (7,42,TVH) vs (7,43,TVH) and vs (7,42,TV) have |Pearson r| < 3/sqrt(N) for N = 1e5 (fails if frame_id or stream is ignored in the seed)",
+    "test_sensor_ids_are_independent: (7,42,TVH) vs (8,42,TVH) |r| < 3/sqrt(N)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "NOISE-03",
+   "title": "Reference NumPy synthesis of the seven 3D-noise components",
+   "spec_refs": [
+    "\u00a710.2",
+    "\u00a710.1 FPN row"
+   ],
+   "description": "`irsim.noise.three_d.FixedPattern` (V[h], H[w], VH[h,w] float32, created once from sensor_rng) and `synthesize_frame(shape, sigmas: Sigmas7, fixed: FixedPattern, rng_frame) -> float32[h,w]` = T + V[:,None] + H[None,:] + TV[:,None] + TH[None,:] + VH + TVH, all in the SAME physical unit as the input signal (radiance or electrons \u2014 the caller passes sigmas already converted; this module is unit-agnostic). Pure additive, no drift yet. Assert output dtype float32 and finite.",
+   "depends_on": [
+    "NOISE-01",
+    "NOISE-02"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_axes_not_swapped: with only \u03c3_H = 1 (others 0) every column is constant down its height and the frame is identical across 5 frames (exact); with only \u03c3_V = 1 every row is constant; fails if row/column axes are swapped or fixed patterns are regenerated per frame",
+    "test_temporal_column_noise_changes_per_frame: only \u03c3_TH = 1: within-frame columns constant, between-frame column vectors have |r| < 0.15 over 64 columns and 50 frames (fails if TH were treated as fixed)",
+    "test_variance_closure: Boson ratios in NETD units, 400 frames of 64x64 (gbuffer_uniform shape): pooled variance over (t,v,h) equals \u03a3\u03c3\u00b2 = 1.1243 within 3 % relative (\u00a710.2 closure; fails if any component is missing, double-added, or scaled by ratio instead of ratio\u00b2)",
+    "test_row_mean_variance_identity: Var over (t,v) of per-frame row means equals \u03c3_T\u00b2+\u03c3_V\u00b2+\u03c3_TV\u00b2+(\u03c3_TH\u00b2+\u03c3_VH\u00b2+\u03c3_TVH\u00b2)/W within 10 % (analytic identity linking the directional structure to the ratios)",
+    "test_output_is_float32: dtype float32 and no NaN for a 640x512 frame"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-04",
+   "title": "NVESD 3D-noise decomposition analyser (independent implementation) and synthesis round trip",
+   "spec_refs": [
+    "\u00a710.2 [R28]",
+    "\u00a715 Tier 2 '3D noise'",
+    "sensor-noise-chain skill 'Tests'"
+   ],
+   "description": "`irsim.noise.analysis.decompose_3d(cube[t,v,h]) -> Sigmas7` using the standard directional-averaging operators (D'Agostino/Webb) with leakage-corrected (unbiased) variance estimates so small components are not inflated by larger ones divided by N_t, N_v, N_h. This is the oracle for the synthesis, the Tier 2 bench, and later GPU-vs-CPU checks. Include a helper `measure_from_uniform_scene(stage, n_frames)`.",
+   "depends_on": [
+    "NOISE-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_round_trip_recovers_ratios: synthesise with Boson ratios (NETD units), 200 frames on gbuffer_uniform (64x64); recovered \u03c3_TVH, \u03c3_VH, \u03c3_H within 5 % relative; \u03c3_V, \u03c3_TV, \u03c3_TH within max(10 % relative, 0.01\u00b7\u03c3_TVH absolute); \u03c3_T within max(15 %, 0.01\u00b7\u03c3_TVH) \u2014 the looser bounds are the sampling floor for 200 frames, stated in the test (fails if any operator averages over the wrong axis or leakage is uncorrected)",
+    "test_white_cube_has_no_directional_components: pure i.i.d. cube: all six directional sigmas < 0.02\u00b7\u03c3_TVH (fails on uncorrected leakage: naive \u03c3_V would read \u2248 \u03c3_TVH/sqrt(N_t\u00b7N_h) plus bias)",
+    "test_single_component_cubes: a cube built from only \u03c3_H returns \u03c3_H within 3 % and every other component < 0.02\u00b7\u03c3_H (repeat for each of the 7)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-05",
+   "title": "NETD anchor: convert netd_mk_at_300k + ratios into radiance-space sigmas; predicted NETD(T)",
+   "spec_refs": [
+    "\u00a79.4 anchor workflow",
+    "\u00a73.4",
+    "\u00a710.2 'in NETD units'",
+    "\u00a715 Tier 2 NETD",
+    "CLAUDE.md #3"
+   ],
+   "description": "`irsim.noise.netd.anchor_sigmas(cfg: NoiseConfig, dLb_dT_300: float) -> Sigmas7` in W m\u207b\u00b2 sr\u207b\u00b9 (\u03c3_TVH = NETD\u00b7dLb_dT(300 K) under ADR-1's chosen convention, others by ratio) and `predicted_netd_k(sigma_temporal, dLb_dT_at_T)`. Also `measured_netd_k(cube_lo, cube_hi, dT)` implementing \u00a715's \u0394T\u00b7\u03c3/\u0394DN. Takes the in-band derivative as a number from radiometry; for LWIR tests use the top-hat 7.5-13.5 \u00b5m quadrature already possible with planck.py.",
+   "depends_on": [
+    "NOISE-01",
+    "NOISE-03",
+    "radiometry: in-band (\u2202L/\u2202T)_B(T) \u2014 top-hat quadrature exists via d_spectral_radiance_dT; LUT-tabulated dLb_dT preferred",
+    "radiometry: band LUT with inverse L_B\u207b\u00b9 (only for the Kelvin-space check)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_two_blackbody_bench_reproduces_config_netd: uniform 64x64 scenes at 300 K and 303 K \u2192 band radiance \u2192 + anchored noise for 200 frames; NETD_meas = \u0394T\u00b7\u03c3_temporal/\u0394L within 10 % of 50 mK (\u00a715 Tier 2; fails if the anchor scales the wrong \u03c3 or uses spectral instead of in-band derivative)",
+    "test_netd_falls_with_scene_temperature: predicted NETD(373 K)/NETD(300 K) equals dLb_dT(300)/dLb_dT(373) to 1e-6 relative AND lies in [0.5, 0.7] (known answer [R9] 23/39 = 0.59); measured form via the bench within 10 % (fails if noise magnitude were fixed in kelvin \u2014 non-negotiable #3)",
+    "test_kelvin_sigma_not_constant: invert noisy radiance to T_app at 300 K and 400 K; std_K(400) < 0.75\u00b7std_K(300) (would pass trivially at 1.0 if noise were added in Kelvin)",
+    "test_anchor_is_gain_invariant: multiplying the signal chain gain by 3.7 leaves NETD_meas unchanged within 1 % (\u0394T\u00b7\u03c3/\u0394DN is gain-free)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-06",
+   "title": "Slow drift of fixed-pattern components (Ornstein-Uhlenbeck with \u03c4 = fpn_drift_tau_s)",
+   "spec_refs": [
+    "\u00a710.3",
+    "\u00a710.2 'slowly drifting'",
+    "\u00a78.2 warning about arbitrary random walks",
+    "\u00a712.2 fpn_drift_tau_s"
+   ],
+   "description": "`FixedPattern.advance(dt_s, rng)`: x \u2190 x\u00b7e^(\u2212dt/\u03c4) + \u03c3\u00b7sqrt(1\u2212e^(\u22122dt/\u03c4))\u00b7\u03be for VH (and V, H if ADR-3 says so). Mean-reverting so the stationary variance stays \u03c3\u00b2 and the configured 3D ratios remain true forever; a pure random walk would diverge. Expose `correlation_time_s`. State is float32; \u03be from stream VH_DRIFT seeded by frame_id.",
+   "depends_on": [
+    "NOISE-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_autocorrelation_at_one_tau_is_e_minus_1: \u03c4 = 0.5 s, dt = 1/60 s, 32x32 field, 3000 frames: lag-30-frame autocorrelation = e\u207b\u00b9 \u00b1 0.05 (analytic identity for OU; fails for a pure random walk, whose autocorrelation \u2192 1)",
+    "test_variance_is_stationary: after 2000 frames the field variance equals \u03c3\u00b2 within 5 % (a pure random walk would be \u2248 2000\u00d7 the step variance)",
+    "test_mean_stays_zero: field mean after 2000 frames within 3\u03c3/sqrt(1024)",
+    "test_frozen_when_tau_is_infinite: fpn_drift_tau_s = inf reproduces bit-identical fields across frames"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "NOISE-07",
+   "title": "Bad-pixel map generation by a Poisson cluster process",
+   "spec_refs": [
+    "\u00a710.4",
+    "\u00a712.2 bad_pixel_fraction, bad_pixel_cluster_lambda"
+   ],
+   "description": "`irsim.noise.bad_pixels.generate_map(shape, cfg, sensor_rng) -> BadPixelMap` (int8 type map: 0 good, 1 dead, 2 hot, 3 flicker, 4 blink). Neyman-Scott/Mat\u00e9rn: parent centres Poisson with intensity chosen so the expected total = fraction\u00b7H\u00b7W; each parent spawns 1 + Poisson(cluster_lambda) offspring within a small radius (define in ADR-5); types drawn from `bad_pixel_type_mix`. Map is fixed per sensor (not per frame).",
+   "depends_on": [
+    "NOISE-01",
+    "NOISE-02"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_fraction_matches_config: on 1024x1024 with fraction 0.0015 the count is within 10 % of 1573 (Poisson sd \u2248 2.5 %, so 10 % is ~4\u03c3; fails if \u03bb is mis-scaled by the cluster size)",
+    "test_clustering_is_real: mean nearest-neighbour distance among bad pixels < 0.6 \u00d7 0.5/sqrt(density) (the uniform-Poisson expectation); with cluster_lambda = 0 it equals 0.5/sqrt(density) within 10 % (fails if uniform sampling is used, which \u00a710.4 forbids)",
+    "test_type_mix: proportions of dead/hot/flicker/blink within 3 % absolute of the configured mix on 2048x2048",
+    "test_map_is_per_sensor_deterministic: same sensor seed \u2192 identical map; different seed \u2192 different map"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-08",
+   "title": "Bad-pixel defect injection (dead/hot/RTS/blink) and camera neighbour-interpolation replacement",
+   "spec_refs": [
+    "\u00a710.4",
+    "\u00a711.1 'bad-pixel replace'",
+    "\u00a713.4 SPG#5"
+   ],
+   "description": "`apply_defects(frame, map, rts_state, frame_rng)`: dead \u2192 floor value, hot \u2192 ceiling value (in the frame's unit; when applied on DN, 0 and 2^bits\u22121), flicker \u2192 two-state random telegraph with per-frame switch probabilities, blink \u2192 intermittent with duty cycle; RTS/blink states persist in a `BadPixelState`. `replace(frame, map)`: mean of valid 4-neighbours (excluding other bad pixels, iterating until clusters are filled). Both live in irsim.noise because the footprint depends on the map; isp only sequences the call.",
+   "depends_on": [
+    "NOISE-07"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_replacement_is_exact_on_linear_ramp: on gbuffer_ramp (250-450 K), an isolated replaced pixel equals the true ramp value to < 1 mK equivalent (mean of a linear function's 4-neighbours is exact); fails if the kernel includes the defective pixel itself or uses a biased stencil",
+    "test_replacement_never_leaks_stuck_values: on gbuffer_uniform with hot pixels at ceiling, replaced output equals 300 K radiance everywhere exactly; a 2x2 cluster is also filled (iterative)",
+    "test_stuck_pixels_are_constant: dead and hot pixels are bit-identical across 100 frames and equal floor/ceiling; no wrap, no negative values, dtype preserved",
+    "test_rts_statistics: over 2000 frames a flickering pixel's high-state occupancy matches the configured stationary probability within 5 % absolute and its dwell-time histogram is geometric (KS p > 0.01)",
+    "test_footprint_is_detectable: on ramp + white noise, the local Laplacian magnitude at replaced pixels is < 0.5\u00d7 that at untouched pixels (the smoothed footprint \u00a710.4 says a detector sees)"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-09",
+   "title": "NUC residual model: post-NUC g_ij, o_ij drift with \u0394T_FPA and growth between FFC events, reset on FFC",
+   "spec_refs": [
+    "\u00a72 g_ij, o_ij",
+    "\u00a711.2 'model the residual, not the ideal'",
+    "\u00a712.2 nuc block",
+    "\u00a79.2 gain(T_FPA), offset(T_FPA)"
+   ],
+   "description": "`irsim.noise.nuc_residual.NucResidual(cfg: NucConfig, shape, sensor_rng)` holding unit-variance fixed fields \u03be_ij, \u03b6_ij; `gain(dT_fpa) = 1 + residual_gain_ppm_per_k\u00b71e-6\u00b7dT_fpa\u00b7\u03be`, `offset_k(dT_fpa) = residual_offset_mk_per_k\u00b71e-3\u00b7dT_fpa\u00b7\u03b6` (converted to the signal unit by dLb_dT), plus the between-FFC growth of \u03c3_VH (drives NOISE-06's target \u03c3 upward with time since last FFC), and `ffc_reset(frame_rng)` that zeroes the residual and redraws the pattern. T_FPA comes in as a scalar per frame from the detector's FPA model; the image FREEZE belongs to the pipeline/isp (decision item 7).",
+   "depends_on": [
+    "NOISE-03",
+    "NOISE-06",
+    "detector: FPA temperature model T_FPA(t) (or a scalar input)",
+    "radiometry: dLb_dT for mK \u2192 radiance conversion"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_zero_residual_at_calibration_temperature: dT_fpa = 0 immediately after ffc_reset gives gain \u2261 1 and offset \u2261 0 exactly",
+    "test_offset_residual_scales_linearly: spatial std of offset at dT_fpa = 2 K is 90 mK \u00b1 2 % and exactly 2\u00d7 that at 1 K (fails if slope units ppm/mK are mishandled)",
+    "test_gain_residual_is_scene_dependent: on gbuffer_ramp the residual std at 450 K is larger than at 250 K by the ratio of signals within 5 % (multiplicative term; an additive-only model would give a flat std)",
+    "test_ffc_reset_decorrelates_and_resets: after ffc_reset the new pattern has |r| < 0.05 with the old one and the between-FFC growth term returns to 0; \u03c3_VH measured via decompose_3d on 100 frames returns to the configured ratio within 5 %"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-10",
+   "title": "NoiseStage: stateful frame-by-frame assembly of anchor + 3D noise + drift + NUC residual + bad pixels",
+   "spec_refs": [
+    "\u00a72",
+    "\u00a710.2",
+    "\u00a713.4 SPG#5 ordering",
+    "\u00a716.4 step 4"
+   ],
+   "description": "`irsim.noise.stage.NoiseStage(sensor_cfg, sensor_seed)` with `apply(ideal: float32[h,w], frame_id, dt_s, t_fpa_k) -> float32[h,w]` in the detector's pre-quantisation unit (radiance for bolometer, electrons for photon). Order: gain/offset residual \u2192 + 3D noise (drifted) \u2192 defects \u2192 replacement. Asserts float32 in/out, rejects float16/float64 silently promoted buffers. Holds all persistent state in one dataclass so an engine wrapper can mirror it.",
+   "depends_on": [
+    "NOISE-05",
+    "NOISE-06",
+    "NOISE-08",
+    "NOISE-09",
+    "detector: bolometer/photon transfer S(\u03a6) and quantiser Q (for the DN-domain Tier 2 bench)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_end_to_end_netd_bench_in_dn: two uniform blackbodies 300/303 K through detector + NoiseStage + quantiser, 200 frames: \u0394T\u00b7\u03c3_DN/\u0394DN within 10 % of 50 mK (fails if any stage double-adds noise or the quantiser LSB swamps it)",
+    "test_end_to_end_3d_ratios: decompose_3d on 200 frames of gbuffer_uniform output recovers Boson ratios (same tolerances as NOISE-04)",
+    "test_replay_is_bit_identical: two NoiseStage instances with the same sensor_seed fed the same frame_ids produce identical outputs; skipping to frame 500 directly equals frame 500 reached sequentially for the memoryless components (T, TV, TH, TVH)",
+    "test_float32_boundary: float16 input raises; output dtype float32 (non-negotiable #2)",
+    "test_sensors_are_uncorrelated: two stages with different sensor_seed on the same scene have |r| < 0.05 between noise residuals"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-11",
+   "title": "Electron-space noise for photon FPAs: shot, dark shot, read; anchor rule for shot-limited devices",
+   "spec_refs": [
+    "\u00a710.1",
+    "\u00a79.1",
+    "\u00a79.4 photon-count form",
+    "\u00a712.1 'dominant noise: shot'",
+    "CLAUDE.md #5"
+   ],
+   "description": "`irsim.noise.photon.electron_noise(N_e, i_dark, t_int, sigma_read, rng)`: Poisson(N_e) + Poisson(i_dark\u00b7t_int/q) + Gaussian(\u03c3_read); `predicted_netd_photon(N_e, \u03c3_dark, \u03c3_read, \u03c3_1f, dNe_dT)`. The anchor scales only the non-shot terms (read, 1/f, FPN); if shot noise alone exceeds the datasheet NETD, raise with a message (ADR-6). \u2202N_e/\u2202T uses irsim.optics aperture factor. Needed for SWIR/MWIR (\u00a716.4 step 10), so it can be scheduled late.",
+   "depends_on": [
+    "NOISE-05",
+    "detector: photon-detector N_e(T) and \u2202N_e/\u2202T",
+    "optics: aperture_factor(F) = \u03c0/(4F\u00b2+1)"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_shot_variance_equals_mean: N_e = 1e4, 1e5 samples: variance/mean = 1 within 2 % (Poisson identity)",
+    "test_aperture_factor_plus_one: \u2202N_e/\u2202T at F/1.0 equals the hand-computed value with \u03c0/5, and differs from a \u03c0/4 computation by 20 % \u00b1 0.5 % (fails if 4F\u00b2 is used \u2014 non-negotiable #5)",
+    "test_predicted_netd_matches_bench: for a synthetic InGaAs-like config, NETD from the two-blackbody bench in electrons equals predicted_netd_photon within 10 %",
+    "test_shot_limited_anchor_raises: datasheet NETD below the shot-noise floor raises instead of silently producing negative read noise"
+   ],
+   "engine_free": true,
+   "size": "M"
+  },
+  {
+   "id": "NOISE-12",
+   "title": "Noise PSD diagnostics (spatial 2-D with row/column lines, temporal per pixel) for Tier 4(c)",
+   "spec_refs": [
+    "\u00a715 Tier 4(c)",
+    "\u00a715 Tier 5 caution 1",
+    "\u00a710.3"
+   ],
+   "description": "`irsim.noise.analysis.spatial_psd(frame_or_cube)` (radially averaged plus the k_v = 0 and k_h = 0 lines where column/row noise concentrates) and `temporal_psd(cube)`. Pure analysis, no synthesis; later used to compare against real FLIR ADK flat regions with the factor-of-2 target. Also a `compare_psd(a, b) -> max ratio` helper.",
+   "depends_on": [
+    "NOISE-03"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_white_noise_psd_is_flat: 200-frame average radial PSD of pure \u03c3_TVH: max/min over 10 radial bins < 1.3 (\u03c7\u00b2 spread bound; fails if the FFT is un-normalised or windowed asymmetrically)",
+    "test_column_noise_lives_on_the_kv0_line: \u03c3_H-only cube: \u2265 95 % of total power on the k_v = 0 line",
+    "test_ou_drift_temporal_psd_is_lorentzian: temporal PSD of a drifted VH pixel has \u22123 dB corner at f_c = 1/(2\u03c0\u03c4) within 20 % (fails if the drift is white or a random walk)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "NOISE-13",
+   "title": "Golden regression fixture for the Boson NoiseStage",
+   "spec_refs": [
+    "ir-sim-testing skill 'Golden / regression fixtures'",
+    "\u00a716.1"
+   ],
+   "description": "Store an 8-frame 64x64 float32 cube produced by NoiseStage from configs/sensors/flir_boson_640_lwir.yaml with sensor_seed 20260910, plus a sidecar with the config SHA-256 and numpy version; test compares with 1e-6 relative tolerance, reports stale-vs-failing, writes the actual array beside the expected one on failure. Regenerated only via `make golden-update`.",
+   "depends_on": [
+    "NOISE-10"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_boson_noise_golden: cube matches the stored reference to 1e-6 relative (catches any unintended change in seeding, ordering or magnitude; would also flag a NumPy stream change, which the sidecar distinguishes from a physics change)"
+   ],
+   "engine_free": true,
+   "size": "S"
+  },
+  {
+   "id": "NOISE-14",
+   "title": "Warp noise kernel (pipeline stage 5) mirroring NoiseStage, validated statistically against the CPU reference",
+   "spec_refs": [
+    "\u00a713.4 SPG#5",
+    "\u00a713.6 Path B",
+    "isaac-sim-spg skill 'Pipeline stages' 5"
+   ],
+   "description": "In src/irsim_isaac/pipeline/noise_warp.py: a Warp kernel applying T/V/H/TV/TH/VH/TVH + residual + defects on GPU arrays, with persistent GPU buffers for fixed patterns, drift and RTS state held by a Python-side object; seeded from the annotator frame index (or rtx.frameId when in SPG). Because Gaussian transforms differ between NumPy and curand/Warp, agreement is statistical, not bit-exact (ADR-4).",
+   "depends_on": [
+    "NOISE-10",
+    "NOISE-04",
+    "isaac: annotator/Warp pipeline skeleton with a persistent per-camera state object and a frame index source"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_gpu_vs_cpu_3d_ratios (@pytest.mark.gpu): decompose_3d on 200 GPU frames recovers the CPU-reference sigmas within 5 % (TVH, VH, H) \u2014 fails if any component is missing, mis-scaled, or axes swapped on the GPU",
+    "test_gpu_netd_bench (@pytest.mark.gpu): two-blackbody bench on GPU output within 10 % of 50 mK",
+    "test_gpu_state_persists (@pytest.mark.gpu): frame 2's fixed pattern correlates with frame 1's at r > 0.999 (fails if the pattern is regenerated per dispatch)"
+   ],
+   "engine_free": false,
+   "size": "L"
+  },
+  {
+   "id": "NOISE-15",
+   "title": "SPG noise.cu / noise.cu.lua / noise.usda port with rtx.frameId seeding",
+   "spec_refs": [
+    "\u00a713.2",
+    "\u00a713.4 SPG#5",
+    "\u00a713.5"
+   ],
+   "description": "Port stage 5 into an SPG shader triple in src/irsim_isaac/spg/. Requires a resolution of ambiguity 6 (persistent read-write buffers across frames in SPG). Seed from rtx.frameId; fixed patterns and bad-pixel map uploaded once via cuda.static. Validate with FileCapture of the float32 output against the Warp/CPU reference.",
+   "depends_on": [
+    "NOISE-14",
+    "isaac: working SPG stage 1 (band_radiance) proving the .cu/.cu.lua/.usda wiring and float32 AOV capture"
+   ],
+   "tests_that_would_fail_if_physics_wrong": [
+    "test_spg_vs_cpu_3d_ratios (@pytest.mark.isaac): captured 200-frame cube decomposes to the CPU sigmas within 5 % (TVH, VH, H), NETD bench within 10 %",
+    "test_spg_frameid_reproducibility (@pytest.mark.isaac): replaying the timeline from frame 0 twice yields bit-identical stage-5 outputs for the memoryless components"
+   ],
+   "engine_free": false,
+   "size": "L"
+  }
+ ],
+ "decisions_needing_adr": [
+  {
+   "title": "Which sigma the datasheet NETD anchors (\u03c3_TVH, temporal \u03c3, or \u03c3_total) and at what reference conditions",
+   "why": "\u00a710.2 line 725 says the ratios are 'in NETD units' (i.e. \u03c3_TVH = 1 NETD), \u00a79.4 line 669 and the skill line 59 define NETD from \u03c3_total, and \u00a715 line 1191 measures \u0394T\u00b7\u03c3_noise/\u0394DN without saying which \u03c3. For the Boson ratios the choices differ by 6 % (\u03c3_total/\u03c3_TVH = 1.060), within the 10 % bench tolerance but outside the 5 % component tolerance, so every downstream test depends on this. It also decides whether the config NETD refers to the configured lens F or a datasheet reference F (NETD \u221d F\u00b2, \u00a78.1 line 525).",
+   "options": [
+    "\u03c3_TVH = NETD (matches \u00a710.2 wording and per-pixel temporal NETD as FLIR measures it after NUC)",
+    "\u03c3_total = NETD (matches the \u00a79.4 formula literally; makes ratios shrink \u03c3_TVH below the datasheet figure)",
+    "temporal \u03c3 = sqrt(\u03c3_TVH\u00b2+\u03c3_TV\u00b2+\u03c3_TH\u00b2+\u03c3_T\u00b2) = NETD (matches what a per-pixel temporal std over frames on a real camera returns)",
+    "add netd_ref_f_number to the config and rescale by (F_cfg/F_ref)\u00b2 so lens trades change NETD"
+   ]
+  },
+  {
+   "title": "Noise-injection domain and unit per detector class",
+   "why": "CLAUDE.md #3 forbids Kelvin-space noise but leaves radiance vs electrons vs pre-quantised DN open. Bolometers have no electron count, photon FPAs do; \u00a72 places n_ij before Q. The choice fixes the interface of NoiseStage.apply and how sigmas are converted (dLb_dT vs \u2202N_e/\u2202T).",
+   "options": [
+    "band radiance (W m\u207b\u00b2 sr\u207b\u00b9) for bolometers and electrons for photon FPAs, converted by the respective derivative \u2014 unit-agnostic core",
+    "always electrons/'signal units' after S(\u03a6) with the detector supplying \u2202S/\u2202T",
+    "always pre-quantised DN with gain from the detector"
+   ]
+  },
+  {
+   "title": "Temporal evolution of fixed-pattern terms: OU mean-reverting vs pure random walk vs 1/f-shaped; and which components drift",
+   "why": "\u00a710.3 says 'slow random walk' but a true random walk has unbounded variance and would silently break the configured 3D ratios over long runs; \u00a710.2 says only \u03c3_VH drifts while \u00a710.3 says 'the fixed-pattern terms' (plural); \u00a710.1/\u00a710.2 fold 1/f into \u03c3_VH, which an OU process approximates with a Lorentzian rather than 1/f spectrum. \u00a78.2 line 543 additionally warns that global drift should come physically from \u03a6_self(T_housing), not from an arbitrary random walk \u2014 the ADR must state that the noise-area drift is pixel-level only.",
+   "options": [
+    "OU on VH, V, H with one \u03c4 = fpn_drift_tau_s (stationary, ratios preserved, Lorentzian temporal PSD)",
+    "OU on VH only, V/H frozen until FFC",
+    "sum of 2-3 OU processes with spread \u03c4 to approximate 1/f over 0.01-10 Hz (higher fidelity, more state)",
+    "pure random walk with reset at FFC (literal spec, variance grows between FFC events)"
+   ]
+  },
+  {
+   "title": "RNG scheme and GPU reproducibility contract",
+   "why": "The skill requires seeding from (frame_id, sensor_id); the spec seeds SPG from rtx.frameId. NumPy PCG64 + ziggurat cannot be reproduced bit-for-bit in CUDA/Warp; a counter-based Philox stream could match the 32-bit integers but not the Gaussian transform. The decision fixes whether golden tests are CPU-only and whether GPU tests are statistical (5 %/10 %) \u2014 and how frame_id, sensor_id and stream are combined (SeedSequence spawn vs hash).",
+   "options": [
+    "NumPy SeedSequence(sensor_seed, frame_id, stream) + PCG64 on CPU; GPU statistically equivalent only",
+    "Philox counter-based on both sides with Box-Muller implemented identically for bit-exact CPU/GPU",
+    "hash-based per-pixel RNG (e.g. PCG hash of (x, y, frame, stream)) implemented identically in NumPy and CUDA"
+   ]
+  },
+  {
+   "title": "Bad-pixel cluster process definition, type mix, RTS/blink parameters and replacement stencil",
+   "why": "\u00a710.4 only says 'Poisson cluster process' and lists four types; the config's bad_pixel_cluster_lambda has no stated meaning; switching rates, cluster radius, type proportions and the interpolation kernel (4- vs 8-neighbour, cluster handling) are all unspecified yet determine the footprint that Tier 4/5 say perception networks latch onto.",
+   "options": [
+    "Neyman-Scott: parents Poisson, 1+Poisson(\u03bb) offspring within radius 2 px; mix dead 0.4/hot 0.4/flicker 0.1/blink 0.1; 4-neighbour mean excluding bad neighbours, iterated",
+    "Mat\u00e9rn cluster with uniform disc radius from config",
+    "explicit measured map loaded from a file for a specific unit (data/bad_pixels/<sensor>.npy), generator as fallback"
+   ]
+  },
+  {
+   "title": "Physical noise sources are not synthesised individually; magnitude comes from the NETD anchor (fidelity deliberately skipped)",
+   "why": "\u00a710.1 lists Johnson, temperature-fluctuation, dark-shot and 1/f with formulas, but \u00a79.4 and Appendix A.7 anchor to the datasheet and the config carries no R, \u0394f or G_th. The ADR must state that bolometer noise is anchored-only, that photon shot noise IS physical and not rescaled (only read/1/f/FPN absorb the anchor), and what happens when the datasheet NETD is below the shot floor.",
+   "options": [
+    "anchor-only for bolometers; physical shot + anchored residual for photon FPAs; raise if infeasible",
+    "add g_th_w_per_k and \u0394f to the fpa schema and assert config NETD \u2265 temperature-fluctuation floor as a sanity check",
+    "full first-principles synthesis (Appendix A.7 says out of scope)"
+   ]
+  },
+  {
+   "title": "Module ownership split for NUC residual, bad-pixel replacement and the FFC freeze between irsim.noise and irsim.isp",
+   "why": "CLAUDE.md layout assigns 'NUC residual' to noise/ and 'NUC' to isp/; \u00a711.1 places bad-pixel replacement and NUC in the post-ADC signal chain while \u00a713.4 SPG#5 (noise) does 'NUC residual + bad pixels' before SPG#6 (isp); \u00a710.4 says simulate defect AND replacement in the noise section. Two teams could implement the same thing twice or leave the freeze unowned.",
+   "options": [
+    "noise owns residual pattern, defects and replacement footprint; isp owns 2-pt correction arithmetic and the ffc_freeze_ms image hold; pipeline sequences the FFC event",
+    "isp owns everything after quantisation including replacement, noise only injects defects",
+    "a single 'fpa_behaviour' module spanning both"
+   ]
+  },
+  {
+   "title": "Spatial whiteness of \u03c3_VH and \u03c3_TVH",
+   "why": "\u00a710.2 synthesises \u03c3_VH as a Gaussian field (implicitly white). Real bolometer FPN and the post-NUC residual have some spatial correlation, and \u00a715 Tier 4(c) compares PSD shape within a factor of 2. Choosing white now is fine but must be recorded so the PSD comparison knows what to revisit.",
+   "options": [
+    "white (i.i.d.) VH and TVH \u2014 spec-literal, revisit when Tier 4 PSD fails",
+    "optional low-pass (1-2 px Gaussian) on VH with a config knob",
+    "PSD-shaped synthesis from a measured spectrum file"
+   ]
+  }
+ ],
+ "ambiguities_and_risks": [
+  {
+   "description": "NETD anchor target is ambiguous (\u03c3_TVH vs \u03c3_total vs temporal \u03c3) \u2014 see ADR-1. The Boson ratios make the choices differ by 6 %, so a 5 % component test written against the wrong convention will fail for reasons that look like a bug.",
+   "how_to_verify": "Before NOISE-05, compute both conventions numerically for the Boson ratios, record the 6 % gap in the ADR, and write the bench test to assert against the chosen convention explicitly. Cross-check with how FLIR quotes Boson NETD (temporal, per pixel, after NUC, at F/1.0, 300 K scene) from the datasheet cited as [R38]."
+  },
+  {
+   "description": "The 3D-noise decomposition estimator is not given in the spec (it defers to [R28]). Naive directional-average estimators are biased by leakage of larger components (e.g. naive \u03c3_V\u00b2 picks up \u03c3_VH\u00b2/W = 0.0014 against a true 0.0064 \u2014 an 11 % bias) and \u03c3_T (0.02\u00b7\u03c3_TVH) has a sampling error of ~5 % at 1\u03c3 with 200 frames. The skill's flat 'recover within 5 %' is not attainable for the small components.",
+   "how_to_verify": "Derive the leakage terms analytically for each of the seven estimators, implement bias correction in NOISE-04, and run the round trip over 20 seeds to measure the empirical spread; set per-component tolerances from that spread (TVH/VH/H 5 %, V/TV/TH 10 % or 0.01\u00b7\u03c3_TVH, T 15 %) and document them in the test."
+  },
+  {
+   "description": "`bad_pixel_cluster_lambda: 1.6` has no definition anywhere in the spec; `fpn_drift_tau_s` is not stated to apply to V and H as well as VH; flicker/blink switching rates and amplitudes are undefined; the replacement stencil is undefined.",
+   "how_to_verify": "Cannot be verified from the spec. Define each in ADR-3/ADR-5, put every new knob in NoiseConfig with a default, and confirm the resulting footprint against a real FLIR ADK flat region (Tier 4) when data is available; until then tests assert only self-consistency."
+  },
+  {
+   "description": "Double counting risk between the additive \u03c3_VH (\u00a710.2) and the multiplicative gain residual g_ij (\u00a72, \u00a711.2): on a uniform 300 K scene they are indistinguishable, so a uniform-field bench cannot detect that both were tuned to the same number.",
+   "how_to_verify": "Use gbuffer_ramp (250-450 K): the spatial std of the fixed pattern must grow with signal only through the gain term; NOISE-09's test_gain_residual_is_scene_dependent pins the slope, and the anchor must be defined on the uniform 300 K field so \u03c3_VH is the post-NUC additive part only."
+  },
+  {
+   "description": "Whether the datasheet NETD absorbs the configured lens: NETD \u221d F\u00b2 (\u00a78.1). If the config lens is F/1.4 but the 50 mK figure was measured at F/1.0, anchoring at the configured F under-estimates noise by 2\u00d7.",
+   "how_to_verify": "Read the Boson datasheet [R38] for the NETD measurement conditions; add `netd_ref_f_number` (and scene T) to the schema and apply (F_cfg/F_ref)\u00b2 in NOISE-05; test that changing f_number from 1.0 to 1.4 doubles the anchored \u03c3."
+  },
+  {
+   "description": "Isaac Sim 6.0 SPG persistent state: the noise stage needs read-modify-write buffers that survive between frames (drift, RTS states, bolometer IIR). \u00a713.2 documents `cuda.static` as a cache keyed on arguments, not as a writable persistent buffer; whether a `.cu.lua` script may keep a mutable device buffer across invocations is undocumented.",
+   "how_to_verify": "Write a minimal SPG shader whose Lua script allocates a 1-element buffer once and whose kernel increments it every frame; capture with FileCapture over 10 frames and check the counter reaches 10. If it fails, keep stage 5 in Path B (Warp) where Python owns the state, and record in ADR/README that SPG#5 is deferred."
+  },
+  {
+   "description": "`rtx.frameId` semantics are unverified: is it monotonic per render product, does it reset on timeline stop/start, does it advance for unrendered frames? This decides whether seeding from it gives replayable noise.",
+   "how_to_verify": "Log rtx.frameId from a trivial SPG Lua script across timeline stop/play/reset and across two render products in Isaac Sim 6.0; if unreliable, pass an explicit frame counter as a value input instead."
+  },
+  {
+   "description": "NumPy Generator stream stability: numpy documents that bit streams may change between major versions, so the golden fixture (NOISE-13) and bit-identical replay tests could break on an upgrade and look like a physics regression.",
+   "how_to_verify": "Store the numpy version in the golden sidecar and pin numpy in the dev extras; the golden test must report 'stale (numpy version changed)' distinctly from 'failing'."
+  },
+  {
+   "description": "Unit-suite time budget (< 30 s total): decomposition and drift tests need hundreds of frames; at 640x512 that is tens of MB per 100 frames and seconds per test.",
+   "how_to_verify": "Keep all unit benches at gbuffer_uniform's 64x64 (200 frames = 0.8 M samples) or 32x32 for the 3000-frame drift test; time the suite in CI and mark any full-resolution bench @pytest.mark.slow."
+  },
+  {
+   "description": "Quantisation LSB vs NETD: \u00a72 puts noise before Q, but if the detector's 16-bit range spans the full 200-1000 K LUT the LSB in kelvin-equivalent could approach the NETD and the DN-domain bench would read a quantisation-inflated NETD.",
+   "how_to_verify": "In the detector config validation assert LSB (in mK via dLb_dT at 300 K) < NETD/4; NOISE-10's DN bench should also be run against the radiance-domain bench and agree within 3 %."
+  },
+  {
+   "description": "Bad-pixel replacement algorithms of real cores are proprietary; the footprint we simulate (4-neighbour mean) may differ in shape from the Boson's, and \u00a710.4 says the footprint is what perception sees.",
+   "how_to_verify": "Tier 4: locate replaced pixels in real ADK frames (they appear as local Laplacian minima at fixed positions) and compare the edge-spread of the footprint with the simulated one; adjust the stencil in ADR-5 if the shape differs."
+  },
+  {
+   "description": "The temperature-fluctuation floor \u221a(4k_B T\u00b2 G_th \u0394f) (\u00a710.1) cannot be evaluated because G_th and \u0394f are not in the fpa schema; a config NETD below the physical floor would go unnoticed.",
+   "how_to_verify": "Decide in ADR-6 whether to add g_th_w_per_k and bandwidth_hz to the schema; if added, write a test that the Boson config's 50 mK is above the computed floor (expected a few mK for 12 \u00b5m VOx at 30 Hz)."
+  },
+  {
+   "description": "conftest.py says 'Every test that uses randomness must take this [rng fixture]' while the skill says seed from (frame_id, sensor_id); tests that construct NoiseStage with an explicit sensor_seed will not use the fixture.",
+   "how_to_verify": "Agree the convention in the first noise PR: physics tests seed via the stage API with a literal seed; the rng fixture is for ad-hoc sampling. Update the conftest docstring accordingly."
+  }
+ ],
+ "non_negotiables_touched": [
+  "#1 Engine-free core: all of NOISE-01..13 live in src/irsim/noise and import only numpy/scipy/pydantic; tests/unit/test_layering.py is parametrised over every src/irsim/*.py so new files are checked automatically. Warp/SPG code (NOISE-14/15) goes in src/irsim_isaac only.",
+  "#2 float32 or better everywhere: NoiseStage asserts float32 input/output and float32 persistent state (fixed patterns, drift, residual fields); NOISE-10 test_float32_boundary rejects float16 input; NOISE-03 test_output_is_float32; golden fixture stored as float32 .npy. Drift accumulation in float32 checked for zero-mean by NOISE-06 test_mean_stays_zero.",
+  "#3 Noise in radiance/electron space, never Kelvin: NOISE-05 converts netd_mk_at_300k to radiance via (\u2202L/\u2202T)_B(300 K) and the tests test_netd_falls_with_scene_temperature (ratio in [0.5, 0.7], identity to dLb_dT ratio) and test_kelvin_sigma_not_constant would both pass trivially at 1.0 \u2014 i.e. fail \u2014 if noise were added in Kelvin. NOISE-11 does the electron-space equivalent for photon FPAs.",
+  "#5 Aperture factor \u03c0/(4F\u00b2+1) from irsim.optics only: NOISE-11's \u2202N_e/\u2202T must import optics.aperture_factor; test_aperture_factor_plus_one detects the 20 % difference at F/1.0. Note \u00a79.4's datasheet form (4F\u00b2) is not to be implemented.",
+  "#6 One WeatherSeries: not directly touched, but NOISE-09 must take T_FPA from the detector's FPA thermal model (which derives ambient from the single WeatherSeries) rather than accepting an independent ambient temperature; the NucResidual API takes T_FPA as an input scalar, never weather."
+ ],
+ "spec_internal_inconsistencies": [
+  "\u00a79.4 line 661 quotes the datasheet NETD form with 4F\u00b2 (NETD = 4F\u00b2V_n/(R\u00b7A_d\u00b7L')) while \u00a72 line 112, \u00a79.4 line 671 (photon-count form) and CLAUDE.md non-negotiable #5 mandate \u03c0/(4F\u00b2+1). Only the photon-count form should be coded; the 4F\u00b2 form is a quotation of [R26].",
+  "\u00a710.2 line 725 defines the ratio table 'all in NETD units' with \u03c3_TVH = 1.0 (NETD anchors \u03c3_TVH), but \u00a79.4 lines 669-674 define NETD = \u03c3_N,total/(\u2202N_e/\u2202T) with \u03c3_total including every term, and the skill line 59 repeats 'NETD = \u03c3_total / (\u2202N_e/\u2202T)'. For the Boson ratios \u03c3_total = 1.060\u00b7\u03c3_TVH \u2014 the two definitions differ by 6 %.",
+  "\u00a710.2 table lines 708-716 lists seven components; line 725 gives starting ratios for only four (TVH, VH, H, V); \u00a712.2 lines 865-872 and the Boson YAML add tv 0.05, th 0.05, t 0.02 with no source. \u00a715 line 1192 asks to decompose only four components (\u03c3_TVH, \u03c3_VH, \u03c3_V, \u03c3_H) while the skill line 164 says 'recover the ratios within 5 %' for all synthesised ratios; 5 % is statistically unattainable for \u03c3_T = 0.02 from 200 frames.",
+  "\u00a710.3 line 731 prescribes a 'slow random walk' for fixed-pattern terms, \u00a710.2 line 711 says 'slowly drifting', and \u00a78.2 line 543 says that if you model optics self-emission 'you get NUC behaviour for free; skip it and you have to fake NUC drift with an arbitrary random walk' \u2014 the spec both mandates and disparages the random walk. Resolution: pixel-level pattern drift (noise area) and global offset drift from \u03a6_self(T_housing) (optics area) are different effects; a pure random walk also violates the stationary variance implied by fixed ratios.",
+  "\u00a710.3 says only that fixed-pattern 'terms' drift; \u00a710.2 line 711 marks only \u03c3_VH as drifting while \u03c3_V (line 712) and \u03c3_H (line 713) are 'fixed'. The config exposes a single fpn_drift_tau_s.",
+  "Module ownership: CLAUDE.md layout gives noise/ '3D noise model, FPN, bad pixels, NUC residual' and isp/ 'NUC, AGC, DDE, palette'. \u00a711 line 745 says the signal chain is 'everything after the ADC' and \u00a711.1 line 750 puts 'bad-pixel replace \u2192 NUC' there, whereas \u00a713.4 lines 1018-1019 put '3D noise + NUC residual + bad pixels' in SPG#5 (noise) before SPG#6 (isp), and \u00a710.4 line 738 puts the replacement in the noise section. \u00a72 line 70 places g_ij, o_ij and n_ij before Q (pre-ADC), which contradicts 'after the ADC' for the residual.",
+  "\u00a716.4 step 4 (line 1301) is 'Detector + 3D noise + NETD calibration' and step 9 (line 1306) is 'Bolometer time constant, NUC/FFC, bad pixels', but the \u00a71 fidelity ladder (line 54) makes 'full FPA chain + 3D noise' the L2 target and lists 'bolometer dynamics' as L3 (line 55) \u2014 the build order includes an L3 item before the L2 second band, while the skill's test list (line 165) treats bolometer smear as a core noise-chain test. Bolometer IIR is detector-area work, not noise; planners should not schedule it under noise.",
+  "\u00a710.1 line 700 says FPN is 'scene-dependent' (multiplicative gain non-uniformity) but the \u00a710.2 synthesis recipe is purely additive; scene dependence only enters through g_ij in \u00a72 / the \u00a711.2 gain residual \u2014 the spec never says which module carries it, creating a double-counting hazard.",
+  "\u00a710.1 gives explicit formulas for Johnson (\u221a(4k_B T R \u0394f)) and temperature-fluctuation (\u221a(4k_B T\u00b2 G_th \u0394f)) noise but neither \u00a712.2 nor the Boson YAML carries R, \u0394f or G_th, and Appendix A.7 line 1392 states NETD is anchored, not predicted \u2014 the formulas cannot be evaluated from the config as specified.",
+  "tests/conftest.py line 13 docstring: 'Every test that uses randomness must take this [rng fixture]' conflicts with the skill line 101 'Seed all noise deterministically from (frame_id, sensor_id)' \u2014 the stage API will carry its own seeds and most noise tests will not use the fixture.",
+  "\u00a713.2 line 959 and the isaac skill line 50 seed temporal noise from rtx.frameId only; the skill's (frame_id, sensor_id) rule needs a per-camera identifier that \u00a713 never provides for multi-camera (TiledCameraSensor, \u00a713.8) setups."
+ ]
+}
