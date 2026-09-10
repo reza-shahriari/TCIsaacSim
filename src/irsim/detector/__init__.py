@@ -10,6 +10,7 @@ from irsim.detector.bolometer import (
     static_responsivity_v_per_w,
 )
 from irsim.detector.params import BolometerParams, FpaParams, PhotonParams, fpa_params_from_config
+from irsim.detector.photon import electrons_to_dn, electrons_to_signal_dn, photoelectrons
 from irsim.detector.quantise import dn_max_for_bits, quantise
 
 __all__ = [
@@ -23,4 +24,7 @@ __all__ = [
     "static_responsivity_v_per_w",
     "quantise",
     "dn_max_for_bits",
+    "photoelectrons",
+    "electrons_to_signal_dn",
+    "electrons_to_dn",
 ]

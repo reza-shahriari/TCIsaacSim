@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
 | `optics` | 🟡 partial | T1 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016) |
-| `detector` | 🟡 partial | T1 | `FpaParams`; ideal bolometer static transfer (linear DN-per-W gain, ADR 0019) and the shared floor-and-clip quantiser; photon transfer pending |
+| `detector` | 🟡 partial | T1 | `FpaParams`; ideal bolometer static transfer (linear DN-per-W gain, ADR 0019), ideal photon transfer (η applied once, 17/5 aperture identity), shared floor-and-clip quantiser |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms; optics extensions (housing, supersample, MTF, vignetting map) and derived A_d / active width / ξ_c, schema v2 (ADR 0017) |
