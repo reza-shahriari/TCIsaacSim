@@ -1,0 +1,292 @@
+"""Sensor configuration schema: the typed, validated form of a §12.2 camera file.
+
+A band is a data file (docs/physics-model.md §12). This module is the contract for that file:
+every field of §12.2 with units in its name, every ``a | b | c`` comment a ``Literal``, and the
+physical constraints a value must satisfy checked here, once, so nothing downstream re-validates.
+Models are frozen and reject unknown keys (a typo such as ``f_stop`` must fail, not default).
+
+Deliberately absent: an aperture-factor property. The factor π/(4F² + 1) is defined once in
+``irsim.optics`` (CLAUDE.md non-negotiable #5); the config exposes ``f_number`` only.
+
+Loading YAML, resolving data paths and hashing are the loader's job (``irsim.config.loader``);
+this module builds from plain dictionaries.
+
+docs/physics-model.md §12.1, §12.2, §16.1; §8.1, §8.3, §9.1-§9.4, §10.2, §11.2-§11.4 for the
+meaning of the individual fields.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from irsim.radiometry.constants import WAVELENGTH_MAX_UM, WAVELENGTH_MIN_UM
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "SensorConfig",
+    "SensorSpec",
+    "BandSpec",
+    "OpticsSpec",
+    "DistortionSpec",
+    "BolometerFpa",
+    "PhotonFpa",
+    "FpaSpec",
+    "NoiseSpec",
+    "Ratios3D",
+    "NucSpec",
+    "IspSpec",
+    "OutputsSpec",
+]
+
+SCHEMA_VERSION = 1
+
+Regime = Literal["emissive", "reflective", "mixed"]
+HousingTempMode = Literal["fixed", "ambient", "coupled"]
+DistortionModel = Literal["brown_conrady", "kannala_brandt", "ftheta"]
+NucMode = Literal["shuttered", "shutterless", "ideal"]
+AgcMode = Literal["linear", "plateau_equalization", "none"]
+Polarity = Literal["white_hot", "black_hot"]
+# §11.4 lists ironbow/rainbow/lava/arctic and §12.2 gray/ironbow/rainbow/lava: both accepted (S27).
+Palette = Literal["gray", "ironbow", "rainbow", "lava", "arctic"]
+
+# Regime-vs-wavelength consistency (§12.1): self-emission at scene temperatures is negligible
+# below ~2.5 µm and reflected sunlight is negligible beyond ~3 µm.
+EMISSIVE_MIN_LAMBDA_MAX_UM = 2.5
+REFLECTIVE_MAX_LAMBDA_MIN_UM = 3.0
+
+
+class _Frozen(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class BandSpec(_Frozen):
+    """§12.2 ``band``. ``spectral_response`` is a path relative to the data root; the loader
+    resolves it (M0.8) and the response file contract lives in ``irsim.radiometry`` (M1.3)."""
+
+    lambda_min_um: float = Field(gt=0)
+    lambda_max_um: float = Field(gt=0)
+    spectral_response: str
+    regime: Regime
+
+    @model_validator(mode="after")
+    def _physical(self) -> BandSpec:
+        lo, hi = self.lambda_min_um, self.lambda_max_um
+        if not (WAVELENGTH_MIN_UM <= lo < hi <= WAVELENGTH_MAX_UM):
+            raise ValueError(
+                f"band [{lo}, {hi}] um must satisfy {WAVELENGTH_MIN_UM} <= min < max <= "
+                f"{WAVELENGTH_MAX_UM} -- wavelengths are MICROMETRES (7500 means nanometres)"
+            )
+        if self.regime == "emissive" and hi < EMISSIVE_MIN_LAMBDA_MAX_UM:
+            raise ValueError(
+                f"regime 'emissive' with lambda_max {hi} um: self-emission at scene temperatures "
+                f"is negligible below {EMISSIVE_MIN_LAMBDA_MAX_UM} um (§12.1)"
+            )
+        if self.regime == "reflective" and lo > REFLECTIVE_MAX_LAMBDA_MIN_UM:
+            raise ValueError(
+                f"regime 'reflective' with lambda_min {lo} um: reflected sunlight is negligible "
+                f"beyond {REFLECTIVE_MAX_LAMBDA_MIN_UM} um; use 'mixed' or 'emissive' (§12.1)"
+            )
+        return self
+
+
+class DistortionSpec(_Frozen):
+    """§12.2 ``optics.distortion``; applied by the engine, stored here as schema (ADR 0015)."""
+
+    model: DistortionModel
+    coeffs: list[float]
+
+    @model_validator(mode="after")
+    def _coeff_count(self) -> DistortionSpec:
+        expected = {"brown_conrady": 5, "kannala_brandt": 4}.get(self.model)
+        if expected is not None and len(self.coeffs) != expected:
+            raise ValueError(f"{self.model} takes {expected} coefficients, got {len(self.coeffs)}")
+        if self.model == "ftheta" and not self.coeffs:
+            raise ValueError("ftheta needs at least one coefficient")
+        return self
+
+
+class OpticsSpec(_Frozen):
+    """§12.2 ``optics``. No aperture factor here -- see ``irsim.optics`` (non-negotiable #5)."""
+
+    f_number: float = Field(gt=0)
+    focal_length_mm: float = Field(gt=0)
+    transmittance: float = Field(gt=0, le=1)
+    housing_temp_mode: HousingTempMode
+    cold_shield_efficiency: float = Field(ge=0, le=1)
+    distortion: DistortionSpec
+    vignetting_cos4: bool
+
+
+class _FpaCommon(_Frozen):
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    pitch_um: float = Field(gt=0)
+    fill_factor: float = Field(gt=0, le=1)
+    frame_rate_hz: float = Field(gt=0)
+    bit_depth: int = Field(ge=8, le=16)
+
+
+class BolometerFpa(_FpaCommon):
+    """§12.2 ``fpa`` with ``type: bolometer`` (§9.2). Photon fields may be present only as
+    ``null`` (the spec example writes them that way) -- a value is an error."""
+
+    type: Literal["bolometer"]
+    thermal_time_constant_ms: float = Field(gt=0)
+    tcr_per_k: float
+    quantum_efficiency: None = None
+    well_capacity_e: None = None
+    integration_time_ms: None = None
+    dark_current_model: None = None
+
+    @model_validator(mode="after")
+    def _tcr(self) -> BolometerFpa:
+        if self.tcr_per_k == 0:
+            raise ValueError("tcr_per_k must be non-zero (VOx/a-Si are about -0.02 /K)")
+        return self
+
+
+class PhotonFpa(_FpaCommon):
+    """§12.2 ``fpa`` with ``type: photon`` (§9.1). Bolometer fields may be present only as
+    ``null``."""
+
+    type: Literal["photon"]
+    quantum_efficiency: float = Field(gt=0, le=1)
+    well_capacity_e: float = Field(gt=0)
+    integration_time_ms: float = Field(gt=0)
+    dark_current_model: str
+    thermal_time_constant_ms: None = None
+    tcr_per_k: None = None
+
+    @model_validator(mode="after")
+    def _integration_fits_frame(self) -> PhotonFpa:
+        if self.integration_time_ms > 1000.0 / self.frame_rate_hz:
+            raise ValueError(
+                f"integration_time_ms {self.integration_time_ms} exceeds the frame period "
+                f"{1000.0 / self.frame_rate_hz:.3f} ms"
+            )
+        return self
+
+
+FpaSpec = Annotated[BolometerFpa | PhotonFpa, Field(discriminator="type")]
+
+
+class Ratios3D(_Frozen):
+    """§10.2 NVESD components relative to σ_TVH; ``tvh`` is the unit and must be exactly 1."""
+
+    tvh: float = Field(ge=0)
+    vh: float = Field(ge=0)
+    h: float = Field(ge=0)
+    v: float = Field(ge=0)
+    tv: float = Field(ge=0)
+    th: float = Field(ge=0)
+    t: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _unit(self) -> Ratios3D:
+        if self.tvh != 1.0:
+            raise ValueError("ratios_3d.tvh is the reference and must be exactly 1.0")
+        return self
+
+
+class NoiseSpec(_Frozen):
+    """§12.2 ``noise``; ``netd_mk_at_300k`` anchors everything (§9.4)."""
+
+    netd_mk_at_300k: float = Field(gt=0)
+    ratios_3d: Ratios3D
+    fpn_drift_tau_s: float = Field(gt=0)
+    bad_pixel_fraction: float = Field(ge=0, le=0.01)
+    bad_pixel_cluster_lambda: float = Field(ge=0)
+
+
+class NucSpec(_Frozen):
+    """§12.2 ``nuc`` (§11.2)."""
+
+    mode: NucMode
+    ffc_interval_s: float = Field(gt=0)
+    ffc_freeze_ms: float = Field(ge=0)
+    residual_gain_ppm_per_k: float = Field(ge=0)
+    residual_offset_mk_per_k: float = Field(ge=0)
+
+
+class IspSpec(_Frozen):
+    """§12.2 ``isp`` (§11.3, §11.4)."""
+
+    agc: AgcMode
+    plateau: float = Field(gt=0, lt=1)
+    clip_percentiles: tuple[float, float]
+    gamma: float = Field(gt=0)
+    dde_gain: float = Field(ge=0)
+    polarity: Polarity
+    palette: Palette
+
+    @model_validator(mode="after")
+    def _clip(self) -> IspSpec:
+        lo, hi = self.clip_percentiles
+        if not (0.0 <= lo < hi <= 1.0):
+            raise ValueError(
+                f"clip_percentiles must be ordered fractions in [0, 1], got {lo}, {hi}"
+            )
+        return self
+
+
+class OutputsSpec(_Frozen):
+    radiance_linear: bool
+    apparent_temperature: bool
+    dn_16: bool
+    display_8: bool
+
+
+class SensorSpec(_Frozen):
+    """The ``sensor:`` block, with the derived read-only quantities the kernels need."""
+
+    name: str = Field(min_length=1)
+    band: BandSpec
+    optics: OpticsSpec
+    fpa: FpaSpec
+    noise: NoiseSpec
+    nuc: NucSpec
+    isp: IspSpec
+    outputs: OutputsSpec
+
+    @property
+    def pixel_area_m2(self) -> float:
+        """Photosensitive area A_d = pitch² · fill_factor, in m² (§9.1)."""
+        return (self.fpa.pitch_um * 1e-6) ** 2 * self.fpa.fill_factor
+
+    @property
+    def nyquist_cyc_per_mm(self) -> float:
+        """Detector Nyquist frequency 1 / (2 · pitch), cycles per mm (§8.3)."""
+        return 1000.0 / (2.0 * self.fpa.pitch_um)
+
+    @property
+    def hfov_deg(self) -> float:
+        """Horizontal field of view of a pinhole with this focal length, degrees."""
+        half_width_mm = self.fpa.width * self.fpa.pitch_um * 1e-3 / 2.0
+        return math.degrees(2.0 * math.atan(half_width_mm / self.optics.focal_length_mm))
+
+    @property
+    def frame_period_s(self) -> float:
+        return 1.0 / self.fpa.frame_rate_hz
+
+    @property
+    def dn_max(self) -> int:
+        return int(2**self.fpa.bit_depth - 1)
+
+
+class SensorConfig(_Frozen):
+    """A whole sensor file: ``schema_version`` (default 1) and the ``sensor:`` block."""
+
+    schema_version: int = SCHEMA_VERSION
+    sensor: SensorSpec
+
+    @model_validator(mode="after")
+    def _version(self) -> SensorConfig:
+        if self.schema_version != SCHEMA_VERSION:
+            raise ValueError(
+                f"schema_version {self.schema_version} not supported (this code reads "
+                f"{SCHEMA_VERSION})"
+            )
+        return self

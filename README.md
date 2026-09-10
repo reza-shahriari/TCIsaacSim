@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
-| `config` | 🟡 partial | T1 | `GBuffer` contract (frozen key set, float16 refused on the T/radiance path); sensor schema pending |
+| `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` for §12.2 with physical validation and derived quantities (ADR 0007); YAML loader/hashes pending |
 | `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_
