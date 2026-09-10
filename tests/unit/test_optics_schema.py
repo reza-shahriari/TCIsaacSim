@@ -43,7 +43,7 @@ def test_boson_derived_quantities_match_spec_worked_numbers() -> None:
 
 def test_new_fields_default_and_schema_version() -> None:
     cfg = SensorConfig.model_validate(BOSON)
-    assert cfg.schema_version == SCHEMA_VERSION == 2
+    assert cfg.schema_version == SCHEMA_VERSION == 3
     o = cfg.sensor.optics
     assert o.supersample_factor == 4 and o.housing_temp_k is None and o.vignetting_map is None
     assert o.mtf.aberration_sigma_um == 0.0 and o.mtf.apply_motion_mtf is False

@@ -35,6 +35,7 @@ __all__ = [
     "DistortionSpec",
     "BolometerFpa",
     "PhotonFpa",
+    "DarkCurrentSpec",
     "FpaSpec",
     "NoiseSpec",
     "Ratios3D",
@@ -43,9 +44,9 @@ __all__ = [
     "OutputsSpec",
 ]
 
-SCHEMA_VERSION = (
-    2  # 2: optional optics fields (housing, supersample, mtf, vignetting_map), ADR 0017
-)
+# 2: optional optics fields (housing, supersample, mtf, vignetting_map); 3: optional detector
+# constants (bolometer thermal/bias, photon dark current & read noise, FPA thermal node). ADR 0017.
+SCHEMA_VERSION = 3
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -180,6 +181,14 @@ class OpticsSpec(_Frozen):
         return self
 
 
+class DarkCurrentSpec(_Frozen):
+    """§9.1 Arrhenius dark current: i(T) = i_ref (T/T_ref)^{3/2} exp(−E_g/2k (1/T − 1/T_ref))."""
+
+    i_ref_a_per_pixel: float = Field(ge=0)
+    t_ref_k: float = Field(gt=0)
+    band_gap_ev: float = Field(gt=0)
+
+
 class _FpaCommon(_Frozen):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
@@ -187,6 +196,10 @@ class _FpaCommon(_Frozen):
     fill_factor: float = Field(gt=0, le=1)
     frame_rate_hz: float = Field(gt=0)
     bit_depth: int = Field(ge=8, le=16)
+    # FPA thermal node (§9.2 "FPA temperature coupling"), distinct from the optics housing node.
+    fpa_temp_k: float | None = Field(default=None, gt=0)
+    fpa_tau_s: float | None = Field(default=None, gt=0)
+    fpa_self_heating_k: float = Field(default=0.0, ge=0)
 
 
 class BolometerFpa(_FpaCommon):
@@ -196,6 +209,11 @@ class BolometerFpa(_FpaCommon):
     type: Literal["bolometer"]
     thermal_time_constant_ms: float = Field(gt=0)
     tcr_per_k: float
+    # §9.2 membrane and readout constants the §12.2 block omits (ADR 0017); typical VOx values.
+    absorptance: float = Field(default=0.8, gt=0, le=1)
+    g_th_w_per_k: float = Field(default=1e-7, gt=0)
+    bias_current_a: float = Field(default=50e-6, gt=0)
+    resistance_ohm: float = Field(default=1e5, gt=0)
     quantum_efficiency: None = None
     well_capacity_e: None = None
     integration_time_ms: None = None
@@ -217,6 +235,9 @@ class PhotonFpa(_FpaCommon):
     well_capacity_e: float = Field(gt=0)
     integration_time_ms: float = Field(gt=0)
     dark_current_model: str
+    # §9.1 parameters the §12.2 block omits (ADR 0017): required by the noise stage (M4).
+    read_noise_e: float | None = Field(default=None, ge=0)
+    dark_current: DarkCurrentSpec | None = None
     thermal_time_constant_ms: None = None
     tcr_per_k: None = None
 

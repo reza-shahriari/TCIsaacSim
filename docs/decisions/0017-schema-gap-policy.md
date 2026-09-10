@@ -26,7 +26,7 @@ Option 3. Rules:
 
 - A field the spec omits is added to the pydantic schema as **optional with a default**, with units in
   its name, bounds, and cross-field checks. It is listed in this ADR's table and proposed for §12.2.
-- `schema_version` is bumped for every additive change (now **2**); the loader accepts only the
+- `schema_version` is bumped for every additive change (now **3**: v2 optics fields, v3 detector constants); the loader accepts only the
   current version so a mismatch is loud. Files without `schema_version` take the current default.
 - Defaults must be *conservative physics*, not convenient zeros, unless zero is the physical
   "feature absent" (aberration σ = 0, self-heating 0).
@@ -41,6 +41,12 @@ Option 3. Rules:
 | `optics.mtf.aberration_sigma_um` | 0 | Gaussian fitted from a slant edge (§8.3) |
 | `optics.mtf.reference_wavelength_um` | band centre | λ for ξ_c = 1/(λF) |
 | `optics.mtf.apply_motion_mtf` | false | motion term for photon FPAs (ADR 0059) |
+| `fpa.absorptance` (bolometer) | 0.8 | α_abs of the membrane (§9.2) |
+| `fpa.g_th_w_per_k` (bolometer) | 1e-7 | thermal conductance G_th; C_th = τ_th·G_th |
+| `fpa.bias_current_a`, `fpa.resistance_ohm` (bolometer) | 50 µA, 100 kΩ | readout constants for R₀ = α β I R / G_th (§9.2), reported only |
+| `fpa.read_noise_e` (photon) | none | σ_read; the noise stage (M4) requires it |
+| `fpa.dark_current` (photon) | none | `{i_ref_a_per_pixel, t_ref_k, band_gap_ev}` Arrhenius sub-model (§9.1) |
+| `fpa.fpa_temp_k`, `fpa.fpa_tau_s`, `fpa.fpa_self_heating_k` | none / none / 0 | FPA thermal node, distinct from the optics housing node (§9.2) |
 
 Derived read-only quantities added: `detector_active_area_m2` (= `pixel_area_m2`), `active_width_um`
 = √fill · pitch (the MTF_det box width, ADR 0020), `reference_wavelength_um`, `cutoff_cyc_per_mm`.
