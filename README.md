@@ -27,7 +27,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
-| `optics` | ⬜ not started | — | |
+| `optics` | 🟡 partial | T1 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power |
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
