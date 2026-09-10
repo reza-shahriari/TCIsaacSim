@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.radiometry.band_integration`: the reference oracle — `band_radiance`, `band_photon_radiance`,
+  `d_band_radiance_dT`, `d_band_photon_radiance_dT` by composite Simpson on an odd, edge-aligned 0.01 µm
+  grid (NumPy only, float64, vectorised over T). Top-hat vs closed form: 7.5-13.5 um @ 300 K: 3.3e-11 rel, 0.000 mK; 3.0-5.0 um @ 300 K: 3.1e-11 rel, 0.000 mK; 3.0-5.0 um @ 500 K: 5.7e-11 rel, 0.000 mK; 0.9-1.7 um @ 300 K: 1.5e-06 rel, 0.016 mK.
+  Derivative vs FD < 1e-5 over 200–1000 K; dLb/dT(373)/dLb/dT(300) = 1.736 for 7.5–13.5 µm.
 - `irsim.radiometry.spectral_response`: R(λ) file contract and loader (two-column CSV, `#` provenance,
   µm strictly increasing, R in [0, 1], peak == 1 ± 1e-6 asserted never renormalised, zero outside support,
   half-power points, resampling) and `irsim.radiometry.band.Band` (config edges must agree with the file's
@@ -85,5 +89,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ruff ignores `N802` alongside `N803`/`N806` (physics notation such as `d_spectral_radiance_dT`).
 
 ### Fixed
+- `SpectralResponse.resampled` snaps grid points within 1e-9 µm of the support edges: a grid built as
+  `lo + k·dl` lands 2e-16 µm past the last sample and lost the endpoint (a 5 % error for SWIR at 300 K).
 - `make check` is green on the scaffold: three files reformatted, one `Any` return in
   `irsim.radiometry.planck` typed explicitly.

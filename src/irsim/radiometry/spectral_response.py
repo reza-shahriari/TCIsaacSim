@@ -35,12 +35,14 @@ __all__ = [
     "SpectralResponse",
     "load_spectral_response",
     "PEAK_TOLERANCE",
+    "EDGE_SNAP_UM",
     "RESAMPLE_DL_UM",
     "RESPONSE_LAMBDA_MIN_UM",
     "RESPONSE_LAMBDA_MAX_UM",
 ]
 
 PEAK_TOLERANCE = 1e-6
+EDGE_SNAP_UM = 1e-9  # floating-point slack when a grid point should coincide with a support edge
 RESAMPLE_DL_UM = 0.01  # §3.2 (b): "Simpson on a 0.01 µm grid is ample"
 RESPONSE_LAMBDA_MIN_UM = 0.1
 RESPONSE_LAMBDA_MAX_UM = 100.0
@@ -64,8 +66,16 @@ class SpectralResponse:
         return float(self.wavelength_um[0]), float(self.wavelength_um[-1])
 
     def resampled(self, grid_um: FloatArray) -> FloatArray:
-        """R on an arbitrary grid by linear interpolation; zero outside the file's support."""
-        grid = np.asarray(grid_um, dtype=np.float64)
+        """R on an arbitrary grid by linear interpolation; zero outside the file's support.
+
+        Grid points within ``EDGE_SNAP_UM`` of the support edges are snapped onto them: a grid
+        built as ``lo + k*dl`` lands 1e-16 µm past ``hi`` and would otherwise lose the endpoint
+        sample, which for a steep integrand (SWIR at 300 K) is a 5 % error.
+        """
+        grid = np.asarray(grid_um, dtype=np.float64).copy()
+        lo, hi = self.support_um
+        grid[np.abs(grid - lo) <= EDGE_SNAP_UM] = lo
+        grid[np.abs(grid - hi) <= EDGE_SNAP_UM] = hi
         return np.asarray(
             np.interp(grid, self.wavelength_um, self.response, left=0.0, right=0.0),
             dtype=np.float64,

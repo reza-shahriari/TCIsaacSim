@@ -50,10 +50,23 @@ def test_exact_tophat_file_integrates_to_closed_form(tmp_path: pathlib.Path) -> 
 def test_resampled_tophat_integral_equals_width(tmp_path: pathlib.Path) -> None:
     lam, r = _tophat(8.0, 12.0)
     sr = load_spectral_response(_write(tmp_path, "tophat.csv", lam, r))
-    grid = np.arange(7.0, 13.0 + 1e-9, RESAMPLE_DL_UM)
-    assert abs(np.trapezoid(sr.resampled(grid), grid) - 4.0) < 1e-12
+    inside = 8.0 + RESAMPLE_DL_UM * np.arange(401)  # edge-aligned, within the support
+    assert abs(np.trapezoid(sr.resampled(inside), inside) - 4.0) < 1e-12
     assert sr.integral_um() == pytest.approx(4.0, abs=1e-12)
+    # a wider grid sees a half-step linear ramp at each edge: width + h, exactly
+    wide = 7.0 + RESAMPLE_DL_UM * np.arange(601)
+    assert np.trapezoid(sr.resampled(wide), wide) == pytest.approx(4.0 + RESAMPLE_DL_UM, abs=1e-12)
     assert np.all(sr.resampled(np.array([7.5, 12.5])) == 0.0), "zero outside support"
+
+
+def test_resample_snaps_floating_point_endpoints(tmp_path: pathlib.Path) -> None:
+    """0.9 + 80 * 0.01 is 1.7000000000000002; that point must still read R = 1, not 0."""
+    lam, r = _tophat(0.9, 1.7, 0.1)
+    sr = load_spectral_response(_write(tmp_path, "swir.csv", lam, r))
+    grid = 0.9 + 0.01 * np.arange(81)
+    assert grid[-1] != 1.7 and grid[-1] > 1.7
+    assert sr.resampled(grid)[-1] == 1.0
+    assert sr.resampled(np.array([1.7 + 1e-6]))[0] == 0.0
 
 
 def test_rejects_nanometre_file(tmp_path: pathlib.Path) -> None:
