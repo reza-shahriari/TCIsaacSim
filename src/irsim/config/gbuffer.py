@@ -6,6 +6,10 @@ tests/conftest.py emit exactly these keys; the kernels consume exactly these key
 is the one place the key set and dtypes are checked, so a float16 temperature cannot cross the
 boundary (CLAUDE.md non-negotiable #2) and a kernel never sees a key it did not expect.
 
+``encoded_t`` is optional and is *not* produced by the Isaac adapter (ADR 0014: the renderer
+transports ids and geometry; temperature comes from a float32 table), so no kernel may require
+it; when present it is checked against ``temperature_k``.
+
 Precision policy (§13.3): temperature, encoded temperature, distance and any radiance key are
 **float32 or better** -- float16 raises. Normals, sky-view factor and motion vectors may arrive
 as float16 from the engine and are upcast to float32 here. Integer ids are cast to int32

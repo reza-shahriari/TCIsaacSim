@@ -57,7 +57,10 @@ def test_fixture_honours_contract(name: str, request: pytest.FixtureRequest) -> 
     assert FROZEN_REQUIRED <= planes.keys() <= FROZEN_REQUIRED | FROZEN_OPTIONAL
     for key, arr in planes.items():
         assert arr.dtype == FROZEN_DTYPES[key], f"{name}[{key}] is {arr.dtype}"
-    assert "encoded_t" in planes, "fixtures carry the encoded plane the adapter will emit"
+    # encoded_t is OPTIONAL in the contract: the Isaac adapter never emits it (ADR 0014 -- the
+    # renderer transports ids + geometry and temperature comes from a float32 table). Fixtures
+    # carry it only to exercise the encode/decode consistency check.
+    assert "encoded_t" in planes
     assert np.all(planes["material_id"] != UNMAPPED_MATERIAL_ID), "id 0 is the UNMAPPED sentinel"
     gb = GBuffer.from_dict(planes)
     assert gb.shape == planes["temperature_k"].shape
