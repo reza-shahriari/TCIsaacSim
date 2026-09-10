@@ -7,6 +7,9 @@ rewrite of the glue only.
 **Physics specification:** [`docs/physics-model.md`](docs/physics-model.md) — the source of truth for
 every equation here. Code cites it by section.
 
+**Spec issues:** [`docs/spec-issues.md`](docs/spec-issues.md) — contradictions found in the spec, with the
+resolution the code assumes and what has been applied; raise new ones there, never diverge silently.
+
 **Plan:** [`docs/roadmap.md`](docs/roadmap.md) — milestones, one-commit steps, risks, ADR backlog. Phase 1
 targets objects in the sky against a sky background, validated against public anti-UAV thermal video;
 phase 2 is ground scenes and automotive (ADR 0003).

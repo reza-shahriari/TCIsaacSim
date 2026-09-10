@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `docs/spec-issues.md`: the 37 physics and 15 tooling issues found in the spec, with proposed
+  resolutions and applied status, for the spec owner (roadmap open question 10).
 - `irsim.config.bands`: canonical band ids with §12.1 nominal ranges and per-band defaults,
   `band_id_for` by maximal overlap (< 50 % rejected), optional `band.id` validated against the edges,
   and `enabled_illumination_terms(regime)` so kernels never switch on a band name (§5.2, S17).
@@ -56,6 +58,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   adversarial review (72 findings applied); the twelve subsystem maps under `docs/maps/`.
 
 ### Changed
+- `docs/physics-model.md` spec fixes raised before coding (M0.10): §5.3(a) sky temperature now
+  `cos^q(θ_zen)` (coldest at zenith, S1); §6.1 absorbed solar written `α_sol Q_sol` (S2); §12.2
+  spectral-response path `spectra/responses/boson_vox.csv` relative to `data/` (T4).
 - Boson YAML `spectral_response` now `spectra/responses/boson_vox.csv`, the canonical layout under the
   data root (spec issue T4); the file itself arrives with M1.3.
 - Golden helper implementation moved to `tests/golden/golden_store.py` (conftest keeps the fixture) so

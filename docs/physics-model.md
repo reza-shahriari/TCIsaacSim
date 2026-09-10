@@ -308,7 +308,7 @@ $$
 with $L_{\text{sky}}$ from an elevation-parameterised effective sky temperature:
 
 $$
-T_{\text{sky}}(\theta_{\text{el}}) = T_{\text{air}} - \Delta T_{\text{clear}}\cdot\big(1-\text{cloud}\big)\cdot\cos^{q}(\theta_{\text{el}})
+T_{\text{sky}}(\theta_{\text{zen}}) = T_{\text{air}} - \Delta T_{\text{clear}}\cdot\big(1-\text{cloud}\big)\cdot\cos^{q}(\theta_{\text{zen}})
 $$
 
 Practical LWIR values: $\Delta T_{\text{clear}}\approx 55$–$70$ K at zenith for a dry clear sky, dropping toward 5–10 K under thick overcast or high humidity; $q\approx0.5$–$1.0$. Under overcast, $T_{\text{sky}}\to T_{\text{air}}$ and the reflected term nearly vanishes — which is exactly why thermal images look "flat" on cloudy days. That behaviour falling out of your model for free is a good sanity check.
@@ -352,7 +352,7 @@ For a surface element with area-normalised heat capacity $C = \rho c_p \delta$ (
 
 $$
 C\frac{dT_s}{dt} =
-\underbrace{(1-\alpha_{\text{sol}})^{c}\,Q_{\text{sol}}}_{\text{absorbed solar}}
+\underbrace{\alpha_{\text{sol}}\,Q_{\text{sol}}}_{\text{absorbed solar}}
 +\underbrace{\varepsilon Q_{\text{LW}\downarrow}}_{\text{absorbed sky/env}}
 -\underbrace{\varepsilon\sigma T_s^4}_{\text{emitted}}
 -\underbrace{h\,(T_s-T_{\text{air}})}_{\text{convection}}
@@ -360,7 +360,7 @@ C\frac{dT_s}{dt} =
 +\underbrace{q_{\text{int}}}_{\text{internal}}
 $$
 
-with $\alpha_{\text{sol}}$ the solar *absorptivity* (so absorbed solar is $\alpha_{\text{sol}}Q_{\text{sol}}$ — write it that way and drop the confusing complement). This is the same balance DIRSIG's THERM solver implements: a 1-D slab model taking conduction, convection and radiation into account to estimate surface temperature, driven by material thermodynamic properties plus weather data [R3][R6].
+with $\alpha_{\text{sol}}$ the solar *absorptivity* (absorbed solar is $\alpha_{\text{sol}}Q_{\text{sol}}$; an earlier draft wrote it as a complement with a stray exponent — spec issue S2). This is the same balance DIRSIG's THERM solver implements: a 1-D slab model taking conduction, convection and radiation into account to estimate surface temperature, driven by material thermodynamic properties plus weather data [R3][R6].
 
 The identical structure appears in urban-scale surface energy balance work as a transient equation coupling radiative fluxes with thermal storage and convection [R14], and in planetary thermophysical models where the boundary condition is
 $(1-A_B)\big((1-S)\psi F_{\text{SUN}} + F_{\text{SCAT}}\big) + (1-A_{TH})F_{\text{RAD}} + k(dT/dx)_{x=0} - \varepsilon\sigma T^4_{x=0}=0$ [R15]. It's the same physics with different labels; the shadow flag $S$ and illumination-cosine term $\psi$ are worth copying directly.
@@ -829,7 +829,7 @@ sensor:
   band:
     lambda_min_um: 7.5
     lambda_max_um: 13.5
-    spectral_response: "responses/boson_vox.csv"   # λ, R(λ) — normalised
+    spectral_response: "spectra/responses/boson_vox.csv"   # λ (µm), R(λ) peak-normalised; relative to data/
     regime: emissive                                # emissive | reflective | mixed
 
   optics:
