@@ -23,7 +23,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); Simpson band-integration oracle (top-hat < 0.02 mK); Planck-weighted band averaging of spectral properties (ADR 0010); LUT pending |
+| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); Simpson band-integration oracle (top-hat < 0.02 mK); Planck-weighted band averaging (ADR 0010); float32 `BandLUT` with the §13.5 kernel contract, 0.03 mK vs oracle (ADR 0011); inverse lookup pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |

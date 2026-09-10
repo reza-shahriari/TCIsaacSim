@@ -29,6 +29,34 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+@pytest.fixture(scope="session")
+def boson_response():  # type: ignore[no-untyped-def]
+    """The committed (estimated) Boson VOx response."""
+    from irsim.config.loader import DEFAULT_DATA_DIR
+    from irsim.radiometry.spectral_response import load_spectral_response
+
+    return load_spectral_response(DEFAULT_DATA_DIR / "spectra" / "responses" / "boson_vox.csv")
+
+
+@pytest.fixture(scope="session")
+def boson_lut(boson_response):  # type: ignore[no-untyped-def]
+    """Full 200-1000 K, 0.05 K BandLUT for the Boson response (built once per session, ~1 s)."""
+    from irsim.radiometry.lut import BandLUT
+
+    return BandLUT.build(boson_response)
+
+
+@pytest.fixture(scope="session")
+def tophat_lwir_lut(tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
+    """BandLUT for an exact 7.5-13.5 um top-hat: every entry has a closed-form answer."""
+    from irsim.radiometry.lut import BandLUT
+    from irsim.radiometry.spectral_response import load_spectral_response
+
+    p = tmp_path_factory.mktemp("lut") / "tophat_7p5_13p5.csv"
+    p.write_text("# exact top-hat\n7.5,1.0\n13.5,1.0\n")
+    return BandLUT.build(load_spectral_response(p))
+
+
 @pytest.fixture
 def rng() -> np.random.Generator:
     """Seeded generator. Every test that uses randomness must take this."""
