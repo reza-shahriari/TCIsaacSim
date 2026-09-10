@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.gbuffer.GBuffer`: the frozen G-buffer contract (`temperature_k`, `normal_dot_view`,
+  `distance_m`, `material_id`, `sky_view_factor`; optional `encoded_t`, `motion_px`, `semantic_id`,
+  `radiance*`). float16 refused on temperature/encoded/distance/radiance planes, upcast elsewhere;
+  `encoded_t` checked against `temperature_k` to 10 mK; id 0 reserved as UNMAPPED.
+- Synthetic G-buffer fixtures: `gbuffer_two_material`, `gbuffer_sphere` (analytic cos θ to 1e-6, reaches
+  grazing), `gbuffer_step_edge` (1024², 5.5° tilt, ideal two-level), `gbuffer_moving_edge` (8 frames,
+  2 px/frame with `motion_px`); all fixtures now carry `encoded_t` and use material id 1+.
+  `tests/unit/test_gbuffer_schema.py` freezes the key set the Isaac adapter must emit.
 - `irsim.radiometry.encoding`: float32 temperature encode/decode `c = (T − 200)/800` with the constants
   defined once in `constants.py` (plus the LUT grid constants); float16 and integer inputs refused; fp16
   coarse/fine pair codec as the §13.3 fallback. Round trip 0.05 mK; negative controls show 125 mK (raw
@@ -37,6 +45,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   adversarial review (72 findings applied); the twelve subsystem maps under `docs/maps/`.
 
 ### Changed
+- Golden helper implementation moved to `tests/golden/golden_store.py` (conftest keeps the fixture) so
+  its self-tests import it unambiguously.
 - Makefile targets run through a `PYTHON` variable (`make check PYTHON=.../python.sh`); `make test`
   prints the ten slowest tests so the 30 s budget stays visible.
 - NumPy floor raised from 1.24 to 2.0 (the Planck tests use `np.trapezoid`).

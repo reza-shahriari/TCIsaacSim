@@ -28,6 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
+| `config` | 🟡 partial | T1 | `GBuffer` contract (frozen key set, float16 refused on the T/radiance path); sensor schema pending |
 | `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_
@@ -65,6 +66,8 @@ Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Req
 src/irsim/          engine-free physics core (pure Python + NumPy)
 src/irsim_isaac/    Isaac Sim glue — the only place engine imports are allowed
 tests/unit/         fast, no GPU, no Isaac Sim (default gate, with tests/golden)
+tests/conftest.py   synthetic G-buffer fixtures: ramp, uniform, two-material, grazing sphere,
+                    4x-supersampled 5.5° step edge, moving edge — the engine-free kernel test bed
 tests/integration/  requires Isaac Sim; auto-marked isaac, skipped cleanly when absent
 tests/golden/       regression fixtures: .npy + JSON sidecar with config hash (ADR 0004)
 configs/            sensor / material / atmosphere YAML

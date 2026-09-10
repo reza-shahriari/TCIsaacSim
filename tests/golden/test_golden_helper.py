@@ -12,7 +12,7 @@ import pathlib
 
 import numpy as np
 import pytest
-from conftest import GoldenStaleError, GoldenStore, config_hash
+from golden_store import GoldenStaleError, GoldenStore, config_hash
 
 CFG = {"band": {"lambda_min_um": 7.5, "lambda_max_um": 13.5}, "netd_mk": 50}
 HASH = config_hash(CFG)

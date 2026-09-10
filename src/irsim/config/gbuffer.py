@@ -1,0 +1,149 @@
+"""The G-buffer contract: what the renderer must hand the radiometry kernels.
+
+A G-buffer is a dictionary of per-pixel physical quantities (docs/physics-model.md §13.3 AOV
+table, §13.4). Isaac Sim's annotator adapter emits exactly these keys; the synthetic fixtures in
+tests/conftest.py emit exactly these keys; the kernels consume exactly these keys. :class:`GBuffer`
+is the one place the key set and dtypes are checked, so a float16 temperature cannot cross the
+boundary (CLAUDE.md non-negotiable #2) and a kernel never sees a key it did not expect.
+
+Precision policy (§13.3): temperature, encoded temperature, distance and any radiance key are
+**float32 or better** -- float16 raises. Normals, sky-view factor and motion vectors may arrive
+as float16 from the engine and are upcast to float32 here. Integer ids are cast to int32
+(material) and uint32 (semantic). ``material_id`` 0 is the UNMAPPED sentinel (roadmap M7.18):
+fixtures use ids >= 1.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from irsim.radiometry.encoding import decode_temperature
+
+__all__ = [
+    "GBuffer",
+    "REQUIRED_KEYS",
+    "OPTIONAL_KEYS",
+    "PRECISION_CRITICAL_KEYS",
+    "UNMAPPED_MATERIAL_ID",
+    "ENCODED_T_CONSISTENCY_TOL_K",
+]
+
+REQUIRED_KEYS: frozenset[str] = frozenset(
+    {"temperature_k", "normal_dot_view", "distance_m", "material_id", "sky_view_factor"}
+)
+OPTIONAL_KEYS: frozenset[str] = frozenset({"encoded_t", "motion_px", "semantic_id"})
+INTEGER_KEYS: dict[str, type] = {"material_id": np.int32, "semantic_id": np.uint32}
+# Keys where float16 is an error rather than something to upcast. Any key whose name starts with
+# "radiance" is treated the same way, so later stages can add radiance planes without editing here.
+PRECISION_CRITICAL_KEYS: frozenset[str] = frozenset({"temperature_k", "encoded_t", "distance_m"})
+UNMAPPED_MATERIAL_ID = 0
+# encoded_t must decode to temperature_k within this (the AOV round-trip budget, §13.3).
+ENCODED_T_CONSISTENCY_TOL_K = 0.010
+
+_PLANE_NDIM = {"motion_px": 3}
+
+
+def _is_precision_critical(key: str) -> bool:
+    return key in PRECISION_CRITICAL_KEYS or key.startswith("radiance")
+
+
+@dataclass(frozen=True)
+class GBuffer:
+    """Validated per-pixel physical quantities for one frame. Build with :meth:`from_dict`."""
+
+    temperature_k: NDArray[np.float32]
+    normal_dot_view: NDArray[np.float32]
+    distance_m: NDArray[np.float32]
+    material_id: NDArray[np.int32]
+    sky_view_factor: NDArray[np.float32]
+    encoded_t: NDArray[np.float32] | None = None
+    motion_px: NDArray[np.float32] | None = None
+    semantic_id: NDArray[np.uint32] | None = None
+    extra: dict[str, NDArray[Any]] = field(default_factory=dict)
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return (int(self.temperature_k.shape[0]), int(self.temperature_k.shape[1]))
+
+    @classmethod
+    def from_dict(cls, planes: dict[str, Any]) -> GBuffer:
+        """Validate a plane dictionary (the adapter/fixture output) into a GBuffer.
+
+        Raises ``KeyError`` for missing required keys, ``TypeError`` for a float16 plane on the
+        precision-critical path or a non-integer id plane, ``ValueError`` for shape mismatches,
+        non-finite values, or an ``encoded_t`` inconsistent with ``temperature_k``.
+        """
+        missing = REQUIRED_KEYS - planes.keys()
+        if missing:
+            raise KeyError(f"G-buffer missing required planes {sorted(missing)}")
+        unknown = planes.keys() - REQUIRED_KEYS - OPTIONAL_KEYS
+        unknown_bad = {k for k in unknown if not k.startswith("radiance")}
+        if unknown_bad:
+            raise KeyError(
+                f"G-buffer has unexpected planes {sorted(unknown_bad)}; the key set is frozen in "
+                "irsim.config.gbuffer (extend it there and in test_gbuffer_schema.py)"
+            )
+
+        converted: dict[str, NDArray[Any]] = {}
+        for key, value in planes.items():
+            arr = np.asarray(value)
+            if key in INTEGER_KEYS:
+                if not np.issubdtype(arr.dtype, np.integer):
+                    raise TypeError(f"{key} must be an integer plane, got {arr.dtype}")
+                converted[key] = arr.astype(INTEGER_KEYS[key])
+                continue
+            if not np.issubdtype(arr.dtype, np.floating):
+                raise TypeError(f"{key} must be a float plane, got {arr.dtype}")
+            if arr.dtype == np.float16 and _is_precision_critical(key):
+                raise TypeError(
+                    f"{key} arrived as float16: 0.25 K spacing at 300 K, five times a 50 mK "
+                    "NETD (CLAUDE.md non-negotiable #2). The AOV must be float32."
+                )
+            # §13.3: fp16 is acceptable for normals / AO / motion; everything is stored as float32
+            # (float64 input is "float32 or better" and is narrowed here, once).
+            arr = arr.astype(np.float32)
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(f"{key} contains non-finite values")
+            converted[key] = arr
+
+        h, w = converted["temperature_k"].shape[:2]
+        for key, arr in converted.items():
+            ndim = _PLANE_NDIM.get(key, 2)
+            if arr.ndim != ndim or arr.shape[:2] != (h, w):
+                raise ValueError(
+                    f"{key} has shape {arr.shape}; expected ({h}, {w}{', 2' if ndim == 3 else ''})"
+                )
+        if "motion_px" in converted and converted["motion_px"].shape[2] != 2:
+            raise ValueError("motion_px must be (H, W, 2): image-plane velocity in px/frame")
+
+        if "encoded_t" in converted:
+            decoded = decode_temperature(converted["encoded_t"]).astype(np.float64)
+            err = np.max(np.abs(decoded - converted["temperature_k"].astype(np.float64)))
+            if err > ENCODED_T_CONSISTENCY_TOL_K:
+                raise ValueError(
+                    f"encoded_t decodes to temperature_k with max error {err * 1e3:.1f} mK "
+                    f"(> {ENCODED_T_CONSISTENCY_TOL_K * 1e3:.0f} mK): encoder and adapter disagree"
+                )
+
+        extra = {k: v for k, v in converted.items() if k.startswith("radiance")}
+        named = {k: v for k, v in converted.items() if not k.startswith("radiance")}
+        return cls(**named, extra=extra)
+
+    def to_dict(self) -> dict[str, NDArray[Any]]:
+        out: dict[str, NDArray[Any]] = {
+            "temperature_k": self.temperature_k,
+            "normal_dot_view": self.normal_dot_view,
+            "distance_m": self.distance_m,
+            "material_id": self.material_id,
+            "sky_view_factor": self.sky_view_factor,
+        }
+        for key in ("encoded_t", "motion_px", "semantic_id"):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
+        out.update(self.extra)
+        return out
