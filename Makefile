@@ -41,7 +41,7 @@ ci:
 	$(MAKE) check PYTHON=$(CI_VENV)/bin/python
 
 luts:
-	$(PYTHON) scripts/generate_luts.py --configs configs/sensors --out data/lut
+	$(PYTHON) scripts/generate_luts.py --configs configs/sensors --out data/lut --data data
 
 golden-update:
 	$(PYTHON) -m pytest tests/golden -q --update-golden
