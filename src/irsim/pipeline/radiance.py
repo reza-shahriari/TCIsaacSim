@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 
 from irsim.materials.table import MaterialTable
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes, require_fp32_or_better
-from irsim.radiometry.lut import BandLUT
+from irsim.radiometry.lut import BandLUT, Quantity
 
 __all__ = ["band_radiance", "band_radiance_stage", "BandRadianceStage"]
 
@@ -30,14 +30,15 @@ def band_radiance(
     material_id: NDArray[np.integer],
     materials: MaterialTable,
     lut: BandLUT,
+    quantity: Quantity = "lb",
 ) -> NDArray[np.float32]:
-    """ε₀[material] · L_B(T) as float32, same shape as the inputs."""
+    """ε₀[material] · L_B(T) as float32, same shape as the inputs (``lb_q`` for photon FPAs)."""
     t = require_fp32_or_better(np.asarray(temperature_k), "temperature_k")
     ids = np.asarray(material_id)
     if ids.shape != t.shape:
         raise ValueError(f"material_id shape {ids.shape} != temperature shape {t.shape}")
     eps = materials.emissivity_for(ids)
-    lb = lut.lookup(t, "lb")
+    lb = lut.lookup(t, quantity)
     return np.asarray(eps * lb, dtype=np.float32)
 
 

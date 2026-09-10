@@ -1,0 +1,113 @@
+"""``run_frame``: the whole CPU reference chain for one frame (docs/physics-model.md §13.4).
+
+    stage 1  band radiance     ε₀ L_B(T) on the k× G-buffer          (irsim.pipeline.radiance)
+    stage 2  atmosphere        identity until M8
+    stage 3  optics            box ↓k, aperture·cos⁴·A_d, +Φ_self     (irsim.optics.stage)
+    stage 4  detector          Φ → un-quantised signal in DN           (irsim.detector)
+    stage 5  noise             identity until M4
+    ADC      quantise          floor + clip → uint16                    (irsim.detector.quantise)
+    stage 6  ISP               radiometric branch → radiance, T_app     (irsim.isp.radiometric)
+             AGC / display     identity (None) until M5
+
+Outputs follow §12.2 ``outputs``: ``radiance`` (float32, scene band radiance at the native grid),
+``apparent_t`` (float32 K, from the float32 signal route), ``dn16`` (uint16), ``display8`` (None
+until M5). A flag set to ``false`` yields ``None`` -- never zeros. The bolometer path uses the
+energy-form LUT table; a photon FPA runs the same chain on the photon table with
+N_e = η t_int Φ_q (ADR 0021).
+
+docs/physics-model.md §13.4, §12.2 outputs, §16.4 step 3
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+from numpy.typing import NDArray
+
+from irsim.detector.params import BolometerParams, PhotonParams
+from irsim.detector.photon import electrons_to_signal_dn
+from irsim.detector.quantise import quantise
+from irsim.isp.radiometric import apparent_temperature
+from irsim.optics.stage import apply_optics, invert_optics
+from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
+from irsim.pipeline.radiance import band_radiance
+
+__all__ = ["Outputs", "run_frame"]
+
+
+@dataclass(frozen=True)
+class Outputs:
+    radiance: NDArray[np.float32] | None
+    apparent_t: NDArray[np.float32] | None
+    dn16: NDArray[np.uint16] | None
+    display8: NDArray[np.uint8] | None
+    signal_dn: NDArray[np.float32]  # un-quantised stage-4 signal, always kept for benches
+    flux: NDArray[np.float32]  # stage-3 pixel power (W or photons/s), always kept
+
+
+def _detector_signal(flux: NDArray[np.float32], config: PipelineConfig) -> NDArray[np.float32]:
+    fpa = config.fpa
+    if isinstance(fpa, BolometerParams):
+        assert config.calibration is not None
+        return config.calibration.transfer.signal_dn(flux)
+    if isinstance(fpa, PhotonParams):
+        n_e = fpa.quantum_efficiency * fpa.integration_time_s * flux.astype(np.float64)
+        return electrons_to_signal_dn(n_e, fpa)
+    raise TypeError(f"unknown FPA params {type(fpa).__name__}")  # pragma: no cover
+
+
+def _scene_radiance_from_signal(
+    signal: NDArray[np.float32], config: PipelineConfig, lb_housing_cal: float
+) -> NDArray[np.float32]:
+    fpa = config.fpa
+    if isinstance(fpa, BolometerParams):
+        assert config.calibration is not None
+        return config.calibration.radiance_from_signal(signal)
+    assert isinstance(fpa, PhotonParams)
+    n_e = signal.astype(np.float64) / 2**fpa.bit_depth * fpa.well_capacity_e
+    phi_q = n_e / (fpa.quantum_efficiency * fpa.integration_time_s)
+    return invert_optics(phi_q, config.sensor.sensor, lb_housing_cal)
+
+
+def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> Outputs:
+    """One frame through stages 1-6 (2, 5 identity). Advances ``state.frame_index``."""
+    sensor = config.sensor.sensor
+    lut = config.lut
+    q = config.quantity
+    h, w = sensor.fpa_shape
+    k = config.supersample
+    t = np.asarray(planes["temperature_k"])
+    if t.shape != (h * k, w * k):
+        raise ValueError(
+            f"G-buffer {t.shape} is not the {k}x supersampled detector grid {(h * k, w * k)}; "
+            "set optics.supersample_factor to match the render"
+        )
+
+    # stage 1 (k× grid); stage 2 identity
+    radiance_ss = band_radiance(t, planes["material_id"], config.materials, lut, q)
+    # stage 3
+    lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
+    flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k)
+    # stage 4; stage 5 identity; ADC
+    signal = _detector_signal(flux, config)
+    dn16 = quantise(signal, sensor.fpa.bit_depth)
+    # stage 6: radiometric branch inverts with the *calibration* housing level (ADR 0021)
+    lb_housing_cal = float(lut.lookup(config.t_housing_cal_k, q)[()])
+    outputs = sensor.outputs
+    radiance = apparent_t = None
+    if outputs.radiance_linear or outputs.apparent_temperature:
+        scene = _scene_radiance_from_signal(signal, config, lb_housing_cal)
+        if outputs.radiance_linear:
+            radiance = scene
+        if outputs.apparent_temperature:
+            apparent_t = apparent_temperature(scene, lut, q)
+    state.advance()
+    return Outputs(
+        radiance=radiance,
+        apparent_t=apparent_t,
+        dn16=dn16 if outputs.dn_16 else None,
+        display8=None,
+        signal_dn=signal,
+        flux=flux,
+    )

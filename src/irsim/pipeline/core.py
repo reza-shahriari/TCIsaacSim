@@ -20,13 +20,17 @@ from numpy.typing import NDArray
 from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
 from irsim.detector.params import FpaParams, fpa_params_from_config
+from irsim.isp.radiometric import RadiometricCalibration
 from irsim.materials.table import MaterialTable
-from irsim.radiometry.lut import BandLUT
+from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.radiometry.lut_files import load_band_lut_for_config
 
-__all__ = ["Planes", "Stage", "PipelineConfig", "PipelineState"]
+__all__ = ["Planes", "Stage", "PipelineConfig", "PipelineState", "RADIOMETRIC_RANGE_K"]
 
 Planes = dict[str, NDArray[Any]]
+
+# Scene-temperature span that fills the ADC for the calibrated transfer (ADR 0021): -40..+200 C.
+RADIOMETRIC_RANGE_K: tuple[float, float] = (233.15, 473.15)
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,13 @@ class PipelineConfig:
     materials: MaterialTable
     fpa: FpaParams
     supersample: int
+    calibration: RadiometricCalibration | None
+    t_housing_cal_k: float
+
+    @property
+    def quantity(self) -> Quantity:
+        """Which LUT table the radiance chain runs on: energy for bolometers, photon otherwise."""
+        return "lb" if self.fpa.type == "bolometer" else "lb_q"
 
     @classmethod
     def from_sensor(
@@ -47,18 +58,35 @@ class PipelineConfig:
         lut: BandLUT | None = None,
         lut_dir: str | os.PathLike[str] | None = None,
         data_dir: str | os.PathLike[str] | None = None,
+        t_housing_cal_k: float | None = None,
+        radiometric_range_k: tuple[float, float] = RADIOMETRIC_RANGE_K,
     ) -> PipelineConfig:
-        """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``."""
+        """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
+
+        The calibrated transfer (ADR 0021) is built for bolometer cameras with the housing at
+        ``t_housing_cal_k`` (default: ``optics.housing_temp_k`` if fixed, else 300 K).
+        """
         if lut is None:
             if lut_dir is None:
                 raise ValueError("give a BandLUT or a lut_dir to load one from (make luts)")
             lut = load_band_lut_for_config(sensor, lut_dir, data_dir)
+        fpa = fpa_params_from_config(sensor)
+        if t_housing_cal_k is None:
+            fixed = sensor.sensor.optics.housing_temp_k
+            t_housing_cal_k = fixed if fixed is not None else 300.0
+        calibration = None
+        if fpa.type == "bolometer":
+            calibration = RadiometricCalibration.from_scene_range(
+                sensor.sensor, lut, radiometric_range_k[0], radiometric_range_k[1], t_housing_cal_k
+            )
         return cls(
             sensor=sensor,
             lut=lut,
             materials=materials,
-            fpa=fpa_params_from_config(sensor),
+            fpa=fpa,
             supersample=sensor.sensor.optics.supersample_factor,
+            calibration=calibration,
+            t_housing_cal_k=t_housing_cal_k,
         )
 
     @classmethod

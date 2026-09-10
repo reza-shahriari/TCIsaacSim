@@ -8,6 +8,14 @@ docs/physics-model.md §13.4, §13.6, §16.4
 """
 
 from irsim.pipeline.core import PipelineConfig, PipelineState, Stage
+from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.radiance import band_radiance_stage
 
-__all__ = ["PipelineConfig", "PipelineState", "Stage", "band_radiance_stage"]
+__all__ = [
+    "PipelineConfig",
+    "PipelineState",
+    "Stage",
+    "band_radiance_stage",
+    "Outputs",
+    "run_frame",
+]
