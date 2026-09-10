@@ -23,7 +23,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); Simpson band-integration oracle (top-hat < 0.02 mK); Planck-weighted band averaging (ADR 0010); float32 `BandLUT` with the §13.5 kernel contract, 0.03 mK vs oracle, apparent-temperature inverse < 1 mK round trip (ADR 0011); LUT files + `make luts` pending |
+| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); Simpson band-integration oracle (top-hat < 0.02 mK); Planck-weighted band averaging (ADR 0010); float32 `BandLUT` with the §13.5 kernel contract, 0.03 mK vs oracle, apparent-temperature inverse < 1 mK round trip (ADR 0011); LUT bundles on disk with stale detection (ADR 0012); `make luts` pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
@@ -65,7 +65,7 @@ no Isaac). `make ci` reproduces the CI job locally in a `.venv-ci` built from `p
 | `make typecheck` | mypy on `src/irsim` and `src/irsim_isaac` |
 | `make check` | lint + typecheck + test |
 | `make ci` | The CI job locally: plain CPython 3.10 venv + `make check` (no GPU, no Isaac) |
-| `make luts` | Regenerate band LUTs from configs and spectral data |
+| `make luts` | Regenerate band LUTs from configs and spectral data into `data/lut/` (gitignored; loader detects stale bundles, ADR 0012) |
 | `make golden-update` | Regenerate golden reference arrays deliberately (ADR 0004) |
 
 ## Layout
