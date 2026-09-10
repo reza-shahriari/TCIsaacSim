@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
-| `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` for §12.2 with physical validation and derived quantities (ADR 0007); YAML loader/hashes pending |
+| `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry pending |
 | `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_
@@ -71,7 +71,7 @@ tests/conftest.py   synthetic G-buffer fixtures: ramp, uniform, two-material, gr
 tests/integration/  requires Isaac Sim; auto-marked isaac, skipped cleanly when absent
 tests/golden/       regression fixtures: .npy + JSON sidecar with config hash (ADR 0004)
 configs/            sensor / material / atmosphere YAML
-data/               spectral responses, n/k tables, generated LUTs, weather
+data/               data root (`$IRSIM_DATA_DIR` overrides): spectra/responses/, n/k tables, LUTs, weather
 docs/               physics-model.md and ADRs
 ```
 

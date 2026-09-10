@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.loader`: `load_sensor_config` (data paths resolved against `data_dir` /
+  `$IRSIM_DATA_DIR` / `<repo>/data`, missing files named), `dump_sensor_config`, `config_hash` (canonical
+  JSON, files by content hash) and `band_hash` (band block + spectral bytes: the LUT key). Every numeric
+  and enumerated leaf of the Boson file is tested to move the hash (ADR 0008).
 - `irsim.config.sensor.SensorConfig`: pydantic v2 schema for §12.2 (frozen, unknown keys rejected,
   units-in-names, discriminated bolometer/photon FPA, regime-vs-wavelength and 3-D ratio checks, derived
   pixel area / Nyquist / HFOV / frame period / DN max, deliberately no aperture factor). Boson file loads
@@ -49,6 +53,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   adversarial review (72 findings applied); the twelve subsystem maps under `docs/maps/`.
 
 ### Changed
+- Boson YAML `spectral_response` now `spectra/responses/boson_vox.csv`, the canonical layout under the
+  data root (spec issue T4); the file itself arrives with M1.3.
 - Golden helper implementation moved to `tests/golden/golden_store.py` (conftest keeps the fixture) so
   its self-tests import it unambiguously.
 - Makefile targets run through a `PYTHON` variable (`make check PYTHON=.../python.sh`); `make test`

@@ -10,7 +10,7 @@ sensor:
   band:
     lambda_min_um: 7.5
     lambda_max_um: 13.5
-    spectral_response: spectra/boson_vox.csv     # ESTIMATED until measured
+    spectral_response: spectra/responses/boson_vox.csv   # relative to data/; ESTIMATED until measured (M1.3)
     regime: emissive                             # emissive | reflective | mixed
 
   optics:
