@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Stefan–Boltzmann identity test at 1e-6 relative via Simpson quadrature plus the closed-form tail
+  (measured 3e-11); `fractional_exitance` gains a small-x Bernoulli branch so it is double-precision
+  accurate in the Rayleigh–Jeans tail, and it and `band_radiance_tophat` now reject metre-valued
+  wavelengths and Celsius temperatures (ADR 0005).
 - Layering guard hardened in both directions: `src/irsim` may not import engine modules (now including
   `carb`), `irsim_isaac`, or the ML/imaging stack; default-gate tests may not import engines; glue files
   must keep engine imports inside functions. Scanner self-tested on synthetic offending modules.

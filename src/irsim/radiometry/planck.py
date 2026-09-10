@@ -117,43 +117,78 @@ def d_spectral_radiance_dT(wavelength_um: FloatArray, temperature_k: FloatArray)
     return np.asarray(derivative, dtype=np.float64)
 
 
-def fractional_exitance(
-    wavelength_um: float,
-    temperature_k: float,
-    rtol: float = 1e-12,
-    max_terms: int = 2000,
-) -> float:
-    """Fraction of total blackbody exitance emitted below `wavelength_um`.
+# Bernoulli numbers B_2 .. B_14 for the small-x expansion of the Planck integral.
+_BERNOULLI_EVEN = (1.0 / 6, -1.0 / 30, 1.0 / 42, -1.0 / 30, 5.0 / 66, -691.0 / 2730, 7.0 / 6)
+_SMALL_X = 0.5
 
-    Closed-form series, summed adaptively until terms stop contributing.
 
-    The term count needed depends strongly on x = C2 / (lam * T): for x > 2 (every
-    realistic scene temperature in LWIR and MWIR) 3-8 terms reach double precision,
-    but the far Rayleigh-Jeans tail (x << 1) converges slowly. A fixed term count
-    silently saturates below 1.0 there, so the loop runs to a convergence criterion
-    instead. This matters whenever the function is used to check a numerical band
-    integral -- a truncated series looks exactly like an integration error.
+def _planck_integral_above(x: float, rtol: float, max_terms: int) -> float:
+    """∫_x^∞ t³ / (e^t − 1) dt: the dimensionless Planck integral over wavenumbers above x,
+    i.e. over wavelengths *below* λ = C2 / (x T). Total over all x is π⁴/15.
 
-    Useful as an independent check on numerical band integration: if quadrature and
-    this disagree by more than 0.1% on a top-hat response, one of them has a bug.
+    Two independent expansions, each used where it converges fast:
 
-    docs/physics-model.md §3.2 (a)
+    * ``x >= _SMALL_X``: the exponential series Σ_n e^{-nx}(x³/n + 3x²/n² + 6x/n³ + 6/n⁴).
+      For x > 2 (every scene temperature in LWIR/MWIR) 3-8 terms reach double precision.
+    * ``x < _SMALL_X``: π⁴/15 minus the Taylor series of the complementary integral ∫_0^x,
+      x³/3 − x⁴/8 + Σ_k B_2k x^{2k+3} / ((2k+3)(2k)!). The exponential series cannot reach
+      ``rtol`` here in any practical number of terms (its tail falls only as 1/N³, so 2000
+      terms leave ~4e-11).
+
+    The crossover is tested for continuity to 1e-13 (tests/unit/test_planck.py).
     """
-    x = C2 / (wavelength_um * temperature_k)
+    if x < _SMALL_X:
+        below = x**3 / 3.0 - x**4 / 8.0
+        factorial = 1.0
+        for k, b2k in enumerate(_BERNOULLI_EVEN, start=1):
+            factorial *= (2 * k - 1) * (2 * k)  # (2k)!
+            below += b2k * x ** (2 * k + 3) / ((2 * k + 3) * factorial)
+        return float(np.pi**4 / 15.0 - below)
+
     if x > EXP_ARG_MAX:
         return 0.0
-
     total = 0.0
+    # Successive terms shrink at least geometrically by e^{-x}, so the remainder after a term is
+    # bounded by term * e^{-x} / (1 - e^{-x}); stop when that bound is below rtol * total.
+    # (Stopping on the term alone leaves a 1 / (1 - e^{-x}) ≈ 2.5x larger residual at x = 0.5.)
+    tail_factor = np.exp(-x) / (-np.expm1(-x))
     for n in range(1, max_terms + 1):
         nx = n * x
         if nx > EXP_ARG_MAX:
             break
         term = np.exp(-nx) / n * (x**3 + 3.0 * x**2 / n + 6.0 * x / n**2 + 6.0 / n**3)
         total += term
-        if total > 0.0 and term < rtol * total:
+        if total > 0.0 and term * tail_factor < rtol * total:
             break
+    return total
 
-    return float(15.0 / np.pi**4 * total)
+
+def fractional_exitance(
+    wavelength_um: float,
+    temperature_k: float,
+    rtol: float = 1e-12,
+    max_terms: int = 2000,
+) -> float:
+    """Fraction of total blackbody exitance emitted below ``wavelength_um``: F(0 → λT).
+
+    F = (15/π⁴) ∫_x^∞ t³/(e^t − 1) dt with x = C2/(λT) (short wavelengths are large x),
+    summed in closed form (see
+    :func:`_planck_integral_above` for the two expansions and why both are needed).
+
+    Useful as an independent check on numerical band integration: if quadrature and this
+    disagree by more than 0.1% on a top-hat response, one of them has a bug. Note that F
+    never reaches exactly 1 at a finite wavelength -- at 1000 µm and 300 K the tail beyond
+    still carries 1 − F ≈ 5.6e-6 -- so "F(large λ) == 1" is not a valid test.
+
+    Inputs are validated like every other boundary here: micrometres and kelvin only.
+
+    docs/physics-model.md §3.2 (a)
+    """
+    _validate(
+        np.asarray(wavelength_um, dtype=np.float64), np.asarray(temperature_k, dtype=np.float64)
+    )
+    x = C2 / (wavelength_um * temperature_k)
+    return 15.0 / np.pi**4 * _planck_integral_above(x, rtol, max_terms)
 
 
 def band_radiance_tophat(lambda_min_um: float, lambda_max_um: float, temperature_k: float) -> float:
@@ -165,6 +200,10 @@ def band_radiance_tophat(lambda_min_um: float, lambda_max_um: float, temperature
 
     docs/physics-model.md §3.2 (a)
     """
+    _validate(
+        np.asarray([lambda_min_um, lambda_max_um], dtype=np.float64),
+        np.asarray(temperature_k, dtype=np.float64),
+    )
     if lambda_max_um <= lambda_min_um:
         raise ValueError("lambda_max_um must exceed lambda_min_um")
     f_hi = fractional_exitance(lambda_max_um, temperature_k)

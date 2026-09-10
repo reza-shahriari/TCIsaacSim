@@ -20,7 +20,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck + constants landed; band LUT pending |
+| `radiometry` | 🟡 partial | T1 | Planck + constants landed; Stefan–Boltzmann closes to 1e-6 (ADR 0005); band LUT pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
