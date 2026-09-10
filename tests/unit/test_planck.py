@@ -91,9 +91,7 @@ def test_band_radiance_strictly_increasing() -> None:
 def test_known_value_at_10um_300k() -> None:
     """Hand-checked anchor: 9.925 W m^-2 sr^-1 um^-1. See ir-radiometry skill."""
     assert spectral_radiance(np.array([10.0]), 300.0)[0] == pytest.approx(9.925, rel=1e-3)
-    assert spectral_photon_radiance(np.array([10.0]), 300.0)[0] == pytest.approx(
-        4.996e20, rel=1e-3
-    )
+    assert spectral_photon_radiance(np.array([10.0]), 300.0)[0] == pytest.approx(4.996e20, rel=1e-3)
 
 
 def test_no_overflow_on_extreme_sweep() -> None:

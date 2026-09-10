@@ -61,8 +61,8 @@ def _planck_denominator(wavelength_um: FloatArray, temperature_k: FloatArray) ->
     expm1 matters at the hot end (large lam*T gives small x, where exp(x)-1 loses
     precision); the clip matters at the cold end, where exp overflows to inf.
     """
-    x = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
-    return np.expm1(x)
+    x: FloatArray = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
+    return np.asarray(np.expm1(x), dtype=np.float64)
 
 
 def spectral_radiance(wavelength_um: FloatArray, temperature_k: FloatArray) -> FloatArray:
@@ -82,9 +82,7 @@ def spectral_radiance(wavelength_um: FloatArray, temperature_k: FloatArray) -> F
     return C1L / (wavelength_um**5 * _planck_denominator(wavelength_um, temperature_k))
 
 
-def spectral_photon_radiance(
-    wavelength_um: FloatArray, temperature_k: FloatArray
-) -> FloatArray:
+def spectral_photon_radiance(wavelength_um: FloatArray, temperature_k: FloatArray) -> FloatArray:
     """Blackbody spectral photon radiance in photons s^-1 m^-2 sr^-1 um^-1.
 
     Use this form for photon detectors (MWIR/SWIR/NIR), where quantum efficiency is
@@ -111,11 +109,12 @@ def d_spectral_radiance_dT(wavelength_um: FloatArray, temperature_k: FloatArray)
     temperature_k = np.asarray(temperature_k, dtype=np.float64)
     _validate(wavelength_um, temperature_k)
 
-    x = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
+    x: FloatArray = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
     radiance = C1L / (wavelength_um**5 * np.expm1(x))
     # dL/dT = L * (C2 / (lam T^2)) * exp(x) / (exp(x) - 1)
     # written as exp(x)/expm1(x) = 1 + 1/expm1(x) to stay accurate for small x
-    return radiance * (C2 / (wavelength_um * temperature_k**2)) * (1.0 + 1.0 / np.expm1(x))
+    derivative = radiance * (C2 / (wavelength_um * temperature_k**2)) * (1.0 + 1.0 / np.expm1(x))
+    return np.asarray(derivative, dtype=np.float64)
 
 
 def fractional_exitance(
@@ -157,9 +156,7 @@ def fractional_exitance(
     return float(15.0 / np.pi**4 * total)
 
 
-def band_radiance_tophat(
-    lambda_min_um: float, lambda_max_um: float, temperature_k: float
-) -> float:
+def band_radiance_tophat(lambda_min_um: float, lambda_max_um: float, temperature_k: float) -> float:
     """Band radiance in W m^-2 sr^-1 for a top-hat spectral response.
 
     Exact for a rectangular response. Real responses need quadrature against R(lambda);

@@ -33,11 +33,14 @@ Bands configured: _none yet_ · Cameras modelled: _none yet_
 ## Quick start
 
 ```bash
+# The project interpreter is Isaac Sim's bundled Python (docs/decisions/0002); any CPython >= 3.10
+# works for the engine-free core. Every make target honours PYTHON=.
+export PYTHON=/home/hunter/IsaacSim/_build/linux-x86_64/release/python.sh
 make install
 make check        # lint + typecheck + unit tests — must be green before any commit
 ```
 
-Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`.
+Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Requires NumPy ≥ 2.0.
 
 ## Commands
 

@@ -20,6 +20,8 @@ import sys
 
 if __name__ == "__main__":
     print(__doc__)
-    print("ERROR: not implemented -- see docs/physics-model.md §3.2 and the "
-          "ir-radiometry skill.", file=sys.stderr)
+    print(
+        "ERROR: not implemented -- see docs/physics-model.md §3.2 and the ir-radiometry skill.",
+        file=sys.stderr,
+    )
     sys.exit(1)
