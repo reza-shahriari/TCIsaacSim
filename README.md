@@ -24,7 +24,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | Component | State | Tier | Notes |
 |---|---|---|---|
 | `radiometry` | 🟢 done | T1 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; golden LUT slice at 1 mK; ADRs 0005–0013 |
-| `materials` | ⬜ not started | — | |
+| `materials` | 🟡 partial | T1 | Minimal per-band `MaterialTable` (id → ε₀, id 0 = UNMAPPED refused); spectral model pending M7 |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
 | `optics` | 🟡 partial | T1 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016) |
@@ -32,6 +32,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms; optics extensions (housing, supersample, MTF, vignetting map) and derived A_d / active width / ξ_c, schema v2 (ADR 0017) |
+| `pipeline` | 🟡 partial | T1 | Engine-free NumPy oracle (ADR 0018): stage 1 emission-only band radiance; optics/detector/ISP stages pending |
 | `irsim_isaac` | 🟡 partial | T1 | `env.py` probes; **M2 gate spike done (ADR 0014):** no float32 colour AOV carries temperature (all fp16, exposure-scaled) → the renderer transports **instance ids + float32 geometry** and temperature comes from a Warp table; `omni.rtx.spg` 0.4.0 present, float32 pass-through bit-exact, **no cross-frame state** (stateful stages stay in Warp), LUT baked into the `.cu`. `probe.py`/`spg_probe.py` + `scripts/probe_isaac_*.py` reproduce it; `tests/integration` (10 tests, one Kit per session) pin it. Normals/AO/motion semantics still open (M10.1) |
 
 Bands configured: **LWIR** (`flir_boson_640_lwir`, estimated VOx response — ADR 0013; `make luts` builds the table) · Cameras modelled: _none yet_ (radiometry only; the pipeline starts at M3)
@@ -71,7 +72,7 @@ no Isaac). `make ci` reproduces the CI job locally in a `.venv-ci` built from `p
 ## Layout
 
 ```
-src/irsim/          engine-free physics core (pure Python + NumPy)
+src/irsim/          engine-free physics core (pure Python + NumPy); irsim.pipeline is the reference oracle (ADR 0018)
 src/irsim_isaac/    Isaac Sim glue — the only place engine imports are allowed
 tests/unit/         fast, no GPU, no Isaac Sim (default gate, with tests/golden)
 tests/conftest.py   synthetic G-buffer fixtures: ramp, uniform, two-material, grazing sphere,
