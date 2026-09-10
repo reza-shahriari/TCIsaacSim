@@ -10,6 +10,7 @@ build/
 *.egg-info/
 data/lut/*.npy
 data/lut/*.json
+data/lut/*.f32
 outputs/
 *.usdc
 .DS_Store

@@ -23,7 +23,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); Simpson band-integration oracle (top-hat < 0.02 mK); Planck-weighted band averaging (ADR 0010); float32 `BandLUT` with the §13.5 kernel contract, 0.03 mK vs oracle, apparent-temperature inverse < 1 mK round trip (ADR 0011); LUT bundles on disk with stale detection (ADR 0012); `make luts` generates them from YAML + CSV |
+| `radiometry` | 🟢 done | T1 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; ADRs 0005–0013 |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
@@ -34,7 +34,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms |
 | `irsim_isaac` | 🟡 partial | T1 | `env.py` probes; **M2 gate spike done (ADR 0014):** no float32 colour AOV carries temperature (all fp16, exposure-scaled) → the renderer transports **instance ids + float32 geometry** and temperature comes from a Warp table; `omni.rtx.spg` 0.4.0 present, float32 pass-through bit-exact, **no cross-frame state** (stateful stages stay in Warp), LUT baked into the `.cu`. `probe.py`/`spg_probe.py` + `scripts/probe_isaac_*.py` reproduce it; `tests/integration` (10 tests, one Kit per session) pin it. Normals/AO/motion semantics still open (M10.1) |
 
-Bands configured: _LWIR response data only (estimated Boson VOx curve; LUT pending M1.10)_ · Cameras modelled: _none yet_
+Bands configured: **LWIR** (`flir_boson_640_lwir`, estimated VOx response — ADR 0013; `make luts` builds the table) · Cameras modelled: _none yet_ (radiometry only; the pipeline starts at M3)
 
 ---
 
