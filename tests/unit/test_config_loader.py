@@ -67,15 +67,11 @@ def test_missing_spectral_file_errors_naming_path(tmp_path: pathlib.Path) -> Non
         load_sensor_config(BOSON_YAML, empty)
 
 
-def test_repo_data_root_state() -> None:
-    """The committed YAML points at data/spectra/responses/boson_vox.csv. Until M1.3 authors
-    that file the loader must fail by name, never load something else."""
+def test_repo_yaml_loads_against_the_default_data_root() -> None:
+    """The committed YAML resolves to data/spectra/responses/boson_vox.csv (authored in M1.3)."""
     target = DEFAULT_DATA_DIR / RESPONSE_REL
-    if target.is_file():
-        assert load_sensor_config(BOSON_YAML).sensor.band.spectral_response == str(target)
-    else:
-        with pytest.raises(FileNotFoundError, match="boson_vox.csv"):
-            load_sensor_config(BOSON_YAML)
+    assert target.is_file(), f"{target} missing: the Boson response file is part of the repo"
+    assert load_sensor_config(BOSON_YAML).sensor.band.spectral_response == str(target)
 
 
 def test_data_dir_precedence(

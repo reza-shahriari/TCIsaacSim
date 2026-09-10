@@ -23,7 +23,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); band LUT pending |
+| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms, both thermal derivatives, both fractional exitances, σ and σ_q closures to 1e-6, ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); R(λ) file contract + `Band` (ADR 0009); band integration and LUT pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
@@ -34,7 +34,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms |
 | `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
 
-Bands configured: _none yet_ · Cameras modelled: _none yet_
+Bands configured: _LWIR response data only (estimated Boson VOx curve; LUT pending M1.10)_ · Cameras modelled: _none yet_
 
 ---
 
