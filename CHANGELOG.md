@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- GPU-free CI: `.github/workflows/check.yml` runs `make check` on plain CPython 3.10 and 3.12; `make ci`
+  reproduces it locally in a `python3.10` venv. Interpreter matrix recorded in ADR 0002.
 - `docs/spec-issues.md`: the 37 physics and 15 tooling issues found in the spec, with proposed
   resolutions and applied status, for the spec owner (roadmap open question 10).
 - `irsim.config.bands`: canonical band ids with §12.1 nominal ranges and per-band defaults,

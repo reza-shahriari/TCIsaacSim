@@ -50,6 +50,10 @@ make check        # lint + typecheck + unit tests — must be green before any c
 
 Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Requires NumPy ≥ 2.0.
 
+Interpreter matrix (ADR 0002): the Isaac Sim interpreter (CPython 3.12) locally for everything
+including integration tests; plain CPython 3.10 and 3.12 in CI (`.github/workflows/check.yml`, no GPU,
+no Isaac). `make ci` reproduces the CI job locally in a `.venv-ci` built from `python3.10`.
+
 ## Commands
 
 | Command | Does |
@@ -60,6 +64,7 @@ Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Req
 | `make lint` / `make fmt` | ruff check / ruff format |
 | `make typecheck` | mypy on `src/irsim` and `src/irsim_isaac` |
 | `make check` | lint + typecheck + test |
+| `make ci` | The CI job locally: plain CPython 3.10 venv + `make check` (no GPU, no Isaac) |
 | `make luts` | Regenerate band LUTs from configs and spectral data |
 | `make golden-update` | Regenerate golden reference arrays deliberately (ADR 0004) |
 

@@ -43,3 +43,13 @@ For the interpreter: a separate venv per half of the repo, or Isaac Sim's bundle
 
 - Isaac Sim moves to a Python or NumPy major version the core does not support.
 - The team wants a GPU-free CI job (then the `PYTHON` variable points at a plain venv there).
+
+## Addendum 2026-09-10 — interpreter matrix (M0.11)
+
+The engine-free claim is now checked on an interpreter that has no Isaac Sim: `.github/workflows/check.yml`
+runs `make check PYTHON=python` on plain CPython 3.10 (the `requires-python` floor) and 3.12 (what Isaac
+ships), with no GPU. `make ci` builds the same job locally in `.venv-ci` from `python3.10`. The Isaac
+interpreter remains the local default because it is the only one that can also run
+`tests/integration`. A deliberately introduced `import omni` under `src/irsim` fails the CI job through
+`tests/unit/test_layering.py`, which is the job's purpose.
+

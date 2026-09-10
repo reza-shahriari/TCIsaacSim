@@ -4,7 +4,12 @@
 # Any CPython >= 3.10 with the dev extras installed also works for the engine-free core.
 PYTHON ?= python
 
-.PHONY: install test test-all lint fmt typecheck check luts golden-update clean
+# `make ci`: the GPU-free gate on a plain CPython venv, the same job .github/workflows/check.yml
+# runs. Proves the engine-free core needs neither Isaac Sim nor CUDA.
+CI_PYTHON ?= python3.10
+CI_VENV ?= .venv-ci
+
+.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -29,6 +34,12 @@ typecheck:
 check: lint typecheck test
 	@echo "OK — safe to commit"
 
+ci:
+	$(CI_PYTHON) -m venv $(CI_VENV)
+	$(CI_VENV)/bin/python -m pip install -q --upgrade pip
+	$(CI_VENV)/bin/python -m pip install -q -e ".[dev]"
+	$(MAKE) check PYTHON=$(CI_VENV)/bin/python
+
 luts:
 	$(PYTHON) scripts/generate_luts.py --configs configs/sensors --out data/lut
 
@@ -36,5 +47,5 @@ golden-update:
 	$(PYTHON) -m pytest tests/golden -q --update-golden
 
 clean:
-	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build
+	rm -rf .pytest_cache .mypy_cache .ruff_cache dist build $(CI_VENV)
 	find . -name __pycache__ -type d -exec rm -rf {} +
