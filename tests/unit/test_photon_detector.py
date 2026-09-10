@@ -92,7 +92,7 @@ def test_energy_form_input_refused_and_dtype_guards() -> None:
     with pytest.raises(ValueError, match="energy-form"):
         photoelectrons(np.array([55.49]), p, 2.0, 0.9)
     with pytest.raises(TypeError, match="float16"):
-        photoelectrons(np.array([1e21], dtype=np.float16), p, 2.0, 0.9)
+        photoelectrons(np.array([1.0], dtype=np.float16), p, 2.0, 0.9)
     with pytest.raises(ValueError, match="negative"):
         photoelectrons(np.array([-1e21]), p, 2.0, 0.9)
     out = photoelectrons(

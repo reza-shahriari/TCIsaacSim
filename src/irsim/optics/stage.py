@@ -1,0 +1,86 @@
+"""Stage 3 — optics: supersampled scene radiance → in-band power on each detector pixel.
+
+Fixed order (docs/physics-model.md §2, §8.1-§8.3, §13.4; ADR 0020):
+
+    1. [optical PSF at the supersampled pitch -- MS milestone, identity today]
+    2. box-mean downsample k× → native grid            (detector footprint MTF + aliasing)
+    3. × π τ_opt / (4F² + 1) · cos⁴θ · A_d               (aperture, natural vignetting, area)
+    4. + Φ_self = A_d Ω_eff (1 − τ_opt) L_B(T_housing)  (optics self-emission)
+
+Output Φ is float32 in W (or photons s⁻¹ if the input was photon radiance). ``invert_optics``
+undoes 3-4 at the native grid and returns the scene band radiance the radiometric branch
+inverts to apparent temperature (M3.10). The band radiance of the housing L_B(T_housing) is an
+input: the caller looks it up in the band LUT so this stage stays band-agnostic.
+
+docs/physics-model.md §2, §8.1, §8.2, §8.3, §13.4
+"""
+
+from __future__ import annotations
+
+import numpy as np
+from numpy.typing import NDArray
+
+from irsim.config.sensor import SensorSpec
+from irsim.optics.aperture import aperture_factor, fpa_irradiance
+from irsim.optics.sampling import box_downsample
+from irsim.optics.self_emission import self_emission_power
+from irsim.optics.vignetting import cos4_field
+
+__all__ = ["optics_field", "apply_optics", "invert_optics"]
+
+
+def optics_field(sensor: SensorSpec, supersample: int = 1) -> NDArray[np.float32]:
+    """The cos⁴ (or ones) field for this sensor's geometry at the requested grid."""
+    return cos4_field(
+        sensor.fpa.width,
+        sensor.fpa.height,
+        sensor.fpa.pitch_um,
+        sensor.optics.focal_length_mm,
+        supersample=supersample,
+        enabled=sensor.optics.vignetting_cos4,
+    )
+
+
+def _check_native(radiance: NDArray[np.floating], sensor: SensorSpec, what: str) -> None:
+    if radiance.shape[:2] != (sensor.fpa.height, sensor.fpa.width):
+        raise ValueError(
+            f"{what} shape {radiance.shape[:2]} != detector grid "
+            f"{(sensor.fpa.height, sensor.fpa.width)}"
+        )
+
+
+def apply_optics(
+    radiance_ss: NDArray[np.floating],
+    sensor: SensorSpec,
+    lb_housing: float,
+    supersample: int | None = None,
+) -> NDArray[np.float32]:
+    """Scene band radiance on the k× grid → pixel power Φ (H, W) float32."""
+    k = sensor.optics.supersample_factor if supersample is None else supersample
+    radiance = box_downsample(radiance_ss, k)
+    _check_native(radiance, sensor, "downsampled radiance")
+    a_d = sensor.detector_active_area_m2
+    f, tau = sensor.optics.f_number, sensor.optics.transmittance
+    irradiance = fpa_irradiance(radiance, f, tau, optics_field(sensor))
+    phi_self = self_emission_power(a_d, f, tau, lb_housing)
+    phi = irradiance.astype(np.float64) * a_d + phi_self
+    return np.asarray(phi, dtype=np.float32)
+
+
+def invert_optics(
+    phi: NDArray[np.floating], sensor: SensorSpec, lb_housing: float
+) -> NDArray[np.float32]:
+    """Pixel power → equivalent scene band radiance at the native grid (float32).
+
+    Divides out cos⁴ so an off-axis pixel reports the radiance it actually saw; the
+    radiometric branch therefore recovers T everywhere, not only on axis.
+    """
+    p = np.asarray(phi)
+    if p.dtype == np.float16:
+        raise TypeError("pixel power is float16 (non-negotiable #2)")
+    _check_native(p, sensor, "pixel power")
+    a_d = sensor.detector_active_area_m2
+    f, tau = sensor.optics.f_number, sensor.optics.transmittance
+    phi_self = self_emission_power(a_d, f, tau, lb_housing)
+    denom = a_d * aperture_factor(f) * tau * optics_field(sensor).astype(np.float64)
+    return np.asarray((p.astype(np.float64) - phi_self) / denom, dtype=np.float32)
