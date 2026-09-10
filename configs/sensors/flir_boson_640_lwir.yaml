@@ -1,0 +1,72 @@
+# FLIR Boson 640 (LWIR, uncooled VOx microbolometer).
+# The sensor in the FLIR ADK automotive module -- a good default target.
+# Schema: docs/physics-model.md §12.2
+#
+# Values marked ESTIMATED are literature/typical figures, not measurements from a
+# specific unit. Replace them before relying on results.
+
+sensor:
+  name: flir_boson_640_lwir
+  band:
+    lambda_min_um: 7.5
+    lambda_max_um: 13.5
+    spectral_response: spectra/boson_vox.csv     # ESTIMATED until measured
+    regime: emissive                             # emissive | reflective | mixed
+
+  optics:
+    f_number: 1.0
+    focal_length_mm: 14.0                        # 32 deg HFOV variant
+    transmittance: 0.92                          # ESTIMATED (germanium + AR coat)
+    housing_temp_mode: coupled                   # fixed | ambient | coupled
+    cold_shield_efficiency: 1.0                  # n/a for uncooled
+    distortion:
+      model: brown_conrady
+      coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]          # ESTIMATED -- calibrate
+    vignetting_cos4: true
+
+  fpa:
+    type: bolometer
+    width: 640
+    height: 512
+    pitch_um: 12.0
+    fill_factor: 0.90                            # ESTIMATED
+    frame_rate_hz: 60
+    bit_depth: 16
+    thermal_time_constant_ms: 10.0               # ESTIMATED (typical VOx 8-12 ms)
+    tcr_per_k: -0.021                            # ESTIMATED (typical VOx)
+
+  noise:
+    netd_mk_at_300k: 50.0                        # "professional" grade; 60 consumer, 40 industrial
+    ratios_3d:                                   # relative to sigma_TVH
+      tvh: 1.00
+      vh:  0.30
+      h:   0.15
+      v:   0.08
+      tv:  0.05
+      th:  0.05
+      t:   0.02
+    fpn_drift_tau_s: 120.0
+    bad_pixel_fraction: 0.0015
+    bad_pixel_cluster_lambda: 1.6
+
+  nuc:
+    mode: shuttered
+    ffc_interval_s: 180
+    ffc_freeze_ms: 700
+    residual_gain_ppm_per_k: 900                 # ESTIMATED
+    residual_offset_mk_per_k: 45                 # ESTIMATED
+
+  isp:
+    agc: plateau_equalization
+    plateau: 0.012
+    clip_percentiles: [0.005, 0.995]
+    gamma: 1.0
+    dde_gain: 0.35
+    polarity: white_hot
+    palette: gray
+
+  outputs:
+    radiance_linear: true
+    apparent_temperature: true
+    dn_16: true
+    display_8: true

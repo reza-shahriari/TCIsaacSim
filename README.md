@@ -1,0 +1,85 @@
+# irsim — physically-based multi-band IR camera simulator
+
+Simulates what a real LWIR / MWIR / SWIR / NIR camera would see, with radiometry that closes in physical
+units. Targets NVIDIA Isaac Sim 6.0; the physics core is engine-free so an Unreal Engine port is a
+rewrite of the glue only.
+
+**Physics specification:** [`docs/physics-model.md`](docs/physics-model.md) — the source of truth for
+every equation here. Code cites it by section.
+
+---
+
+## Status
+
+Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phenomenology ·
+**T4** vs. real data · **T5** task-level. See `docs/physics-model.md` §15.
+
+| Component | State | Tier | Notes |
+|---|---|---|---|
+| `radiometry` | 🟡 partial | T1 | Planck + constants landed; band LUT pending |
+| `materials` | ⬜ not started | — | |
+| `thermal` | ⬜ not started | — | |
+| `atmosphere` | ⬜ not started | — | |
+| `optics` | ⬜ not started | — | |
+| `detector` | ⬜ not started | — | |
+| `noise` | ⬜ not started | — | |
+| `isp` | ⬜ not started | — | |
+| `irsim_isaac` | ⬜ not started | — | Temperature-encoding round trip is the first task |
+
+Bands configured: _none yet_ · Cameras modelled: _none yet_
+
+---
+
+## Quick start
+
+```bash
+make install
+make check        # lint + typecheck + unit tests — must be green before any commit
+```
+
+Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`.
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `make install` | Editable install + dev dependencies |
+| `make test` | Unit tests only (fast, no GPU) |
+| `make test-all` | Adds integration tests (requires Isaac Sim) |
+| `make lint` / `make fmt` | ruff check / ruff format |
+| `make typecheck` | mypy on `src/irsim` |
+| `make check` | lint + typecheck + test |
+| `make luts` | Regenerate band LUTs from configs and spectral data |
+
+## Layout
+
+```
+src/irsim/          engine-free physics core (pure Python + NumPy)
+src/irsim_isaac/    Isaac Sim glue — the only place engine imports are allowed
+tests/unit/         fast, no GPU, no Isaac Sim
+tests/integration/  requires Isaac Sim (@pytest.mark.isaac)
+tests/golden/       regression fixtures
+configs/            sensor / material / atmosphere YAML
+data/               spectral responses, n/k tables, generated LUTs, weather
+docs/               physics-model.md and ADRs
+```
+
+## Current limitations
+
+Stated deliberately — see `docs/physics-model.md` Appendix A for the full list and reasoning.
+
+- No 3-D conduction. Engine bay and exhaust are prescribed, not solved.
+- Band-averaged atmosphere (Beer-Lambert). Valid under ~500 m; not for airborne work.
+- Emissivity is grey within a band.
+- Reflections are approximate — sky-view-factor blending, not full path tracing.
+- No polarisation, no atmospheric turbulence.
+- NETD is anchored to datasheet values, not predicted from first principles.
+- Weather is prescribed; there is no coupling back from the scene to the atmosphere.
+
+## Contributing
+
+Read `CLAUDE.md` first — it defines the non-negotiables (engine-free core, float32 everywhere
+temperature flows, noise in radiance space, Kirchhoff closure) and the per-step workflow.
+
+Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
+one commit.
