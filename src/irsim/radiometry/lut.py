@@ -145,3 +145,34 @@ class BandLUT:
         fr = (u - i0.astype(np.float32)).astype(np.float32)
         out = table[i0] * (np.float32(1.0) - fr) + table[i0 + 1] * fr
         return np.asarray(out, dtype=np.float32)
+
+    # -- inverse lookup: apparent temperature (§3.3) --------------------------------------
+
+    def radiance_out_of_range(
+        self, radiance: object, quantity: Quantity = "lb"
+    ) -> NDArray[np.bool_]:
+        """True where a radiance lies outside [table[0], table[-1]] and would be clamped."""
+        table = self.table(quantity)
+        value = _require_not_fp16(radiance, "radiance")
+        return np.asarray((value < table[0]) | (value > table[-1]))
+
+    def apparent_temperature(self, radiance: object, quantity: Quantity = "lb") -> Float32Array:
+        """T_apparent = L_B^-1(L): invert the monotone table by searchsorted and linear
+        interpolation inside the bin. float32 in and out.
+
+        The result is *apparent* (radiometric) temperature, never kinetic temperature: for a
+        grey body the gap between them is the product (§3.3). Radiance outside the table's
+        range clamps to T0 / T1 -- an image must never carry NaN -- and
+        :meth:`radiance_out_of_range` says where that happened (ADR 0011).
+        """
+        table = self.table(quantity).astype(np.float64)
+        if quantity not in ("lb", "lb_q"):
+            raise ValueError("apparent_temperature inverts a radiance table: 'lb' or 'lb_q'")
+        value = _require_not_fp16(radiance, "radiance").astype(np.float64)
+        clamped = np.clip(value, table[0], table[-1])
+        # index of the bin [i, i+1] containing the value; searchsorted('right') - 1, kept in range
+        i0 = np.clip(np.searchsorted(table, clamped, side="right") - 1, 0, self.n - 2)
+        lo, hi = table[i0], table[i0 + 1]
+        fr = (clamped - lo) / (hi - lo)
+        t = self.t0_k + (i0 + fr) * self.dt_k
+        return np.asarray(t, dtype=np.float32)

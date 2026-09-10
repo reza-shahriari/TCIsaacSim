@@ -132,3 +132,55 @@ def test_constructor_rejects_non_float32_tables() -> None:
     z = np.zeros(16001, dtype=np.float64)
     with pytest.raises(TypeError, match="float32"):
         BandLUT(200.0, 1000.0, 16001, z, z, z, z)
+
+
+# --- inverse lookup (M1.7) -------------------------------------------------------------
+
+
+def test_inverse_round_trip_under_1mK(boson_lut: BandLUT) -> None:
+    """T -> Lb -> T_app on a 0.013 K off-grid sweep: < 1 mK (expected ~0.05 mK, float32)."""
+    temps = np.arange(200.013, 1000.0, 0.013)
+    for q in ("lb", "lb_q"):
+        raw = boson_lut.apparent_temperature(boson_lut.lookup(temps, q), q)  # type: ignore[arg-type]
+        assert raw.dtype == np.float32
+        err_mk = np.abs(raw.astype(np.float64) - temps) * 1e3
+        print(f"{q}: round trip max {err_mk.max():.4f} mK")
+        assert err_mk.max() < 1.0, f"{q}: {err_mk.max():.3f} mK"
+
+
+def test_grey_body_apparent_temperature_is_the_product(tophat_lwir_lut: BandLUT) -> None:
+    """ε = 0.9 at 300 K in 7.5-13.5 µm reads 293.51 K apparent -- the 6.5 K gap *is* what a
+    radiometric camera reports (§3.3). LUT inverse vs brentq on the closed form < 5 mK."""
+    from scipy.optimize import brentq
+
+    radiance = 0.9 * band_radiance_tophat(7.5, 13.5, 300.0)
+    exact = brentq(lambda t: band_radiance_tophat(7.5, 13.5, t) - radiance, 250.0, 300.0, xtol=1e-9)
+    assert exact == pytest.approx(293.51, abs=0.02)
+    t_app = float(tophat_lwir_lut.apparent_temperature(np.float32(radiance))[()])
+    assert abs(t_app - exact) * 1e3 < 5.0, f"{t_app} vs {exact}"
+    assert t_app < 300.0 - 6.0, "apparent must sit well below kinetic for a grey body"
+
+
+def test_inverse_clamps_and_flags_out_of_range(boson_lut: BandLUT) -> None:
+    lo, hi = float(boson_lut.lb[0]), float(boson_lut.lb[-1])
+    t = boson_lut.apparent_temperature(np.array([lo * 0.5, lo, hi, hi * 2.0], dtype=np.float32))
+    assert t.tolist() == pytest.approx([200.0, 200.0, 1000.0, 1000.0], abs=1e-3)
+    assert np.all(np.isfinite(t)), "an image must never carry NaN"
+    flags = boson_lut.radiance_out_of_range(np.array([lo * 0.5, lo, 50.0, hi, hi * 2.0]))
+    assert flags.tolist() == [True, False, False, False, True]
+
+
+def test_inverse_refuses_float16_and_derivative_tables(boson_lut: BandLUT) -> None:
+    with pytest.raises(TypeError, match="float16"):
+        boson_lut.apparent_temperature(np.array([50.0], dtype=np.float16))
+    with pytest.raises(ValueError, match="radiance table"):
+        boson_lut.apparent_temperature(np.array([1.0]), "dlb_dt")  # type: ignore[arg-type]
+
+
+def test_inverse_is_monotone_and_handles_exact_nodes(boson_lut: BandLUT) -> None:
+    nodes = boson_lut.lb[::1000]
+    back = boson_lut.apparent_temperature(nodes).astype(np.float64)
+    np.testing.assert_allclose(back, boson_lut.temperatures_k[::1000], atol=1e-3)
+    assert np.all(
+        np.diff(boson_lut.apparent_temperature(np.linspace(nodes[0], nodes[-1], 5000))) >= 0
+    )
