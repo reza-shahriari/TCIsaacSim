@@ -357,6 +357,11 @@ class SensorSpec(_Frozen):
         return int(2**self.fpa.bit_depth - 1)
 
     @property
+    def fpa_shape(self) -> tuple[int, int]:
+        """(height, width) of the native detector grid."""
+        return (self.fpa.height, self.fpa.width)
+
+    @property
     def detector_active_area_m2(self) -> float:
         """Alias of :attr:`pixel_area_m2` under the §9.1 name A_d."""
         return self.pixel_area_m2
