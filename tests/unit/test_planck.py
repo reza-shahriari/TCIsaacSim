@@ -10,12 +10,14 @@ See the ir-sim-testing skill for the tolerance conventions used.
 import numpy as np
 import pytest
 
-from irsim.radiometry.constants import C_LIGHT, H_PLANCK, SIGMA_SB, WIEN_B
+from irsim.radiometry.constants import C2, C_LIGHT, H_PLANCK, SIGMA_Q, SIGMA_SB, WIEN_B, ZETA_3
 from irsim.radiometry.planck import (
+    band_photon_radiance_tophat,
     band_radiance_tophat,
     d_spectral_photon_radiance_dT,
     d_spectral_radiance_dT,
     fractional_exitance,
+    fractional_photon_exitance,
     spectral_photon_radiance,
     spectral_radiance,
 )
@@ -213,3 +215,74 @@ def test_band_helpers_reject_metre_valued_wavelengths() -> None:
         fractional_exitance(12e-6, 300.0)
     with pytest.raises(ValueError, match="KELVIN"):
         band_radiance_tophat(8.0, 12.0, 27.0 - 300.0)
+
+
+# --- photon form (M1.2) -------------------------------------------------------------------
+
+
+def test_sigma_q_value_and_derivation() -> None:
+    """σ_q = 4π ζ(3) k³/(h³c²) = 1.5205e15 photons s⁻¹ m⁻² K⁻³; ζ(3) is Apéry's constant."""
+    assert pytest.approx(sum(1.0 / n**3 for n in range(1, 200_000)), abs=1e-10) == ZETA_3
+    assert pytest.approx(1.5205e15, rel=1e-3) == SIGMA_Q
+
+
+@pytest.mark.parametrize("T", [250.0, 300.0, 800.0])
+def test_photon_integral_equals_sigma_q(T: float) -> None:
+    """∫L_q dλ == σ_q T³/π to 1e-6: Simpson on 0.1-200 µm plus the closed-form tail."""
+    lam = np.linspace(0.1, 200.0, 19_991)
+    quad = _simpson(spectral_photon_radiance(lam, T), lam)
+    total = SIGMA_Q * T**3 / np.pi
+    tail = total * (1.0 - fractional_photon_exitance(200.0, T))
+    rel = (quad + tail) / total - 1.0
+    assert abs(rel) < 1e-6, f"T={T}: {rel:.2e}"
+
+
+def test_photon_fractional_exitance_converges_to_unity() -> None:
+    """1 − F_q → (1/2ζ(3))(x²/2 − x³/6) as x → 0; F_q(1000 µm, 6000 K) has x = 2.4e-3."""
+    lam, T = 1000.0, 6000.0
+    x = C2 / (lam * T)
+    residual = 1.0 - fractional_photon_exitance(lam, T)
+    expected = (x**2 / 2.0 - x**3 / 6.0) / (2.0 * ZETA_3)
+    assert 0.0 < residual < 1e-5
+    assert abs(residual / expected - 1.0) < 1e-6
+    assert fractional_photon_exitance(0.2, 300.0) < 1e-9
+    vals = [fractional_photon_exitance(x_, 300.0) for x_ in (2.0, 5.0, 10.0, 20.0, 50.0, 1000.0)]
+    assert all(b > a for a, b in zip(vals[:-1], vals[1:], strict=True))
+
+
+def test_photon_branches_agree_at_crossover() -> None:
+    from irsim.radiometry.planck import _SMALL_X, _photon_integral_above
+
+    for x in (_SMALL_X * (1 - 1e-9), _SMALL_X, 0.3, 0.45):
+        series = sum(np.exp(-n * x) / n * (x**2 + 2 * x / n + 2 / n**2) for n in range(1, 200_000))
+        taylor = _photon_integral_above(x, 1e-15, 5000)
+        assert abs(taylor / series - 1.0) < 1e-13, f"x={x}"
+
+
+def test_band_photon_radiance_matches_quadrature() -> None:
+    for lo, hi, T in ((7.5, 13.5, 300.0), (3.0, 5.0, 300.0), (0.9, 1.7, 300.0)):
+        lam = np.linspace(lo, hi, 200_001)
+        quad = np.trapezoid(spectral_photon_radiance(lam, T), lam)
+        closed = band_photon_radiance_tophat(lo, hi, T)
+        assert abs(closed / quad - 1.0) < 1e-4, f"{lo}-{hi} um at {T} K"
+
+
+def test_known_answer_photon_band_radiance_lwir_300k() -> None:
+    """Lb_q(7.5-13.5 µm, 300 K) = 2.915e21 photons s⁻¹ m⁻² sr⁻¹ (roadmap M1.2 anchor)."""
+    assert band_photon_radiance_tophat(7.5, 13.5, 300.0) == pytest.approx(2.915e21, rel=1e-3)
+
+
+def test_energy_over_photon_band_radiance_is_hc_over_effective_wavelength() -> None:
+    """Lb / Lb_q = hc/λ_eff with λ_eff inside the band: a wrong SIGMA_Q or a form mix-up
+    puts λ_eff outside [λ_min, λ_max]."""
+    for lo, hi, T in ((7.5, 13.5, 300.0), (3.0, 5.0, 500.0), (0.9, 1.7, 300.0)):
+        ratio = band_radiance_tophat(lo, hi, T) / band_photon_radiance_tophat(lo, hi, T)
+        lam_eff_um = H_PLANCK * C_LIGHT / ratio * 1e6
+        assert lo < lam_eff_um < hi, f"{lo}-{hi}: lambda_eff {lam_eff_um:.3f} um"
+
+
+def test_band_photon_helper_rejects_unit_mistakes() -> None:
+    with pytest.raises(ValueError, match="MICROMETRES"):
+        band_photon_radiance_tophat(8e-6, 12e-6, 300.0)
+    with pytest.raises(ValueError, match="MICROMETRES"):
+        fractional_photon_exitance(12e-6, 300.0)

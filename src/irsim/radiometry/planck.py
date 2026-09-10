@@ -16,11 +16,13 @@ from .constants import (
     C1Q,
     C2,
     EXP_ARG_MAX,
+    SIGMA_Q,
     SIGMA_SB,
     TEMPERATURE_MAX_K,
     TEMPERATURE_MIN_K,
     WAVELENGTH_MAX_UM,
     WAVELENGTH_MIN_UM,
+    ZETA_3,
 )
 
 FloatArray = NDArray[np.float64]
@@ -31,7 +33,9 @@ __all__ = [
     "d_spectral_radiance_dT",
     "d_spectral_photon_radiance_dT",
     "fractional_exitance",
+    "fractional_photon_exitance",
     "band_radiance_tophat",
+    "band_photon_radiance_tophat",
 ]
 
 
@@ -222,6 +226,60 @@ def fractional_exitance(
     return 15.0 / np.pi**4 * _planck_integral_above(x, rtol, max_terms)
 
 
+def _photon_integral_above(x: float, rtol: float, max_terms: int) -> float:
+    """∫_x^∞ t² / (e^t − 1) dt: the photon-form analogue of :func:`_planck_integral_above`.
+    Total over all x is 2ζ(3).
+
+    * ``x >= _SMALL_X``: exponential series Σ_n e^{-nx}(x²/n + 2x/n² + 2/n³), geometric tail bound.
+    * ``x < _SMALL_X``: 2ζ(3) minus the Taylor series of ∫_0^x, x²/2 − x³/6 +
+      Σ_k B_2k x^{2k+2} / ((2k+2)(2k)!).
+    """
+    if x < _SMALL_X:
+        below = x**2 / 2.0 - x**3 / 6.0
+        factorial = 1.0
+        for k, b2k in enumerate(_BERNOULLI_EVEN, start=1):
+            factorial *= (2 * k - 1) * (2 * k)
+            below += b2k * x ** (2 * k + 2) / ((2 * k + 2) * factorial)
+        return float(2.0 * ZETA_3 - below)
+
+    if x > EXP_ARG_MAX:
+        return 0.0
+    total = 0.0
+    tail_factor = np.exp(-x) / (-np.expm1(-x))
+    for n in range(1, max_terms + 1):
+        nx = n * x
+        if nx > EXP_ARG_MAX:
+            break
+        term = np.exp(-nx) / n * (x**2 + 2.0 * x / n + 2.0 / n**2)
+        total += term
+        if total > 0.0 and term * tail_factor < rtol * total:
+            break
+    return total
+
+
+def fractional_photon_exitance(
+    wavelength_um: float,
+    temperature_k: float,
+    rtol: float = 1e-12,
+    max_terms: int = 2000,
+) -> float:
+    """Fraction of total blackbody *photon* exitance emitted below ``wavelength_um``.
+
+    F_q = (1 / 2ζ(3)) ∫_x^∞ t²/(e^t − 1) dt with x = C2/(λT). The photon analogue of
+    :func:`fractional_exitance`; the only implementation-independent oracle for the photon
+    band-radiance table (``Lb_q``) that photon-detector NETD depends on (§9.4). Like F, it never
+    reaches exactly 1 at finite wavelength (1 − F_q(1000 µm, 300 K) ≈ 4.8e-4 -- the photon
+    spectrum's Rayleigh-Jeans tail is fatter than the energy spectrum's).
+
+    docs/physics-model.md §3.2 (a), §9.4
+    """
+    _validate(
+        np.asarray(wavelength_um, dtype=np.float64), np.asarray(temperature_k, dtype=np.float64)
+    )
+    x = C2 / (wavelength_um * temperature_k)
+    return _photon_integral_above(x, rtol, max_terms) / (2.0 * ZETA_3)
+
+
 def band_radiance_tophat(lambda_min_um: float, lambda_max_um: float, temperature_k: float) -> float:
     """Band radiance in W m^-2 sr^-1 for a top-hat spectral response.
 
@@ -240,3 +298,24 @@ def band_radiance_tophat(lambda_min_um: float, lambda_max_um: float, temperature
     f_hi = fractional_exitance(lambda_max_um, temperature_k)
     f_lo = fractional_exitance(lambda_min_um, temperature_k)
     return SIGMA_SB * temperature_k**4 / np.pi * (f_hi - f_lo)
+
+
+def band_photon_radiance_tophat(
+    lambda_min_um: float, lambda_max_um: float, temperature_k: float
+) -> float:
+    """Band photon radiance in photons s^-1 m^-2 sr^-1 for a top-hat spectral response.
+
+    σ_q T³ / π · (F_q(λ_max) − F_q(λ_min)); the photon-form counterpart of
+    :func:`band_radiance_tophat`.
+
+    docs/physics-model.md §3.2 (a)
+    """
+    _validate(
+        np.asarray([lambda_min_um, lambda_max_um], dtype=np.float64),
+        np.asarray(temperature_k, dtype=np.float64),
+    )
+    if lambda_max_um <= lambda_min_um:
+        raise ValueError("lambda_max_um must exceed lambda_min_um")
+    f_hi = fractional_photon_exitance(lambda_max_um, temperature_k)
+    f_lo = fractional_photon_exitance(lambda_min_um, temperature_k)
+    return SIGMA_Q * temperature_k**3 / np.pi * (f_hi - f_lo)

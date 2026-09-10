@@ -39,6 +39,19 @@ SIGMA_SB: Final[float] = 5.670374419e-8
 # Wien displacement constant, um K
 WIEN_B: Final[float] = 2897.771955
 
+# Apéry's constant zeta(3) = sum 1/n^3: the photon-form analogue of pi^4/15.
+ZETA_3: Final[float] = 1.2020569031595942
+
+# Photon-flux Stefan-Boltzmann constant, photons s^-1 m^-2 K^-3:
+#   M_q = SIGMA_Q * T^3  (hemispherical photon exitance of a blackbody)
+# Derivation: integrate L_q = (2c/lam^4) / (exp(hc/(lam k T)) - 1) over lam, substituting
+# t = hc/(lam k T):
+#   int L_q dlam = 2c (kT/hc)^3 int_0^inf t^2/(e^t - 1) dt = 2c (kT/hc)^3 * 2 zeta(3).
+# Exitance is pi times radiance, so SIGMA_Q = 4 pi zeta(3) k^3 / (h^3 c^2) = 1.5205e15.
+SIGMA_Q: Final[float] = (
+    4.0 * 3.141592653589793 * ZETA_3 * K_BOLTZMANN**3 / (H_PLANCK**3 * C_LIGHT**2)
+)
+
 # --- Temperature encoding and LUT grid --------------------------------------
 # One definition, shared by the config layer, the LUT builder, the Warp/SPG kernels and the
 # Isaac AOV adapter. The G-buffer carries c = (T - T_ENCODE_REF_K) / T_ENCODE_SPAN_K in float32,
