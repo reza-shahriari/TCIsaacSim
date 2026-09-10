@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Layering guard hardened in both directions: `src/irsim` may not import engine modules (now including
+  `carb`), `irsim_isaac`, or the ML/imaging stack; default-gate tests may not import engines; glue files
+  must keep engine imports inside functions. Scanner self-tested on synthetic offending modules.
+- `irsim_isaac.env` (`has_isaac`, `has_warp`, `require_*`, force-off env flags) and
+  `tests/integration/conftest.py`, which auto-marks and skips the directory without Isaac Sim.
+- `isaac` optional extra (`warp-lang`, floor provisional until M2.1); mypy now covers `src/irsim_isaac`.
 - Golden fixture helper (`tests/golden/conftest.py`, ADR 0004): `.npy` + JSON sidecar with config hash;
   STALE (inputs changed) reported distinctly from FAILING (values changed); actual array dumped to
   `outputs/golden/` on failure; float16/float64 refused on disk; `--update-golden` registered so

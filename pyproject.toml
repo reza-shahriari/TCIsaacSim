@@ -22,6 +22,11 @@ dev = [
     "mypy>=1.8",
     "matplotlib>=3.8",
 ]
+# Engine-side extras. The Warp floor is provisional until roadmap M2.1 verifies the GPU stack
+# inside the Isaac Sim interpreter; nothing in the default gate needs it.
+isaac = [
+    "warp-lang>=1.5",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -49,5 +54,5 @@ strict = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["scipy.*", "matplotlib.*"]
+module = ["scipy.*", "matplotlib.*", "omni.*", "pxr.*", "isaacsim.*", "warp.*", "carb.*"]
 ignore_missing_imports = true

@@ -26,7 +26,8 @@ These are the mistakes that are expensive to discover late. They are not style p
 
 ### 1. The physics core is engine-free
 
-`src/irsim/` must never import `omni`, `pxr`, `isaacsim`, `warp`, or any engine module. It is pure
+`src/irsim/` must never import `omni`, `pxr`, `isaacsim`, `warp`, `carb`, or any engine module, nor the glue
+package `irsim_isaac`, nor the ML/imaging stack (`torch`, `cv2`, `PIL`, …, which lives in `src/irsim_eval/`). It is pure
 Python + NumPy, importable and testable with plain `pytest` on any machine with no GPU and no Isaac Sim.
 
 All engine glue lives in `src/irsim_isaac/`. This is enforced by a test — see `tests/unit/test_layering.py`.

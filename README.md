@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `detector` | ⬜ not started | — | |
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
-| `irsim_isaac` | ⬜ not started | — | Temperature-encoding round trip is the first task |
+| `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. Temperature-encoding round trip is the first task |
 
 Bands configured: _none yet_ · Cameras modelled: _none yet_
 
@@ -54,7 +54,7 @@ Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Req
 | `make test` | Unit + golden tests (fast, no GPU) |
 | `make test-all` | Adds integration tests (requires Isaac Sim) |
 | `make lint` / `make fmt` | ruff check / ruff format |
-| `make typecheck` | mypy on `src/irsim` |
+| `make typecheck` | mypy on `src/irsim` and `src/irsim_isaac` |
 | `make check` | lint + typecheck + test |
 | `make luts` | Regenerate band LUTs from configs and spectral data |
 | `make golden-update` | Regenerate golden reference arrays deliberately (ADR 0004) |
@@ -65,7 +65,7 @@ Isaac Sim is **not** required for anything in `src/irsim/` or `tests/unit/`. Req
 src/irsim/          engine-free physics core (pure Python + NumPy)
 src/irsim_isaac/    Isaac Sim glue — the only place engine imports are allowed
 tests/unit/         fast, no GPU, no Isaac Sim (default gate, with tests/golden)
-tests/integration/  requires Isaac Sim (@pytest.mark.isaac)
+tests/integration/  requires Isaac Sim; auto-marked isaac, skipped cleanly when absent
 tests/golden/       regression fixtures: .npy + JSON sidecar with config hash (ADR 0004)
 configs/            sensor / material / atmosphere YAML
 data/               spectral responses, n/k tables, generated LUTs, weather
@@ -92,7 +92,8 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
 
 ## Contributing
 
-Read `CLAUDE.md` first — it defines the non-negotiables (engine-free core, float32 everywhere
+Read `CLAUDE.md` first — it defines the non-negotiables (engine-free core, checked in both directions by
+`tests/unit/test_layering.py`, float32 everywhere
 temperature flows, noise in radiance space, Kirchhoff closure) and the per-step workflow.
 
 Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
