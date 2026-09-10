@@ -23,17 +23,20 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟢 done | T1 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; golden LUT slice at 1 mK; ADRs 0005–0013 |
+| `radiometry` | 🟢 done | T1–T2 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; golden LUT slice at 1 mK; ADRs 0005–0013 |
 | `materials` | 🟡 partial | T1 | Minimal per-band `MaterialTable` (id → ε₀, id 0 = UNMAPPED refused); spectral model pending M7 |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
-| `optics` | 🟡 partial | T1 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016); box downsample + composed optics stage with inverse, blackbody round trip < 1 mK (ADR 0020) |
-| `detector` | 🟡 partial | T1 | `FpaParams`; ideal bolometer static transfer (linear DN-per-W gain, ADR 0019), ideal photon transfer (η applied once, 17/5 aperture identity), shared floor-and-clip quantiser |
+| `optics` | 🟡 partial | T1–T2 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016); box downsample + composed optics stage with inverse, blackbody round trip < 1 mK (ADR 0020) |
+| `detector` | 🟡 partial | T1–T2 | `FpaParams`; ideal bolometer static transfer (linear DN-per-W gain, ADR 0019), ideal photon transfer (η applied once, 17/5 aperture identity), shared floor-and-clip quantiser |
 | `noise` | ⬜ not started | — | |
 | `isp` | 🟡 partial | T1 | Radiometric branch: calibrated DN ↔ radiance (housing at T_cal = NUC level), T_app via LUT inverse, float32 and ½-LSB DN16 routes (ADR 0021); NUC/AGC/palette pending |
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms; optics extensions (housing, supersample, MTF, vignetting map) and derived A_d / active width / ξ_c, schema v2 (ADR 0017) |
-| `pipeline` | 🟡 partial | T1 | Engine-free NumPy oracle (ADR 0018): `run_frame` composes band radiance → optics → detector → ADC → radiometric ISP (stages 2/5 identity); outputs radiance / apparent_t / dn16, display8 pending M5 |
+| `pipeline` | 🟡 partial | T1–T2 | Engine-free NumPy oracle (ADR 0018): `run_frame` composes band radiance → optics → detector → ADC → radiometric ISP (stages 2/5 identity); outputs radiance / apparent_t / dn16, display8 pending M5 |
+| `validation` | 🟡 partial | T2 | Tier 2 SITF bench on the CPU reference (self-consistency; measured SITF CSV hook under `data/validation/sitf/`) |
 | `irsim_isaac` | 🟡 partial | T1 | `env.py` probes; **M2 gate spike done (ADR 0014):** no float32 colour AOV carries temperature (all fp16, exposure-scaled) → the renderer transports **instance ids + float32 geometry** and temperature comes from a Warp table; `omni.rtx.spg` 0.4.0 present, float32 pass-through bit-exact, **no cross-frame state** (stateful stages stay in Warp), LUT baked into the `.cu`. `probe.py`/`spg_probe.py` + `scripts/probe_isaac_*.py` reproduce it; `tests/integration` (10 tests, one Kit per session) pin it. Normals/AO/motion semantics still open (M10.1) |
+
+Tier 2 today is self-consistency (no camera, ADR 0003): SITF strictly increasing, linear in L_B(T) to 0.29 LSB rms, blackbody T_app < 10 mK.
 
 Bands configured: **LWIR** (`flir_boson_640_lwir`, estimated VOx response — ADR 0013; `make luts` builds the table) · Cameras modelled: _none yet_ (radiometry only; the pipeline starts at M3)
 
