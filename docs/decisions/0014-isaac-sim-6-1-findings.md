@@ -1,0 +1,150 @@
+# ADR 0014 — Isaac Sim 6.1 findings: transport ids and geometry, not temperature
+
+**Status:** Accepted
+**Date:** 2026-09-10
+
+## Context
+
+`docs/physics-model.md` §13.1/§13.3, the `isaac-sim-spg` skill and roadmap M2 assumed the renderer
+could carry an encoded surface temperature `c = (T − 200)/800` in an emissive colour AOV with a
+**float32** channel (`PtSelfIllumination`, or `HdrColor` at zero bounces), and that the RTX Sensor
+Processing Graph (`omni.rtx.spg`) could hold cross-frame state and read a LUT file. None of that had
+been checked on a real build. Roadmap M2 is the time-boxed gate spike that checks it before any
+pipeline code depends on it. This ADR records what was measured (`src/irsim_isaac/probe.py`,
+`src/irsim_isaac/spg_probe.py`, `scripts/probe_isaac_environment.py`, `scripts/probe_isaac_spg.py`;
+reports under the git-ignored `outputs/isaac_probe/`) and the design that follows.
+
+### The build every number below comes from
+
+| item | measured |
+|---|---|
+| Isaac Sim | **6.1.0-rc.26** (`isaacsim.core.version.get_version()`), source build at `/home/hunter/IsaacSim`; CLAUDE.md, README and §13 say "6.0" (spec-issues T16) |
+| Kit | 110.3.0+feature.371399.00c488ae.gl; real-time render mode is named `RealTimePathTracing` (the setting value `RaytracedLighting` is silently ignored) |
+| `omni.rtx.spg` | 0.4.0, present and enabled by default; docs and Lua stubs live in the extension folder (`docs/Overview.md`, `.luarc/cuda.lua`) |
+| `isaacsim.sensors.experimental.rtx` | 1.9.0: `RtxCamera`, `CameraSensor`, `TiledCameraSensor`, `SPGNode`, `author_spg` |
+| deprecated `isaacsim.sensors.camera` / `.rtx` | present in `extsDeprecated/`, enabled, not imported by `irsim_isaac` (guarded by `test_environment.py`) |
+| Warp | 1.16.0 from the `omni.warp.core` Kit extension; **importable only inside a running Kit** (`has_warp()` is False from plain `python.sh`); one CUDA device (RTX A6000 48 GB, driver 580.173.02) |
+| Replicator | `omni.replicator.core` 1.13.36, `omni.syntheticdata` 0.6.17 |
+| Kit boot | 14–35 s headless; `SimulationApp.close()` ends in `os._exit`, so the pytest session fixture closes the app from an `atexit` handler after pytest has reported |
+
+## What was measured
+
+### M2.2 — the gate: temperature in emission (fails as specified)
+
+Scene: 64 flat OmniPBR quads (UsdShade authoring: `Shader` with `OmniPBR.mdl`, `enable_emission`,
+`emissive_color = (c, c, c)` in raw colour space, `diffuse_color_constant = (id/255, 0, 0)`), a
+temperature ramp 200–1000 K including 300.000 / 300.050 / 300.100 K, camera at the origin looking
+−Z, no lights, 256², DLSS off (`/rtx/post/aa/op = 0`). Read back through Replicator annotators in
+real-time mode and in path tracing at 0 / 1 / 4 bounces, emissive intensity 1 and 40.
+
+| AOV | dtype | resolution | result |
+|---|---|---|---|
+| `HdrColor` | **float16** ×4 | 256² | linear in colour × intensity with slope **≈ 2.8 × 10⁻⁴** (0.00028 at intensity 1, 0.0112 at 40): an exposure scale, not a unit gain; at intensity 1 the whole ramp sits in the fp16 subnormal/denormal range |
+| `LdrColor` | uint8 ×4 | 256² | auto-exposed (ramp reads 0 at intensity 1, 0–16 at 40) |
+| `PtSelfIllumination`, `PtDirectIllumation`, `PtGlobalIllumination`, `PtBackground` | **float16** ×4 | 256² | 8.8 × 10⁻⁴ floor with a ≈ 2.4 × 10⁻⁴ per unit-c signal on top at 4 bounces; constant at 0 bounces |
+| `GroundTruthEmission`, `GroundTruthEmissionAndForegroundMask`, `GroundTruthDiffuseAlbedo`, `GroundTruthAmbientOcclusion` | float32 (registered) | — | **no data returned** |
+| `EmissionAndForegroundMask`, `DiffuseAlbedo`, `BumpNormal` | fp16 / uint8 / float32 | **128²** even with DLSS off | not usable at full resolution |
+| `AmbientOcclusion`, `SmoothNormal`, `Motion2d` (real-time) | — | — | no data on the unlit, static ramp scene |
+
+fp16 has 11 significant bits: at c = 0.125 (300 K) its spacing is 1.2 × 10⁻⁴ → **≈ 100 mK**, ten
+times the 10 mK bound, and the measured scale factor puts the values far from where the pair codec
+of ADR 0006 was designed to run. A control quad with grey 0.5 read 6 × 10⁻⁸ at intensity 1. The
+materials authored through `CreateMdlMaterialPrimCommand` + `omni.usd.create_material_input`
+silently emitted nothing; only the UsdShade path works.
+
+### What does transport exactly
+
+| channel | dtype / shape | measured |
+|---|---|---|
+| `instance_segmentation`, `semantic_segmentation`, `instance_id_segmentation` (`colorize=False`) | uint32, 256² | **64 / 64 quad centres carry distinct non-background ids, every 5 × 5 centre window is a single id** (no edge blending); `idToLabels` maps id → prim path or `{"class": label}`; 0 = background, 1 = unlabelled |
+| `Camera3dPositionSD`, `PtWorldPos` | float32 ×4, 256² | world position; mean error vs the authored quad centres (3.45, 3.37, 0.0) mm in (x, y, z), max 6.5 mm — one pixel at 2 m is 6.8 mm |
+| `DistanceToCameraSD` | float32, 256² | **Euclidean ray length** (1.0 mm mean error), `inf` where nothing is hit |
+| `DistanceToImagePlaneSD` | float32, 256² | **z-depth** (0.0 mm error); `PtZDepth` is float16 and reads 1.0 |
+| `PtWorldNormal` | float32 ×4 | (0, 0, 1) at 4 bounces, zeros at 0–1 bounces |
+
+### M2.3 — SPG capabilities (`RtxCamera.author_spg(SPGNode(...))`, one render product per graph)
+
+| experiment | result |
+|---|---|
+| (a) float32 pass-through | **bit-identical**: `DistanceToCameraSD`, `DistanceToImagePlaneSD`, `Camera3dPositionSD` (`inf` pattern identical, max diff 0.0); `LdrColor` identical; `HdrColor` identical on the fp16 grid. Read through `register_annotator_from_aov(output_data_type=np.float32)`. Two nodes on one product work |
+| (b) cross-frame state | **none**: a `cuda.static` buffer from `cuda.array` or `cuda.zeros` reads 1 every frame after an in-kernel `atomicAdd` (re-initialised per frame); `cuda.empty` is an output descriptor, not a kernel argument (`args[3] missing 'name' field`); wiring the node's output AOV back into its own input yields no output at all, silently. Lua file-scope variables **do** persist (the launch function runs once per rendered frame) and `rtx.frameId` exists, advancing 6–7 per `rep.orchestrator.step()` |
+| (c) LUT delivery | `io.` is a forbidden token: the sandbox validator rejects the **whole file** textually (`LuaSandbox: Lua source rejected - forbidden pattern 'io.' found`). A 16 001-entry Lua literal at file scope **crashes the Kit process** under the default `/rtx/spg/lua/instructionLimit = 1000` (`lua_error` inside `librtx.spg.fabric`), a 256-entry literal works, a Lua loop fails cleanly (`Lua script execution limit exceeded`); with the limit raised to 10⁷ (settable at runtime) both forms work and match NumPy exactly. A **`__device__ const float[16001]` baked into the `.cu`** (205 kB source) compiles under NVRTC in ≈ 1 s and matches NumPy exactly under default limits |
+| hazard | a kernel that fails to load (wrong symbol name: SPG resolves the CUDA function by the node's `sub_identifier`) still produces a **zero-filled output with status ok** |
+
+### Things that cost time and are worth knowing
+
+`rep.create.render_product(path, (w, h))` and `CameraSensor(cam, resolution=(h, w))` give the same
+pixels; `CameraSensor` also applies `OmniRtxCameraExposureAPI_1` / `OmniRtxCameraAutoExposureAPI_1`
+to the camera — that schema is where the colour scale above lives. In one run a camera prim
+pre-authored with `UsdGeom.Camera.Define` and then wrapped by `RtxCamera` rendered all-`inf` depth;
+letting `RtxCamera(path)` create the prim and setting focal length / apertures / clipping afterwards
+worked in every later run (not root-caused). Prim names may not contain `.`. Path tracing with
+`maxBounces = 0` degenerates every `Pt*` AOV to a constant. `SimulationApp` parses its own
+command line with `parse_known_args`, so runner scripts may add arguments.
+
+## Options considered
+
+1. **Temperature in emission through the fp16 colour path** — ≈ 100 mK at best; fails CLAUDE.md #2
+   and the gate. Rejected.
+2. **fp16 coarse/fine pair (ADR 0006 fallback) through the exposure scale** — possible in principle
+   (the fp16 error after scaling is about half the coarse-bin spacing), but it depends on an
+   undocumented per-camera exposure constant and every tonemap, colour-management or exposure
+   setting change would break it silently — exactly the failure mode CLAUDE.md #2 warns about.
+   Rejected; kept as the documented fallback only if a colour path is ever unavoidable.
+3. **A float32 emission AOV** — `GroundTruthEmission*` return no data and there is no documented
+   way to add a float32 renderer AOV from Python in this build. Rejected until it appears.
+4. **Transport ids and geometry, look the temperature up** — the renderer emits exact integer
+   instance/semantic ids and float32 position / distance at full resolution; the per-facet
+   temperature lives in a float32 table on the Warp side, filled by the thermal bridge. No
+   quantisation at all, and the material-id transport question (M2.4, R4) is answered by the same
+   channel. **Chosen.**
+
+## Decision
+
+- **The G-buffer's `temperature_k` plane is assembled in Warp from `instance_segmentation` and a
+  float32 facet table**, not decoded from a colour AOV. The `GBuffer` contract (M0.6) is unchanged;
+  `encoded_t` becomes optional and is never produced by the Isaac adapter. `material_id` comes from
+  the same id channel through the resolver (M10.2). Sky pixels are background id 0 and take their
+  radiance from the per-pixel ray direction (`Camera3dPositionSD`) and the MS.2 sky model; no
+  emissive dome is needed.
+- **Geometry AOVs:** `DistanceToCameraSD` for path length, `DistanceToImagePlaneSD` only where
+  z-depth is wanted, `Camera3dPositionSD` for world position; all read at full resolution with
+  `/rtx/post/aa/op = 0`. Normals, ambient occlusion and motion vectors are re-probed by M10.1 on a
+  lit, moving, tilted-geometry scene (they returned nothing on the unlit static ramp).
+- **SPG** hosts stateless stages only. Stages 4–5 (bolometer IIR, drift, RTS) stay in Warp
+  (M10.13c/d deferred; ADR 0061 records it). Band LUTs reach SPG kernels **baked into the generated
+  `.cu` as `__device__` arrays** (M10.12); the Lua launch script stays small and the sandbox
+  limits are never raised as a dependency. `FileCapture`-style tests compare values, never just
+  presence, because of the zero-filled-on-failure hazard.
+- **Version pin:** the facts above hold for Isaac Sim 6.1.0-rc.26 / Kit 110.3.0 / `omni.rtx.spg`
+  0.4.0 / `isaacsim.sensors.experimental.rtx` 1.9.0 / Warp 1.16.0. No `warp-lang` extra is added
+  to `pyproject.toml`: Warp is a Kit extension and a pip copy would shadow it.
+- `tests/integration/test_environment.py` and `test_isaac_transport.py` pin the build facts, the
+  exact ids, the float32 geometry, the bit-exact SPG pass-through **and the fp16 finding itself**,
+  so a build that changes any of them fails a test instead of silently changing the physics.
+
+## Consequences
+
+- Temperature is exact at **facet (prim / instance) granularity** and constant within a facet.
+  Sub-facet gradients (an engine bay hot spot on one mesh) are not represented until meshes are
+  split per thermal facet or an id-per-face channel exists — a future ADR under M10.3. The error
+  is bounded by the thermal model's own facet size, which is where the temperature is solved
+  anyway.
+- Ids do not blend, so object edges are hard at the id level; edge radiance must be anti-aliased by
+  supersampling the id/geometry buffers and filtering **radiance**, never ids (M3 / M10 kernels).
+- Position and distance carry one pixel of quantisation (≈ 3.4 mm at 2 m and 256²): negligible for
+  path length (1.7 × 10⁻³ relative here, far less at range).
+- The phase-1 thermal bridge (M10.18) writes a table, not USD emissive colours: cheaper per frame
+  and no `Sdf.ChangeBlock` traffic.
+- The Warp reference pipeline is the production path until `omni.rtx.spg` gains state; SPG stays
+  an optimisation for stages 1–3.
+- §13.1/§13.3 and the skill's AOV table are now wrong for this build (spec-issues T17); the spec
+  owner rewrites them.
+
+## Revisit when
+
+- `test_colour_aovs_are_float16_in_this_build` fails — a float32 colour or custom AOV appeared.
+- `omni.rtx.spg` documents persistent buffers or feedback edges (then M10.13c/d come back).
+- A target needs sub-facet temperature structure (id-per-face or a UV temperature texture).
+- Isaac Sim moves off the 6.1 line; re-run `scripts/probe_isaac_environment.py` and
+  `scripts/probe_isaac_spg.py` and diff the reports against this ADR.

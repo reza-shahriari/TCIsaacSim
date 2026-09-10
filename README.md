@@ -1,8 +1,8 @@
 # irsim — physically-based multi-band IR camera simulator
 
 Simulates what a real LWIR / MWIR / SWIR / NIR camera would see, with radiometry that closes in physical
-units. Targets NVIDIA Isaac Sim 6.0; the physics core is engine-free so an Unreal Engine port is a
-rewrite of the glue only.
+units. Targets NVIDIA Isaac Sim 6.x (every engine fact is measured on the 6.1.0-rc.26 source build,
+ADR 0014); the physics core is engine-free so an Unreal Engine port is a rewrite of the glue only.
 
 **Physics specification:** [`docs/physics-model.md`](docs/physics-model.md) — the source of truth for
 every equation here. Code cites it by section.
@@ -32,7 +32,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `noise` | ⬜ not started | — | |
 | `isp` | ⬜ not started | — | |
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms |
-| `irsim_isaac` | ⬜ not started | — | `env.py` probes only (`has_isaac`/`has_warp`); importable without Isaac. In-engine temperature-encoding round trip (M2.2) is the first task |
+| `irsim_isaac` | 🟡 partial | T1 | `env.py` probes; **M2 gate spike done (ADR 0014):** no float32 colour AOV carries temperature (all fp16, exposure-scaled) → the renderer transports **instance ids + float32 geometry** and temperature comes from a Warp table; `omni.rtx.spg` 0.4.0 present, float32 pass-through bit-exact, **no cross-frame state** (stateful stages stay in Warp), LUT baked into the `.cu`. `probe.py`/`spg_probe.py` + `scripts/probe_isaac_*.py` reproduce it; `tests/integration` (10 tests, one Kit per session) pin it. Normals/AO/motion semantics still open (M10.1) |
 
 Bands configured: _LWIR response data only (estimated Boson VOx curve; LUT pending M1.10)_ · Cameras modelled: _none yet_
 

@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Isaac Sim gate spike (roadmap M2.1–M2.4, ADR 0014): `irsim_isaac.probe` (environment report; 64-quad
+  emissive temperature ramp; AOV dtype, resolution, exposure and distance semantics; segmentation-id and
+  float32 position transport) and `irsim_isaac.spg_probe` (SPG pass-through, cross-frame state, LUT
+  delivery, checkpointed per experiment) with `scripts/probe_isaac_environment.py` and
+  `scripts/probe_isaac_spg.py`. `tests/integration` boots one headless Kit per session (argv hidden from
+  Kit's parser, app closed at interpreter exit); `test_environment.py` and `test_isaac_transport.py` pin
+  the measured facts, including the negative one. **Outcome:** every colour AOV is float16 →
+  temperature is transported as instance ids + float32 geometry, never as emission; SPG holds no state →
+  stateful stages stay in Warp; LUTs are baked into the `.cu`. `docs/spec-issues.md` gains T16 (the build
+  is 6.1.0-rc.26) and T17 (§13.1/§13.3 emission transport not viable).
 - `irsim.radiometry.band_average`: `band_average(response, s(λ), T_ref, form)` = ∫R s B dλ / ∫R B dλ, the
   only sanctioned route from ε(λ)/ρ(λ)/τ(λ) to per-band scalars; linear so Kirchhoff closure survives
   (1e-9); the accepted grey-in-band error (~2e-3 for a 0.1 slope, 300→600 K) is measured (ADR 0010).
