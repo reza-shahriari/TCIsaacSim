@@ -29,6 +29,7 @@ __all__ = [
     "spectral_radiance",
     "spectral_photon_radiance",
     "d_spectral_radiance_dT",
+    "d_spectral_photon_radiance_dT",
     "fractional_exitance",
     "band_radiance_tophat",
 ]
@@ -97,8 +98,19 @@ def spectral_photon_radiance(wavelength_um: FloatArray, temperature_k: FloatArra
     return C1Q / (wavelength_um**4 * _planck_denominator(wavelength_um, temperature_k))
 
 
+def _thermal_derivative_factor(wavelength_um: FloatArray, temperature_k: FloatArray) -> FloatArray:
+    """d ln(1/(e^x − 1)) / dT with x = C2/(λT): the factor shared by both derivative forms.
+
+    (C2 / (λ T²)) · e^x / (e^x − 1), with e^x/(e^x − 1) written as 1 + 1/expm1(x) so it stays
+    accurate for small x (the hot / long-wavelength end) and finite under the overflow clip.
+    """
+    x: FloatArray = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
+    factor = (C2 / (wavelength_um * temperature_k**2)) * (1.0 + 1.0 / np.expm1(x))
+    return np.asarray(factor, dtype=np.float64)
+
+
 def d_spectral_radiance_dT(wavelength_um: FloatArray, temperature_k: FloatArray) -> FloatArray:
-    """dL/dT in W m^-2 sr^-1 um^-1 K^-1.
+    """dL/dT in W m^-2 sr^-1 um^-1 K^-1 (energy form, for bolometers).
 
     This is what NETD divides by, and why NETD falls as scene temperature rises.
     Any code treating NETD as a scene-independent constant in kelvin is wrong.
@@ -108,13 +120,32 @@ def d_spectral_radiance_dT(wavelength_um: FloatArray, temperature_k: FloatArray)
     wavelength_um = np.asarray(wavelength_um, dtype=np.float64)
     temperature_k = np.asarray(temperature_k, dtype=np.float64)
     _validate(wavelength_um, temperature_k)
-
     x: FloatArray = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
     radiance = C1L / (wavelength_um**5 * np.expm1(x))
-    # dL/dT = L * (C2 / (lam T^2)) * exp(x) / (exp(x) - 1)
-    # written as exp(x)/expm1(x) = 1 + 1/expm1(x) to stay accurate for small x
-    derivative = radiance * (C2 / (wavelength_um * temperature_k**2)) * (1.0 + 1.0 / np.expm1(x))
-    return np.asarray(derivative, dtype=np.float64)
+    return np.asarray(
+        radiance * _thermal_derivative_factor(wavelength_um, temperature_k), dtype=np.float64
+    )
+
+
+def d_spectral_photon_radiance_dT(
+    wavelength_um: FloatArray, temperature_k: FloatArray
+) -> FloatArray:
+    """dL_q/dT in photons s^-1 m^-2 sr^-1 um^-1 K^-1 (photon form, for photon detectors).
+
+    Photon-detector NETD divides by the *band-integrated photon* derivative (§9.4), not the
+    energy one: the two differ by the spectrally varying hc/λ, so using the energy form with a
+    QE mis-weights the band. Identity: dL_q/dT · hc/λ == dL/dT, tested to 1e-12.
+
+    docs/physics-model.md §3.4, §9.4
+    """
+    wavelength_um = np.asarray(wavelength_um, dtype=np.float64)
+    temperature_k = np.asarray(temperature_k, dtype=np.float64)
+    _validate(wavelength_um, temperature_k)
+    x: FloatArray = np.clip(C2 / (wavelength_um * temperature_k), None, EXP_ARG_MAX)
+    photon_radiance = C1Q / (wavelength_um**4 * np.expm1(x))
+    return np.asarray(
+        photon_radiance * _thermal_derivative_factor(wavelength_um, temperature_k), dtype=np.float64
+    )
 
 
 # Bernoulli numbers B_2 .. B_14 for the small-x expansion of the Planck integral.

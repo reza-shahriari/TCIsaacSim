@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `d_spectral_photon_radiance_dT` (§3.4, §9.4): photon-form thermal derivative sharing the energy form's
+  expm1/clip guards. Identity `dL_q/dT · hc/λ == dL/dT` to 1e-12; central FD < 1e-6; finite over
+  200–2000 K × 0.4–20 µm.
 - GPU-free CI: `.github/workflows/check.yml` runs `make check` on plain CPython 3.10 and 3.12; `make ci`
   reproduces it locally in a `python3.10` venv. Interpreter matrix recorded in ADR 0002.
 - `docs/spec-issues.md`: the 37 physics and 15 tooling issues found in the spec, with proposed

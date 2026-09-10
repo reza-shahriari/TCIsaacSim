@@ -23,7 +23,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 
 | Component | State | Tier | Notes |
 |---|---|---|---|
-| `radiometry` | 🟡 partial | T1 | Planck + constants; Stefan–Boltzmann to 1e-6 (ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); band LUT pending |
+| `radiometry` | 🟡 partial | T1 | Planck (energy + photon forms and both thermal derivatives); Stefan–Boltzmann to 1e-6 (ADR 0005); temperature encode/decode 0.05 mK, fp16 refused (ADR 0006); band LUT pending |
 | `materials` | ⬜ not started | — | |
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |

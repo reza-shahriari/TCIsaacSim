@@ -13,6 +13,7 @@ import pytest
 from irsim.radiometry.constants import C_LIGHT, H_PLANCK, SIGMA_SB, WIEN_B
 from irsim.radiometry.planck import (
     band_radiance_tophat,
+    d_spectral_photon_radiance_dT,
     d_spectral_radiance_dT,
     fractional_exitance,
     spectral_photon_radiance,
@@ -106,6 +107,37 @@ def test_thermal_derivative_matches_finite_difference() -> None:
     np.testing.assert_allclose(d_spectral_radiance_dT(lam, T), numeric, rtol=1e-6)
 
 
+def test_photon_derivative_times_photon_energy_is_energy_derivative() -> None:
+    """dL_q/dT · hc/λ == dL/dT to 1e-12 (§3.4). Catches a wrong C1Q or a derivative factor
+    that differs between the two forms."""
+    lam = np.linspace(0.4, 20.0, 600)
+    for T in (200.0, 300.0, 500.0, 1000.0, 2000.0):
+        energy_per_photon_j = H_PLANCK * C_LIGHT / (lam * 1e-6)
+        np.testing.assert_allclose(
+            d_spectral_photon_radiance_dT(lam, T) * energy_per_photon_j,
+            d_spectral_radiance_dT(lam, T),
+            rtol=1e-12,
+        )
+
+
+def test_photon_derivative_matches_finite_difference() -> None:
+    lam = np.linspace(0.9, 14.0, 300)
+    dT = 1e-3
+    for T in (250.0, 300.0, 800.0):
+        numeric = (
+            spectral_photon_radiance(lam, T + dT) - spectral_photon_radiance(lam, T - dT)
+        ) / (2 * dT)
+        np.testing.assert_allclose(d_spectral_photon_radiance_dT(lam, T), numeric, rtol=1e-6)
+
+
+def test_photon_derivative_finite_and_positive_over_sweep() -> None:
+    """200-2000 K × 0.4-20 µm: the cold/short corner overflows a naive exp()."""
+    lam = np.linspace(0.4, 20.0, 400)
+    for T in np.linspace(200.0, 2000.0, 19):
+        out = d_spectral_photon_radiance_dT(lam, T)
+        assert np.all(np.isfinite(out)) and np.all(out >= 0.0), f"T={T}"
+
+
 def test_thermal_derivative_rises_with_temperature() -> None:
     """Why NETD falls as scene temperature rises. If this ever fails, the noise
     model's temperature dependence is built on sand."""
@@ -148,7 +180,12 @@ def test_no_overflow_on_extreme_sweep() -> None:
     non-negative radiance instead of inf or nan."""
     lam = np.linspace(0.4, 20.0, 500)
     for T in (200.0, 220.0, 2000.0):
-        for fn in (spectral_radiance, spectral_photon_radiance, d_spectral_radiance_dT):
+        for fn in (
+            spectral_radiance,
+            spectral_photon_radiance,
+            d_spectral_radiance_dT,
+            d_spectral_photon_radiance_dT,
+        ):
             out = fn(lam, T)
             assert np.all(np.isfinite(out)), f"{fn.__name__} not finite at {T} K"
             assert np.all(out >= 0.0), f"{fn.__name__} negative at {T} K"
