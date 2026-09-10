@@ -55,7 +55,7 @@ def test_boson_matches_spec_16_1_exactly(boson: SensorConfig) -> None:
     assert s.noise.netd_mk_at_300k == 50.0
     assert s.noise.ratios_3d.vh == 0.30 and s.noise.ratios_3d.t == 0.02
     assert s.isp.clip_percentiles == (0.005, 0.995)
-    assert boson.schema_version == 1
+    assert boson.schema_version == 2
 
 
 def test_pixel_area_and_nyquist(boson: SensorConfig) -> None:
@@ -130,7 +130,7 @@ def test_photon_fpa_variant(boson_dict: dict[str, Any]) -> None:
         ("sensor.noise.bad_pixel_fraction", 0.05, "5 % bad pixels is a broken camera"),
         ("sensor.optics.distortion.coeffs", [0.0, 0.0], "brown_conrady takes 5"),
         ("sensor.isp.palette", "viridis", "unknown palette"),
-        ("schema_version", 2, "unsupported schema version"),
+        ("schema_version", 99, "unsupported schema version"),
     ],
 )
 def test_invalid_values_rejected(

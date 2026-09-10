@@ -31,6 +31,7 @@ __all__ = [
     "SensorSpec",
     "BandSpec",
     "OpticsSpec",
+    "MtfSpec",
     "DistortionSpec",
     "BolometerFpa",
     "PhotonFpa",
@@ -42,7 +43,9 @@ __all__ = [
     "OutputsSpec",
 ]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = (
+    2  # 2: optional optics fields (housing, supersample, mtf, vignetting_map), ADR 0017
+)
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -125,8 +128,30 @@ class DistortionSpec(_Frozen):
         return self
 
 
+class MtfSpec(_Frozen):
+    """Optional MTF parameters the spec leaves open (§8.3; ADR 0017 schema-gap policy).
+
+    ``aberration_sigma_um`` is the Gaussian fitted from a measured slant edge (0 = none);
+    ``reference_wavelength_um`` sets the diffraction cut-off ξ_c = 1/(λF) and defaults to the
+    band centre; ``apply_motion_mtf`` enables the image-plane motion term for photon FPAs.
+    """
+
+    aberration_sigma_um: float = Field(default=0.0, ge=0)
+    reference_wavelength_um: float | None = Field(default=None, gt=0)
+    apply_motion_mtf: bool = False
+
+
+RECTILINEAR_MODELS = frozenset({"brown_conrady"})
+SUPERSAMPLE_MIN, SUPERSAMPLE_MAX = 1, 8
+
+
 class OpticsSpec(_Frozen):
-    """§12.2 ``optics``. No aperture factor here -- see ``irsim.optics`` (non-negotiable #5)."""
+    """§12.2 ``optics`` plus the optional fields the spec omits (ADR 0017).
+
+    No aperture factor here -- see ``irsim.optics`` (non-negotiable #5). The housing fields feed
+    the self-emission term (ADR 0016): ``fixed`` needs ``housing_temp_k``; ``coupled`` may set the
+    lag ``housing_tau_s`` and steady self-heating ``housing_self_heating_k`` above ambient.
+    """
 
     f_number: float = Field(gt=0)
     focal_length_mm: float = Field(gt=0)
@@ -135,6 +160,24 @@ class OpticsSpec(_Frozen):
     cold_shield_efficiency: float = Field(ge=0, le=1)
     distortion: DistortionSpec
     vignetting_cos4: bool
+    housing_temp_k: float | None = Field(default=None, gt=0)
+    housing_tau_s: float | None = Field(default=None, gt=0)
+    housing_self_heating_k: float = Field(default=0.0, ge=0)
+    vignetting_map: str | None = None
+    supersample_factor: int = Field(default=4, ge=SUPERSAMPLE_MIN, le=SUPERSAMPLE_MAX)
+    mtf: MtfSpec = Field(default_factory=MtfSpec)
+
+    @model_validator(mode="after")
+    def _consistency(self) -> OpticsSpec:
+        if self.housing_temp_mode == "fixed" and self.housing_temp_k is None:
+            raise ValueError("housing_temp_mode 'fixed' requires housing_temp_k")
+        if self.vignetting_cos4 and self.distortion.model not in RECTILINEAR_MODELS:
+            raise ValueError(
+                f"vignetting_cos4 is a rectilinear-lens result and cannot be combined with the "
+                f"{self.distortion.model!r} distortion model; supply vignetting_map instead "
+                "(ADR 0015)"
+            )
+        return self
 
 
 class _FpaCommon(_Frozen):
@@ -291,6 +334,28 @@ class SensorSpec(_Frozen):
     @property
     def dn_max(self) -> int:
         return int(2**self.fpa.bit_depth - 1)
+
+    @property
+    def detector_active_area_m2(self) -> float:
+        """Alias of :attr:`pixel_area_m2` under the §9.1 name A_d."""
+        return self.pixel_area_m2
+
+    @property
+    def active_width_um(self) -> float:
+        """Side of the square active area, √fill_factor · pitch (the box width of MTF_det, §8.3)."""
+        return math.sqrt(self.fpa.fill_factor) * self.fpa.pitch_um
+
+    @property
+    def reference_wavelength_um(self) -> float:
+        """λ for the diffraction cut-off: ``mtf.reference_wavelength_um`` or the band centre."""
+        if self.optics.mtf.reference_wavelength_um is not None:
+            return self.optics.mtf.reference_wavelength_um
+        return 0.5 * (self.band.lambda_min_um + self.band.lambda_max_um)
+
+    @property
+    def cutoff_cyc_per_mm(self) -> float:
+        """Diffraction cut-off ξ_c = 1 / (λ F) in cycles per mm (§8.3), λ in mm."""
+        return 1.0 / (self.reference_wavelength_um * 1e-3 * self.optics.f_number)
 
 
 class SensorConfig(_Frozen):

@@ -178,8 +178,11 @@ def test_hash_changes_for_enumerated_leaves(
     for key in path:
         node = node[key]
     node[last] = value
-    if value == "kannala_brandt":
+    if value == "kannala_brandt":  # schema v2 rules: coefficient count, no cos4 with fisheye
         node["coeffs"] = [0.0, 0.0, 0.0, 0.0]
+        d["sensor"]["optics"]["vignetting_cos4"] = False
+    if value == "fixed":  # `fixed` needs a housing temperature (ADR 0017)
+        d["sensor"]["optics"]["housing_temp_k"] = 300.0
     base = SensorConfig.model_validate(BOSON_DICT)
     other = SensorConfig.model_validate(d)
     assert config_hash(other, data_dir) != config_hash(base, data_dir)
