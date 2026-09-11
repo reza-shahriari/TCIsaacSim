@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.pipeline.atmosphere` + stage 2 in `run_frame` (M8.6): τ(d)L + (1−τ)L_B(T_air) on the k× grid
+  from `PipelineConfig.atmosphere` at `PipelineState.t_s`; sky pixels bit-identical; `tau_override`
+  L1 fallback; identity without an Atmosphere (goldens unchanged). ADR 0050.
 - `irsim.config.scene` (`SceneConfig`: weather file, atmosphere preset, site, aware start, newton/
   prescribed targets) and `irsim.scene.Scene` (M6.17): loads the weather once, injects the same
   `WeatherSeries` into the `Atmosphere` and every target solver, refuses a consumer holding another

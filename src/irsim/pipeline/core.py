@@ -17,6 +17,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.atmosphere.model import Atmosphere
 from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
 from irsim.detector.anchor import anchor_noise
@@ -55,6 +56,10 @@ class PipelineConfig:
     sensor_seed: int
     noise_enabled: bool
     psf: NDArray[np.float64] | None  # optical PSF at the k× pitch; None = no optical blur
+    atmosphere: Atmosphere | None = None  # stage 2; None = no atmosphere (identity)
+    tau_override: float | None = (
+        None  # L1 fallback: constant τ, path radiance at the weather's T_air
+    )
 
     @property
     def quantity(self) -> Quantity:
@@ -75,6 +80,8 @@ class PipelineConfig:
         noise_enabled: bool = True,
         psf_enabled: bool = True,
         reference_wavelength_um: float | None = None,
+        atmosphere: Atmosphere | None = None,
+        tau_override: float | None = None,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
@@ -85,8 +92,21 @@ class PipelineConfig:
         chain (the ablation switch of ME.8). The optical PSF (diffraction at the band-
         representative wavelength -- ``reference_wavelength_um``, else
         ``mtf.reference_wavelength_um``, else the band centre -- times the aberration Gaussian) is
-        built at the supersampled pitch (ADR 0059); ``psf_enabled=False`` skips it.
+        built at the supersampled pitch (ADR 0059); ``psf_enabled=False`` skips it. Stage 2
+        runs when an ``Atmosphere`` (M8.5, bound to the scene's WeatherSeries) is given; the
+        frame time on the weather axis is ``PipelineState.t_s``. ``tau_override`` is the L1
+        fallback: a constant τ at every distance, path radiance still at the weather's T_air.
         """
+        if tau_override is not None:
+            if atmosphere is None:
+                raise ValueError("tau_override needs an Atmosphere (its weather gives T_air)")
+            if not 0.0 <= tau_override <= 1.0:
+                raise ValueError("tau_override must lie in [0, 1]")
+        if atmosphere is not None and sensor.sensor.band.band_id not in atmosphere.bands:
+            raise ValueError(
+                f"atmosphere preset has no band {sensor.sensor.band.band_id!r} "
+                f"(has {atmosphere.bands})"
+            )
         if lut is None:
             if lut_dir is None:
                 raise ValueError("give a BandLUT or a lut_dir to load one from (make luts)")
@@ -135,6 +155,8 @@ class PipelineConfig:
             sensor_seed=sensor_seed,
             noise_enabled=noise_enabled,
             psf=psf,
+            atmosphere=atmosphere,
+            tau_override=tau_override,
         )
 
     @classmethod
@@ -157,6 +179,9 @@ class PipelineState:
 
     frame_index: int = 0
     housing_temp_k: float = 300.0
+    t_s: float = (
+        0.0  # frame time on the scene weather's axis (Scene.t0_s + t_rel); stage 2 reads it
+    )
     buffers: dict[str, NDArray[Any]] = field(default_factory=dict)
 
     def advance(self) -> None:

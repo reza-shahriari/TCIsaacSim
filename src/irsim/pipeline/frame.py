@@ -1,7 +1,7 @@
 """``run_frame``: the whole CPU reference chain for one frame (docs/physics-model.md §13.4).
 
     stage 1  band radiance     ε₀ L_B(T) on the k× G-buffer          (irsim.pipeline.radiance)
-    stage 2  atmosphere        identity until M8
+    stage 2  atmosphere        τL + (1−τ)L_B(T_air) on the k× grid   (irsim.pipeline.atmosphere)
     stage 3  optics            PSF, box ↓k, aperture·cos⁴·A_d, +Φ_self (irsim.optics.stage)
     stage 4  detector          Φ → signal in DN with per-pixel noise    (irsim.detector, ADR 0026)
     stage 5  noise             + correlated 3-D components              (irsim.noise.stage)
@@ -30,6 +30,7 @@ from irsim.detector.quantise import quantise
 from irsim.isp.display import run_display_branch
 from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
+from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.radiance import band_radiance
 
@@ -72,7 +73,8 @@ def _scene_radiance_from_signal(
 
 
 def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> Outputs:
-    """One frame through stages 1-6 (2, 5 identity). Advances ``state.frame_index``."""
+    """One frame through stages 1-6 (stage 2 is the identity without an Atmosphere).
+    Advances ``state.frame_index``."""
     sensor = config.sensor.sensor
     lut = config.lut
     q = config.quantity
@@ -85,10 +87,22 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
             "set optics.supersample_factor to match the render"
         )
 
-    # stage 1 (k× grid); stage 2 identity
+    # stage 1 (k× grid)
     radiance_ss = band_radiance(
         t, planes["material_id"], config.materials, lut, q, sky_mask=planes.get("sky_mask")
     )
+    # stage 2 (k× grid): per-ray atmosphere; sky pixels pass through (ADR 0050)
+    if config.atmosphere is not None:
+        atm_state = config.atmosphere.state(state.t_s)
+        l_air = float(lut.lookup(np.float64(atm_state.t_air_k), q)[()])
+        radiance_ss = apply_atmosphere_gbuffer(
+            radiance_ss,
+            planes["distance_m"],
+            atm_state.gamma_per_m[sensor.band.band_id],
+            l_air,
+            sky_mask=planes.get("sky_mask"),
+            tau_override=config.tau_override,
+        )
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
     flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k, psf=config.psf)
