@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- G-buffer contract: optional bool `sky_mask` plane (renderer hit nothing). Stage 1 treats masked
+  pixels as blackbody-equivalent (ε = 1, the apparent sky temperature is what the plane carries) and
+  ignores their material id, so the renderer's background id 0 is no longer confused with UNMAPPED;
+  stage 2 (M8.6) will pass them through. Agreed with the Isaac lane (DistanceToCamera = +inf, id 0).
 - `irsim.atmosphere.beer_lambert` (τ = e^{−γd}, path radiance, `apply_atmosphere`, the L1 `tau_override`),
   `irsim.atmosphere.humidity` (Magnus/Bolton e_s, absolute humidity with the 216.7 factor derived from
   `R_V_WATER`, γ_mol = γ₀ + βw; RH is a fraction), `irsim.atmosphere.spectral` + `scripts/

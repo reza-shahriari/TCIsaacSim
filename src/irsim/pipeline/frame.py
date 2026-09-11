@@ -86,7 +86,9 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
         )
 
     # stage 1 (k× grid); stage 2 identity
-    radiance_ss = band_radiance(t, planes["material_id"], config.materials, lut, q)
+    radiance_ss = band_radiance(
+        t, planes["material_id"], config.materials, lut, q, sky_mask=planes.get("sky_mask")
+    )
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
     flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k, psf=config.psf)

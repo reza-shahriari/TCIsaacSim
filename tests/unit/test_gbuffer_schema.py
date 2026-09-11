@@ -26,7 +26,7 @@ FROZEN_REQUIRED = {
     "material_id",
     "sky_view_factor",
 }
-FROZEN_OPTIONAL = {"encoded_t", "motion_px", "semantic_id"}
+FROZEN_OPTIONAL = {"encoded_t", "motion_px", "semantic_id", "sky_mask"}
 FROZEN_DTYPES = {
     "temperature_k": np.float32,
     "encoded_t": np.float32,
@@ -36,6 +36,7 @@ FROZEN_DTYPES = {
     "sky_view_factor": np.float32,
     "motion_px": np.float32,
     "semantic_id": np.uint32,
+    "sky_mask": np.bool_,
 }
 SINGLE_FRAME_FIXTURES = [
     "gbuffer_ramp",
@@ -184,3 +185,24 @@ def test_moving_edge_translates_at_stated_velocity(
         assert np.all(planes["motion_px"][..., 1] == 0.0)
     steps = np.diff(positions)
     assert np.all(np.abs(steps - MOVING_EDGE_VELOCITY_PX) < 0.05), steps
+
+
+def test_sky_mask_plane_contract(gbuffer_uniform: dict[str, np.ndarray]) -> None:
+    """sky_mask: bool or 0/1 integer in, bool out; floats and other integers refused; shape
+    checked; absent means every pixel is geometry (sky_mask is None)."""
+    assert GBuffer.from_dict(dict(gbuffer_uniform)).sky_mask is None
+    h, w = gbuffer_uniform["temperature_k"].shape
+    mask = np.zeros((h, w), dtype=np.uint8)
+    mask[: h // 2] = 1
+    g = GBuffer.from_dict({**gbuffer_uniform, "sky_mask": mask})
+    assert g.sky_mask is not None and g.sky_mask.dtype == np.bool_
+    assert g.sky_mask[0, 0] and not g.sky_mask[-1, 0]
+    assert g.to_dict()["sky_mask"].dtype == np.bool_
+    g2 = GBuffer.from_dict({**gbuffer_uniform, "sky_mask": mask.astype(bool)})
+    assert g2.sky_mask is not None and np.array_equal(g2.sky_mask, g.sky_mask)
+    with pytest.raises(TypeError, match="bool"):
+        GBuffer.from_dict({**gbuffer_uniform, "sky_mask": mask.astype(np.float32)})
+    with pytest.raises(TypeError, match="bool"):
+        GBuffer.from_dict({**gbuffer_uniform, "sky_mask": mask * 2})
+    with pytest.raises(ValueError, match="shape"):
+        GBuffer.from_dict({**gbuffer_uniform, "sky_mask": mask[:, : w // 2]})

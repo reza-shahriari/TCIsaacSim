@@ -15,6 +15,15 @@ Precision policy (§13.3): temperature, encoded temperature, distance and any ra
 as float16 from the engine and are upcast to float32 here. Integer ids are cast to int32
 (material) and uint32 (semantic). ``material_id`` 0 is the UNMAPPED sentinel (roadmap M7.18):
 fixtures use ids >= 1.
+
+``sky_mask`` (optional, bool) marks pixels where the renderer hit no geometry. The Isaac
+renderer reports those with distance +inf and instance id 0 (measured, ADR 0014 lane); the
+adapter translates that into ``sky_mask = True``, ``distance_m = 0`` (so a consumer that ignores
+the mask sees τ = 1) and ``temperature_k`` = the apparent sky temperature T_sky(θ) of the sky
+model (MS.2). Under the mask the kernels treat the pixel as blackbody-equivalent (ε = 1,
+``material_id`` ignored, so id 0 there is *not* the UNMAPPED error) and stage 2 passes it through
+untouched: its apparent temperature already includes the atmosphere to space. Without the plane
+every pixel is geometry.
 """
 
 from __future__ import annotations
@@ -34,13 +43,17 @@ __all__ = [
     "PRECISION_CRITICAL_KEYS",
     "UNMAPPED_MATERIAL_ID",
     "ENCODED_T_CONSISTENCY_TOL_K",
+    "BOOL_KEYS",
 ]
 
 REQUIRED_KEYS: frozenset[str] = frozenset(
     {"temperature_k", "normal_dot_view", "distance_m", "material_id", "sky_view_factor"}
 )
-OPTIONAL_KEYS: frozenset[str] = frozenset({"encoded_t", "motion_px", "semantic_id"})
+OPTIONAL_KEYS: frozenset[str] = frozenset({"encoded_t", "motion_px", "semantic_id", "sky_mask"})
 INTEGER_KEYS: dict[str, type] = {"material_id": np.int32, "semantic_id": np.uint32}
+# Boolean planes: accept bool or an integer 0/1 plane (the adapter may hand a uint8 AOV); floats
+# are refused because a fractional "sky" cannot be given a meaning.
+BOOL_KEYS: frozenset[str] = frozenset({"sky_mask"})
 # Keys where float16 is an error rather than something to upcast. Any key whose name starts with
 # "radiance" is treated the same way, so later stages can add radiance planes without editing here.
 PRECISION_CRITICAL_KEYS: frozenset[str] = frozenset({"temperature_k", "encoded_t", "distance_m"})
@@ -67,6 +80,7 @@ class GBuffer:
     encoded_t: NDArray[np.float32] | None = None
     motion_px: NDArray[np.float32] | None = None
     semantic_id: NDArray[np.uint32] | None = None
+    sky_mask: NDArray[np.bool_] | None = None
     extra: dict[str, NDArray[Any]] = field(default_factory=dict)
 
     @property
@@ -95,6 +109,13 @@ class GBuffer:
         converted: dict[str, NDArray[Any]] = {}
         for key, value in planes.items():
             arr = np.asarray(value)
+            if key in BOOL_KEYS:
+                is_bool = arr.dtype == np.bool_
+                is_01 = np.issubdtype(arr.dtype, np.integer) and bool(np.isin(arr, (0, 1)).all())
+                if not (is_bool or is_01):
+                    raise TypeError(f"{key} must be a bool or 0/1 integer plane, got {arr.dtype}")
+                converted[key] = arr.astype(np.bool_)
+                continue
             if key in INTEGER_KEYS:
                 if not np.issubdtype(arr.dtype, np.integer):
                     raise TypeError(f"{key} must be an integer plane, got {arr.dtype}")
@@ -145,7 +166,7 @@ class GBuffer:
             "material_id": self.material_id,
             "sky_view_factor": self.sky_view_factor,
         }
-        for key in ("encoded_t", "motion_px", "semantic_id"):
+        for key in ("encoded_t", "motion_px", "semantic_id", "sky_mask"):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value

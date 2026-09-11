@@ -31,13 +31,18 @@ def band_radiance(
     materials: MaterialTable,
     lut: BandLUT,
     quantity: Quantity = "lb",
+    sky_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float32]:
-    """ε₀[material] · L_B(T) as float32, same shape as the inputs (``lb_q`` for photon FPAs)."""
+    """ε₀[material] · L_B(T) as float32, same shape as the inputs (``lb_q`` for photon FPAs).
+
+    Under ``sky_mask`` the temperature is the *apparent* sky temperature, so ε₀ = 1 there
+    (irsim.config.gbuffer) and the material id is ignored.
+    """
     t = require_fp32_or_better(np.asarray(temperature_k), "temperature_k")
     ids = np.asarray(material_id)
     if ids.shape != t.shape:
         raise ValueError(f"material_id shape {ids.shape} != temperature shape {t.shape}")
-    eps = materials.emissivity_for(ids)
+    eps = materials.emissivity_for(ids, sky_mask)
     lb = lut.lookup(t, quantity)
     return np.asarray(eps * lb, dtype=np.float32)
 
@@ -46,7 +51,11 @@ def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineS
     """Stage-1 entry point on the plane dict: adds ``radiance`` (float32, W m⁻² sr⁻¹)."""
     del state
     out = band_radiance(
-        planes["temperature_k"], planes["material_id"], config.materials, config.lut
+        planes["temperature_k"],
+        planes["material_id"],
+        config.materials,
+        config.lut,
+        sky_mask=planes.get("sky_mask"),
     )
     return {"radiance": out}
 

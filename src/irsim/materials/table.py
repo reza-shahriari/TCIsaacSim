@@ -52,11 +52,26 @@ class MaterialTable:
     def constant(cls, eps: float, ids: tuple[int, ...] = (1,), band_id: str = "") -> MaterialTable:
         return cls.from_mapping(dict.fromkeys(ids, eps), band_id)
 
-    def emissivity_for(self, material_id: NDArray[np.integer]) -> NDArray[np.float32]:
-        """Per-pixel ε₀; raises on the UNMAPPED sentinel or an id the table does not define."""
+    def emissivity_for(
+        self, material_id: NDArray[np.integer], sky_mask: NDArray[np.bool_] | None = None
+    ) -> NDArray[np.float32]:
+        """Per-pixel ε₀; raises on the UNMAPPED sentinel or an id the table does not define.
+
+        Pixels under ``sky_mask`` are blackbody-equivalent (ε₀ = 1: the G-buffer carries the
+        *apparent* sky temperature there, see irsim.config.gbuffer) and their ids are not
+        checked, so the renderer's background id 0 is not mistaken for an unmapped asset.
+        """
         ids = np.asarray(material_id)
         if not np.issubdtype(ids.dtype, np.integer):
             raise TypeError(f"material_id must be an integer plane, got {ids.dtype}")
+        if sky_mask is not None:
+            sky = np.asarray(sky_mask)
+            if sky.dtype != np.bool_ or sky.shape != ids.shape:
+                raise ValueError("sky_mask must be a bool plane with the material_id shape")
+            eps = np.ones(ids.shape, dtype=np.float32)
+            if np.any(~sky):
+                eps[~sky] = self.emissivity_for(ids[~sky])
+            return eps
         if np.any(ids == UNMAPPED_MATERIAL_ID):
             raise ValueError(
                 "G-buffer contains material id 0 (UNMAPPED): an asset has no material mapping; "

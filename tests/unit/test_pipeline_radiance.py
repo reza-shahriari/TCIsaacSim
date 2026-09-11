@@ -116,3 +116,30 @@ def test_material_table_rules() -> None:
     assert t.emissivity.dtype == np.float32 and np.isnan(t.emissivity[2])
     with pytest.raises(TypeError, match="integer"):
         t.emissivity_for(np.array([1.0]))
+
+
+def test_sky_pixels_are_blackbody_equivalent_and_skip_the_material_check(
+    tophat_lwir_lut: BandLUT,
+) -> None:
+    """Under sky_mask the temperature is the apparent sky temperature: L = L_B(T_sky) exactly
+    (ε = 1), the renderer's background id 0 is not an UNMAPPED error there, and the same id 0
+    *outside* the mask still is. Without the mask nothing changes for geometry pixels."""
+    t = np.full((4, 6), 300.0, dtype=np.float32)
+    t[:2] = 240.0  # cold apparent sky in the top half
+    ids = np.ones((4, 6), dtype=np.int32)
+    ids[:2] = 0  # renderer background id under the sky
+    sky = np.zeros((4, 6), dtype=bool)
+    sky[:2] = True
+    materials = MaterialTable.constant(0.9)
+    out = band_radiance(t, ids, materials, tophat_lwir_lut, sky_mask=sky)
+    lb240 = float(tophat_lwir_lut.lookup(240.0)[()])
+    lb300 = float(tophat_lwir_lut.lookup(300.0)[()])
+    np.testing.assert_allclose(out[:2], lb240, rtol=1e-6)
+    np.testing.assert_allclose(out[2:], 0.9 * lb300, rtol=1e-6)
+    with pytest.raises(ValueError, match="UNMAPPED"):
+        band_radiance(t, ids, materials, tophat_lwir_lut)
+    ids[3, 5] = 0  # an unmapped asset outside the sky is still an error
+    with pytest.raises(ValueError, match="UNMAPPED"):
+        band_radiance(t, ids, materials, tophat_lwir_lut, sky_mask=sky)
+    with pytest.raises(ValueError, match="sky_mask"):
+        band_radiance(t, ids, materials, tophat_lwir_lut, sky_mask=sky.astype(np.uint8))
