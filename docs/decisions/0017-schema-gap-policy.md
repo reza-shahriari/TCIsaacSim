@@ -26,7 +26,7 @@ Option 3. Rules:
 
 - A field the spec omits is added to the pydantic schema as **optional with a default**, with units in
   its name, bounds, and cross-field checks. It is listed in this ADR's table and proposed for §12.2.
-- `schema_version` is bumped for every additive change (now **3**: v2 optics fields, v3 detector constants); the loader accepts only the
+- `schema_version` is bumped for every additive change (now **4**: v2 optics fields, v3 detector constants, v4 noise fields); the loader accepts only the
   current version so a mismatch is loud. Files without `schema_version` take the current default.
 - Defaults must be *conservative physics*, not convenient zeros, unless zero is the physical
   "feature absent" (aberration σ = 0, self-heating 0).
@@ -47,6 +47,8 @@ Option 3. Rules:
 | `fpa.read_noise_e` (photon) | none | σ_read; the noise stage (M4) requires it |
 | `fpa.dark_current` (photon) | none | `{i_ref_a_per_pixel, t_ref_k, band_gap_ev}` Arrhenius sub-model (§9.1) |
 | `fpa.fpa_temp_k`, `fpa.fpa_tau_s`, `fpa.fpa_self_heating_k` | none / none / 0 | FPA thermal node, distinct from the optics housing node (§9.2) |
+| `noise.netd_ref_f_number` | none (= `optics.f_number`) | f-number the datasheet NETD applies at (ADR 0025) |
+| `noise.bad_pixel_type_mix` | dead 0.4 / hot 0.3 / flickering 0.2 / blinking 0.1 | §10.4 defect classes, must sum to 1 |
 
 Derived read-only quantities added: `detector_active_area_m2` (= `pixel_area_m2`), `active_width_um`
 = √fill · pitch (the MTF_det box width, ADR 0020), `reference_wavelength_um`, `cutoff_cyc_per_mm`.

@@ -39,14 +39,17 @@ __all__ = [
     "FpaSpec",
     "NoiseSpec",
     "Ratios3D",
+    "RATIO_ORDER",
+    "BadPixelTypeMix",
     "NucSpec",
     "IspSpec",
     "OutputsSpec",
 ]
 
 # 2: optional optics fields (housing, supersample, mtf, vignetting_map); 3: optional detector
-# constants (bolometer thermal/bias, photon dark current & read noise, FPA thermal node). ADR 0017.
-SCHEMA_VERSION = 3
+# constants (bolometer thermal/bias, photon dark current & read noise, FPA thermal node);
+# 4: noise.bad_pixel_type_mix and noise.netd_ref_f_number. ADR 0017.
+SCHEMA_VERSION = 4
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -254,6 +257,10 @@ class PhotonFpa(_FpaCommon):
 FpaSpec = Annotated[BolometerFpa | PhotonFpa, Field(discriminator="type")]
 
 
+# Canonical order of the seven NVESD components (§10.2) wherever they travel as a vector.
+RATIO_ORDER: tuple[str, ...] = ("t", "v", "h", "tv", "th", "vh", "tvh")
+
+
 class Ratios3D(_Frozen):
     """§10.2 NVESD components relative to σ_TVH; ``tvh`` is the unit and must be exactly 1."""
 
@@ -271,15 +278,52 @@ class Ratios3D(_Frozen):
             raise ValueError("ratios_3d.tvh is the reference and must be exactly 1.0")
         return self
 
+    def as_vector(self) -> tuple[float, ...]:
+        """The seven ratios in ``RATIO_ORDER`` (t, v, h, tv, th, vh, tvh)."""
+        return tuple(float(getattr(self, k)) for k in RATIO_ORDER)
+
+    def total_over_tvh(self) -> float:
+        """σ_total / σ_TVH = √Σ r² (variance closure, §10.2): 1.0604 for the Boson ratios."""
+        return math.sqrt(sum(r * r for r in self.as_vector()))
+
+
+class BadPixelTypeMix(_Frozen):
+    """§10.4 defect classes as fractions of the bad-pixel population; must sum to 1."""
+
+    dead: float = Field(default=0.4, ge=0, le=1)
+    hot: float = Field(default=0.3, ge=0, le=1)
+    flickering: float = Field(default=0.2, ge=0, le=1)
+    blinking: float = Field(default=0.1, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _sums_to_one(self) -> BadPixelTypeMix:
+        total = self.dead + self.hot + self.flickering + self.blinking
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(f"bad_pixel_type_mix must sum to 1, got {total:.6f}")
+        return self
+
 
 class NoiseSpec(_Frozen):
-    """§12.2 ``noise``; ``netd_mk_at_300k`` anchors everything (§9.4)."""
+    """§12.2 ``noise``; ``netd_mk_at_300k`` anchors everything (§9.4).
+
+    ``netd_ref_f_number`` is the working f-number the datasheet NETD was measured at (ADR 0025);
+    ``None`` means the configured ``optics.f_number``. ``bad_pixel_type_mix`` splits the
+    bad-pixel population by §10.4 class (ADR 0017 schema-gap policy).
+    """
 
     netd_mk_at_300k: float = Field(gt=0)
     ratios_3d: Ratios3D
     fpn_drift_tau_s: float = Field(gt=0)
     bad_pixel_fraction: float = Field(ge=0, le=0.01)
     bad_pixel_cluster_lambda: float = Field(ge=0)
+    netd_ref_f_number: float | None = Field(default=None, gt=0)
+    bad_pixel_type_mix: BadPixelTypeMix = Field(default_factory=BadPixelTypeMix)
+
+    def sigma_ratios(self) -> tuple[float, ...]:
+        return self.ratios_3d.as_vector()
+
+    def total_over_tvh(self) -> float:
+        return self.ratios_3d.total_over_tvh()
 
 
 class NucSpec(_Frozen):
