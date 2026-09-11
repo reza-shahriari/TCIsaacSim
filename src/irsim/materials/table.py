@@ -1,34 +1,224 @@
-"""Scalar-per-band material table: material id → in-band emissivity ε₀.
+"""Scalar-per-band material table: material id → in-band ε₀ (ρ, τ, angular, thermal columns).
 
-The minimal table the radiance kernel needs (docs/physics-model.md §13.5 ``matEps``): one grey
-emissivity per material id for the current band, derived from spectral data by
-:func:`irsim.radiometry.band_average.band_average` (ADR 0010) or authored directly for tests.
-Id **0 is the UNMAPPED sentinel** (an asset the material resolver could not map); a kernel that
-meets it must fail, not silently render a default. The angular model, reflectance and
-transmittance columns arrive with the material milestone (M7.18 / M7.10).
+The kernel-facing table (docs/physics-model.md §13.5 ``matEps``): contiguous **float32** arrays
+indexed by material id for one band, built from the M7.2 library by
+:meth:`MaterialTable.from_library` (Level C: ε₀ plus the Level-B (a, p) the file authored, or the
+(0, 4) placeholders) or authored directly for tests. Id **0 is the UNMAPPED sentinel** (an asset
+the material resolver could not map); a kernel that meets it must fail, not silently render a
+default. Ids are assigned in sorted-name order so they are stable across loads; the ``.npz`` +
+sidecar carries the library hash and a stale table is refused (ADR 0040, ADR 0012 pattern).
+float16 anywhere in the table is refused (CLAUDE.md #2).
 
-docs/physics-model.md §4.1, §12.3, §13.5
+docs/physics-model.md §4.1, §12.3, §13.3, §13.5
 """
 
 from __future__ import annotations
 
+import json
+import os
+import pathlib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["UNMAPPED_MATERIAL_ID", "MaterialTable"]
+if TYPE_CHECKING:
+    from irsim.materials.library import MaterialLibrary
+    from irsim.radiometry.band_average import WeightingForm
+    from irsim.radiometry.spectral_response import SpectralResponse
+
+__all__ = [
+    "UNMAPPED_MATERIAL_ID",
+    "UNMAPPED_NAME",
+    "MaterialTable",
+    "StaleMaterialTableError",
+    "THERMAL_COLUMNS",
+    "ANGULAR_A_PLACEHOLDER",
+    "ANGULAR_P_PLACEHOLDER",
+]
 
 UNMAPPED_MATERIAL_ID = 0
+UNMAPPED_NAME = "UNMAPPED"
+THERMAL_COLUMNS: tuple[str, ...] = (
+    "density_kg_m3",
+    "specific_heat_j_kgk",
+    "conductivity_w_mk",
+    "thickness_m",
+    "solar_absorptivity",
+    "heat_capacity_j_m2_k",
+)
+ANGULAR_A_PLACEHOLDER = 0.0  # Level C: no falloff until the Level-B fit (M7.7)
+ANGULAR_P_PLACEHOLDER = 4.0
+TABLE_FORMAT = 1
+
+
+class StaleMaterialTableError(RuntimeError):
+    """The table on disk was packed from a different material library."""
 
 
 @dataclass(frozen=True)
 class MaterialTable:
-    """Dense id → ε₀ table for one band. Ids are small non-negative integers."""
+    """Dense id → per-band columns for one band. Ids are small non-negative integers."""
 
     emissivity: NDArray[np.float32]  # index = material id; NaN where undefined
     band_id: str = ""
+    reflectance: NDArray[np.float32] | None = None
+    transmittance: NDArray[np.float32] | None = None
+    angular_a: NDArray[np.float32] | None = None
+    angular_p: NDArray[np.float32] | None = None
+    roughness: NDArray[np.float32] | None = None
+    thermal: dict[str, NDArray[np.float32]] = field(default_factory=dict)
+    names: tuple[str, ...] = ()  # index = id; names[0] == UNMAPPED_NAME when set
+    library_hash: str = ""
+
+    def __post_init__(self) -> None:
+        n = self.emissivity.shape[0]
+        for name, arr in self._columns().items():
+            if arr.dtype == np.float16:
+                raise TypeError(f"{name} is float16 (CLAUDE.md #2): the table is float32")
+            if arr.dtype != np.float32:
+                raise TypeError(f"{name} must be float32, got {arr.dtype}")
+            if arr.shape != (n,):
+                raise ValueError(f"{name} has shape {arr.shape}, expected ({n},)")
+        if self.names and (len(self.names) != n or self.names[0] != UNMAPPED_NAME):
+            raise ValueError("names must have one entry per id with names[0] == 'UNMAPPED'")
+
+    def _columns(self) -> dict[str, NDArray[np.float32]]:
+        cols: dict[str, NDArray[np.float32]] = {"emissivity": self.emissivity}
+        for key in ("reflectance", "transmittance", "angular_a", "angular_p", "roughness"):
+            arr = getattr(self, key)
+            if arr is not None:
+                cols[key] = arr
+        for key, arr in self.thermal.items():
+            cols[f"thermal.{key}"] = arr
+        return cols
+
+    @property
+    def n_ids(self) -> int:
+        return int(self.emissivity.shape[0])
+
+    @property
+    def is_unmapped(self) -> NDArray[np.bool_]:
+        flags = np.zeros(self.n_ids, dtype=bool)
+        flags[UNMAPPED_MATERIAL_ID] = True
+        return flags
+
+    def id_for(self, name: str) -> int:
+        if not self.names:
+            raise ValueError("this table carries no names (built from a mapping)")
+        try:
+            return self.names.index(name)
+        except ValueError:
+            raise KeyError(f"unknown material {name!r}; have {self.names[1:]}") from None
+
+    def name_for(self, material_id: int) -> str:
+        return self.names[material_id] if self.names else str(material_id)
+
+    # -- construction from the library ------------------------------------------------
+    @classmethod
+    def from_library(
+        cls,
+        library: MaterialLibrary,
+        band: str,
+        response: SpectralResponse | None = None,
+        form: WeightingForm = "energy",
+    ) -> MaterialTable:
+        """Pack every material of the library for one band; ids 1..N in sorted-name order."""
+        from irsim.config.materials import EmpiricalAngular
+
+        names = sorted(library.names)
+        n = len(names) + 1
+        eps = np.full(n, np.nan, dtype=np.float32)
+        rho = np.full(n, np.nan, dtype=np.float32)
+        tau = np.full(n, np.nan, dtype=np.float32)
+        a = np.full(n, ANGULAR_A_PLACEHOLDER, dtype=np.float32)
+        p_ = np.full(n, ANGULAR_P_PLACEHOLDER, dtype=np.float32)
+        rough = np.full(n, np.nan, dtype=np.float32)
+        thermal = {key: np.full(n, np.nan, dtype=np.float32) for key in THERMAL_COLUMNS}
+        for i, name in enumerate(names, start=1):
+            m = library[name]
+            props = m.band_properties(band, response, form)
+            eps[i], rho[i], tau[i] = props.emissivity, props.reflectance, props.transmittance
+            angular = m.spec.optical.angular_model
+            if isinstance(angular, EmpiricalAngular):
+                a[i], p_[i] = angular.a, angular.p
+            rough[i] = (m.spec.optical.roughness_per_band or {}).get(band, np.nan)
+            t = m.spec.thermal
+            for key in THERMAL_COLUMNS:
+                thermal[key][i] = getattr(t, key)
+        return cls(
+            emissivity=eps,
+            band_id=band,
+            reflectance=rho,
+            transmittance=tau,
+            angular_a=a,
+            angular_p=p_,
+            roughness=rough,
+            thermal=thermal,
+            names=(UNMAPPED_NAME, *names),
+            library_hash=library.content_hash(),
+        )
+
+    # -- files ----------------------------------------------------------------------------
+    def save(self, path: str | os.PathLike[str]) -> tuple[pathlib.Path, pathlib.Path]:
+        """Write ``<path>.npz`` + ``<path>.json`` sidecar (band, names, library hash)."""
+        base = pathlib.Path(path)
+        npz = base.with_suffix(".npz")
+        side = base.with_suffix(".json")
+        columns: dict[str, Any] = {k.replace(".", "__"): v for k, v in self._columns().items()}
+        np.savez(str(npz), **columns)
+        side.write_text(
+            json.dumps(
+                {
+                    "format": TABLE_FORMAT,
+                    "band_id": self.band_id,
+                    "names": list(self.names),
+                    "library_hash": self.library_hash,
+                    "columns": sorted(self._columns()),
+                },
+                indent=2,
+            )
+        )
+        return npz, side
+
+    @classmethod
+    def load(
+        cls, path: str | os.PathLike[str], library: MaterialLibrary | None = None
+    ) -> MaterialTable:
+        """Read a table; with ``library`` given, refuse one packed from a different library."""
+        base = pathlib.Path(path)
+        meta: dict[str, Any] = json.loads(base.with_suffix(".json").read_text())
+        if meta.get("format") != TABLE_FORMAT:
+            raise ValueError(f"material table format {meta.get('format')} != {TABLE_FORMAT}")
+        if library is not None and meta["library_hash"] != library.content_hash():
+            raise StaleMaterialTableError(
+                f"{base}: packed from library {meta['library_hash'][:12]}, current library is "
+                f"{library.content_hash()[:12]} -- regenerate the table"
+            )
+        with np.load(base.with_suffix(".npz")) as data:
+            arrays = {k.replace("__", "."): np.asarray(data[k]) for k in data.files}
+        for arr in arrays.values():
+            if arr.dtype == np.float16:
+                raise TypeError("material table on disk is float16 (CLAUDE.md #2)")
+        thermal = {
+            k.split(".", 1)[1]: arrays[k].astype(np.float32)
+            for k in arrays
+            if k.startswith("thermal.")
+        }
+        return cls(
+            emissivity=arrays["emissivity"].astype(np.float32),
+            band_id=str(meta["band_id"]),
+            reflectance=arrays.get("reflectance"),
+            transmittance=arrays.get("transmittance"),
+            angular_a=arrays.get("angular_a"),
+            angular_p=arrays.get("angular_p"),
+            roughness=arrays.get("roughness"),
+            thermal=thermal,
+            names=tuple(meta["names"]),
+            library_hash=str(meta["library_hash"]),
+        )
 
     @classmethod
     def from_mapping(cls, eps_by_id: Mapping[int, float], band_id: str = "") -> MaterialTable:

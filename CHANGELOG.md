@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `MaterialTable.from_library` / `save` / `load` (M7.18): packed float32 per-band columns (ε₀, ρ, τ,
+  Level-B (a, p) or (0, 4) placeholders, roughness, thermal), id 0 = UNMAPPED, ids stable across loads,
+  `.npz` + sidecar with the library hash, `StaleMaterialTableError`; float16 refused.
 - `irsim.config.materials` (M7.2): `MaterialConfig` -- one YAML per material with a `material:` block,
   `source` required, exactly one of spectral/scalar ε or ρ authored, optional τ/roughness per band,
   angular model union; `irsim.materials.library` derives the third quantity per band (ADR 0010 band

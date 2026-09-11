@@ -13,7 +13,12 @@ from irsim.materials.library import (
     nominal_response,
 )
 from irsim.materials.spectra import PropertySpectrum, load_property_spectrum
-from irsim.materials.table import UNMAPPED_MATERIAL_ID, MaterialTable
+from irsim.materials.table import (
+    UNMAPPED_MATERIAL_ID,
+    UNMAPPED_NAME,
+    MaterialTable,
+    StaleMaterialTableError,
+)
 
 __all__ = [
     "CLOSURE_TOL",
@@ -26,5 +31,7 @@ __all__ = [
     "PropertySpectrum",
     "load_property_spectrum",
     "UNMAPPED_MATERIAL_ID",
+    "UNMAPPED_NAME",
     "MaterialTable",
+    "StaleMaterialTableError",
 ]

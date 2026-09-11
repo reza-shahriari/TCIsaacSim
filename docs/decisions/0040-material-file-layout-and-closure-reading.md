@@ -40,6 +40,16 @@ live, and how a violation is caught.
 - **The library walk exists now** (`test_committed_library_closes_in_every_band`): every material,
   every standard band, closure to 1e-6 — the test CLAUDE.md #4 promised (spec issue T3).
 
+## The packed table (M7.18)
+
+`MaterialTable.from_library(library, band, response, form)` packs one band into contiguous float32
+columns -- ε₀, ρ, τ, the Level-B (a, p) the file authored (or the (0, 4) Level-C placeholders until
+the M7.7 fit), roughness, and the thermal columns -- with **id 0 = UNMAPPED** and ids 1..N in
+sorted-name order so they are stable across loads. `save`/`load` write `.npz` + a JSON sidecar
+carrying the library content hash; loading against a library with a different hash raises
+`StaleMaterialTableError` (the ADR 0012 pattern). float16 anywhere is refused at construction and
+on load. Closure is checked on the float32 values (< 1e-6 survives the pack).
+
 ## Consequences
 
 - Six starting materials from §16.2 (paint black/white, bare aluminium, windshield glass, dry
