@@ -52,6 +52,11 @@ SIGMA_Q: Final[float] = (
     4.0 * 3.141592653589793 * ZETA_3 * K_BOLTZMANN**3 / (H_PLANCK**3 * C_LIGHT**2)
 )
 
+# --- Atmosphere ------------------------------------------------------------
+# Specific gas constant of water vapour, J kg^-1 K^-1 (R / M_water = 8.314462618 / 0.018015):
+# absolute humidity rho_v = e / (R_v T); the §7.3 factor 216.7 g m^-3 hPa^-1 K is 1e5 / R_v.
+R_V_WATER: Final[float] = 461.5
+
 # --- Semiconductor band gaps for the Arrhenius dark-current model (docs/physics-model.md §9.1) ----
 # i_dark ∝ T^1.5 exp(-E_g / 2 k_B T). Values at the detectors' operating temperatures:
 #   InSb   0.23 eV at 77 K   (Littler & Seiler 1985; Vurgaftman et al. 2001 -- 0.235 eV at 0 K)

@@ -43,7 +43,7 @@ tier evidence is in the suite; 🟡 means partial with the notes saying what is 
 | `radiometry` | 🟢 done | T1–T2 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; golden LUT slice at 1 mK; ADRs 0005–0013 |
 | `materials` | 🟡 partial | T1 | Minimal per-band `MaterialTable` (id → ε₀, id 0 = UNMAPPED refused); spectral model pending M7 |
 | `thermal` | ⬜ not started | — | |
-| `atmosphere` | ⬜ not started | — | |
+| `atmosphere` | 🟡 partial | T1 | Beer–Lambert kernel (isothermal invariance to 1e-12), Magnus humidity, grey-band error study (ADR 0048); presets, aerosol and the stage pending |
 | `optics` | 🟢 done (L2) | T1–T2 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016); box downsample + composed optics stage with inverse (ADR 0020); MTF cascade and optical PSF at the supersampled pitch, slant-edge MTF bench 0.31 at Nyquist (ADR 0059) |
 | `detector` | 🟡 partial | T1–T2 | `FpaParams`; ideal bolometer/photon transfers (ADR 0019), shared quantiser; NETD predictor (ADR 0024), anchoring (ADR 0025); `PhotonDetector` / `MicrobolometerDetector` responses with seeded per-pixel noise in physical units, two-blackbody NETD benches reproduce the anchor and the 0.576 derivative ratio (ADR 0026) |
 | `noise` | 🟢 done | T2 | Counter-based per-pixel hash RNG (ADR 0022); NVESD synthesiser; `NoiseStage` (correlated 3-D terms on the detector's σ_TVH) wired into `run_frame`; DN-domain NETD within 10 % of the anchor, ratios recovered within floors; drift/NUC/bad pixels are M9 |
@@ -117,7 +117,9 @@ docs/               physics-model.md and ADRs
 Stated deliberately — see `docs/physics-model.md` Appendix A for the full list and reasoning.
 
 - No 3-D conduction. Engine bay and exhaust are prescribed, not solved.
-- Band-averaged atmosphere (Beer-Lambert). Valid under ~500 m; not for airborne work.
+- Band-averaged atmosphere (Beer-Lambert). Valid under ~500 m; not for airborne work. Measured
+  (ADR 0048): a grey γ_B fitted over 0–300 m over-attenuates a two-level LWIR band by 1.7 % at 500 m
+  and 8.7 % at 1 km, and a MWIR band with an opaque CO₂ notch by 18 % at 500 m and 42 % at 1 km.
 - Emissivity is grey within a band.
 - Reflections are approximate — sky-view-factor blending, not full path tracing.
 - No polarisation, no atmospheric turbulence.
