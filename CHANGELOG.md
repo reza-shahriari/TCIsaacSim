@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.validation.noise` (ME.2a): leakage-corrected NVESD `decompose_3d` (random-effects mean squares,
+  uint16 promoted, negatives clipped with raw variances kept), `spatial_psd` with radial profile and the
+  k_v = 0 / k_h = 0 striping lines, `temporal_psd`, `compare_psd`. Boson ratios recovered from 200
+  frames of 64×64 within the stated sampling floors; white cube shows no directional terms (ADR 0023).
 - `PhotonDetector.response` (Poisson shot + dark + background and hashed read noise in electron space,
   then DN) with Arrhenius `dark_current_a` (InSb/InGaAs band gaps in `constants.py`), and
   `MicrobolometerDetector.response` (static transfer + anchored σ in signal space, then DN);
