@@ -29,7 +29,11 @@ def _config(
     d["sensor"]["optics"]["supersample_factor"] = supersample
     d["sensor"]["outputs"].update(outputs)
     return PipelineConfig.from_sensor(
-        SensorConfig.model_validate(d), MaterialTable.constant(1.0), lut=lut, noise_enabled=False
+        SensorConfig.model_validate(d),
+        MaterialTable.constant(1.0),
+        lut=lut,
+        noise_enabled=False,
+        psf_enabled=False,
     )
 
 

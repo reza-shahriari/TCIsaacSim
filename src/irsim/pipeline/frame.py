@@ -2,7 +2,7 @@
 
     stage 1  band radiance     ε₀ L_B(T) on the k× G-buffer          (irsim.pipeline.radiance)
     stage 2  atmosphere        identity until M8
-    stage 3  optics            box ↓k, aperture·cos⁴·A_d, +Φ_self     (irsim.optics.stage)
+    stage 3  optics            PSF, box ↓k, aperture·cos⁴·A_d, +Φ_self (irsim.optics.stage)
     stage 4  detector          Φ → signal in DN with per-pixel noise    (irsim.detector, ADR 0026)
     stage 5  noise             + correlated 3-D components              (irsim.noise.stage)
     ADC      quantise          floor + clip → uint16                    (irsim.detector.quantise)
@@ -89,7 +89,7 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
     radiance_ss = band_radiance(t, planes["material_id"], config.materials, lut, q)
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
-    flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k)
+    flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k, psf=config.psf)
     # stages 4-5 (detector noise, correlated noise); ADC
     signal = _detector_signal(flux, config, state)
     dn16 = quantise(signal, sensor.fpa.bit_depth)

@@ -54,8 +54,21 @@ def _scene(exhaust: bool) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray
     return planes, ped, hot
 
 
+def _halo(hot: np.ndarray, margin: int = 12) -> np.ndarray:
+    """The exhaust plus a margin: the optical PSF spreads a 600 K patch's halo over a few px."""
+    out = hot.copy()
+    ys, xs = np.nonzero(hot)
+    if ys.size:
+        out[
+            max(0, ys.min() - margin) : ys.max() + margin + 1,
+            max(0, xs.min() - margin) : xs.max() + margin + 1,
+        ] = True
+    return out
+
+
 def _contrast(img: np.ndarray, ped: np.ndarray, hot: np.ndarray) -> float:
-    bg = ~ped & ~hot
+    """Pedestrian mean minus background mean, the background excluding the exhaust halo."""
+    bg = ~ped & ~_halo(hot)
     return float(img[ped].mean() - img[bg].mean())
 
 
@@ -85,7 +98,7 @@ def test_plateau_equalisation_retains_background_contrast(boson_lut: BandLUT) ->
     o0 = run_frame(p0, cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k))
     o1 = run_frame(p1, cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k))
     assert o0.display8 is not None and o1.display8 is not None
-    bg = ~ped & ~hot1
+    bg = ~ped & ~_halo(hot1)
     std0 = o0.display8[..., 0][bg].astype(np.float64).std()
     std1 = o1.display8[..., 0][bg].astype(np.float64).std()
     assert std1 > 0.5 * std0, (std0, std1)

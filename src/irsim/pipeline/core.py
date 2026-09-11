@@ -27,6 +27,7 @@ from irsim.detector.response import Detector
 from irsim.isp.radiometric import RadiometricCalibration
 from irsim.materials.table import MaterialTable
 from irsim.noise.stage import NoiseStage
+from irsim.optics.psf import optical_psf
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.radiometry.lut_files import load_band_lut_for_config
 
@@ -53,6 +54,7 @@ class PipelineConfig:
     noise: NoiseStage
     sensor_seed: int
     noise_enabled: bool
+    psf: NDArray[np.float64] | None  # optical PSF at the k× pitch; None = no optical blur
 
     @property
     def quantity(self) -> Quantity:
@@ -71,6 +73,8 @@ class PipelineConfig:
         radiometric_range_k: tuple[float, float] = RADIOMETRIC_RANGE_K,
         sensor_seed: int = 0,
         noise_enabled: bool = True,
+        psf_enabled: bool = True,
+        reference_wavelength_um: float | None = None,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
@@ -78,7 +82,10 @@ class PipelineConfig:
         ``t_housing_cal_k`` (default: ``optics.housing_temp_k`` if fixed, else 300 K). The
         detector's noise is anchored to ``noise.netd_mk_at_300k`` (ADR 0025) and the correlated
         3-D stage seeded with ``sensor_seed`` (ADR 0022); ``noise_enabled=False`` runs the ideal
-        chain (the ablation switch of ME.8).
+        chain (the ablation switch of ME.8). The optical PSF (diffraction at the band-
+        representative wavelength -- ``reference_wavelength_um``, else
+        ``mtf.reference_wavelength_um``, else the band centre -- times the aberration Gaussian) is
+        built at the supersampled pitch (ADR 0059); ``psf_enabled=False`` skips it.
         """
         if lut is None:
             if lut_dir is None:
@@ -100,18 +107,34 @@ class PipelineConfig:
             detector = PhotonDetector(fpa, budget)
         else:  # pragma: no cover
             raise TypeError(f"unknown FPA params {type(fpa).__name__}")
+        spec = sensor.sensor
+        psf = None
+        if psf_enabled:
+            lam = (
+                reference_wavelength_um
+                if reference_wavelength_um is not None
+                else spec.reference_wavelength_um
+            )
+            psf = optical_psf(
+                lam,
+                spec.optics.f_number,
+                spec.optics.mtf.aberration_sigma_um,
+                spec.fpa.pitch_um,
+                spec.optics.supersample_factor,
+            )
         return cls(
             sensor=sensor,
             lut=lut,
             materials=materials,
             fpa=fpa,
-            supersample=sensor.sensor.optics.supersample_factor,
+            supersample=spec.optics.supersample_factor,
             calibration=calibration,
             t_housing_cal_k=t_housing_cal_k,
             detector=detector,
-            noise=NoiseStage.from_sensor(sensor.sensor, sensor_seed, enabled=noise_enabled),
+            noise=NoiseStage.from_sensor(spec, sensor_seed, enabled=noise_enabled),
             sensor_seed=sensor_seed,
             noise_enabled=noise_enabled,
+            psf=psf,
         )
 
     @classmethod

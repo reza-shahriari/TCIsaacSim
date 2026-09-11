@@ -4,6 +4,16 @@ docs/physics-model.md §8
 """
 
 from irsim.optics.aperture import aperture_factor, cone_half_angle, fpa_irradiance, pixel_power
+from irsim.optics.mtf import (
+    cutoff_frequency_cyc_per_mm,
+    mtf_detector,
+    mtf_diffraction,
+    mtf_gaussian,
+    mtf_motion,
+    mtf_system,
+    nyquist_frequency_cyc_per_mm,
+)
+from irsim.optics.psf import apply_psf, optical_psf
 from irsim.optics.sampling import box_downsample, box_transfer, required_render_size
 from irsim.optics.self_emission import (
     OpticalElement,
@@ -32,4 +42,13 @@ __all__ = [
     "apply_optics",
     "invert_optics",
     "optics_field",
+    "cutoff_frequency_cyc_per_mm",
+    "nyquist_frequency_cyc_per_mm",
+    "mtf_diffraction",
+    "mtf_detector",
+    "mtf_motion",
+    "mtf_gaussian",
+    "mtf_system",
+    "optical_psf",
+    "apply_psf",
 ]

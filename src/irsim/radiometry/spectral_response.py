@@ -81,6 +81,13 @@ class SpectralResponse:
             dtype=np.float64,
         )
 
+    def mean_wavelength_um(self) -> float:
+        """∫λ R dλ / ∫R dλ: the band-representative wavelength for diffraction (ADR 0059)."""
+        return float(
+            np.trapezoid(self.wavelength_um * self.response, self.wavelength_um)
+            / self.integral_um()
+        )
+
     def integral_um(self) -> float:
         """∫R dλ on the native grid (µm). For a top-hat this is its width."""
         return float(np.trapezoid(self.response, self.wavelength_um))

@@ -2,7 +2,7 @@
 
 Fixed order (docs/physics-model.md §2, §8.1-§8.3, §13.4; ADR 0020):
 
-    1. [optical PSF at the supersampled pitch -- MS milestone, identity today]
+    1. optical PSF (diffraction · aberration Gaussian) at the supersampled pitch, if given
     2. box-mean downsample k× → native grid            (detector footprint MTF + aliasing)
     3. × π τ_opt / (4F² + 1) · cos⁴θ · A_d               (aperture, natural vignetting, area)
     4. + Φ_self = A_d Ω_eff (1 − τ_opt) L_B(T_housing)  (optics self-emission)
@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 
 from irsim.config.sensor import SensorSpec
 from irsim.optics.aperture import aperture_factor, fpa_irradiance
+from irsim.optics.psf import apply_psf
 from irsim.optics.sampling import box_downsample
 from irsim.optics.self_emission import self_emission_power
 from irsim.optics.vignetting import cos4_field
@@ -54,10 +55,13 @@ def apply_optics(
     sensor: SensorSpec,
     lb_housing: float,
     supersample: int | None = None,
+    psf: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float32]:
-    """Scene band radiance on the k× grid → pixel power Φ (H, W) float32."""
+    """Scene band radiance on the k× grid → pixel power Φ (H, W) float32. ``psf`` (a kernel from
+    :func:`irsim.optics.psf.optical_psf` at the same k) is applied first when given."""
     k = sensor.optics.supersample_factor if supersample is None else supersample
-    radiance = box_downsample(radiance_ss, k)
+    blurred = apply_psf(radiance_ss, psf) if psf is not None else radiance_ss
+    radiance = box_downsample(blurred, k)
     _check_native(radiance, sensor, "downsampled radiance")
     a_d = sensor.detector_active_area_m2
     f, tau = sensor.optics.f_number, sensor.optics.transmittance
