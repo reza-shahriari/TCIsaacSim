@@ -13,6 +13,7 @@ from irsim.noise.seeding import (
     sensor_rng,
     stream_key,
 )
+from irsim.noise.stage import NoiseStage, measure_from_uniform_scene
 from irsim.noise.three_d import FixedPattern, Sigmas7, synthesize_frame
 
 __all__ = [
@@ -27,4 +28,6 @@ __all__ = [
     "FixedPattern",
     "Sigmas7",
     "synthesize_frame",
+    "NoiseStage",
+    "measure_from_uniform_scene",
 ]

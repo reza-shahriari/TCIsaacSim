@@ -113,11 +113,19 @@ def synthesize_frame(
     k_tv = stream_key(sensor_seed, frame_index, NoiseStream.TV)
     k_th = stream_key(sensor_seed, frame_index, NoiseStream.TH)
     k_tvh = stream_key(sensor_seed, frame_index, NoiseStream.TVH)
-    t = np.float32(sigmas.t) * hash_normal(k_t, np.array([0]))[0]
-    tv = np.float32(sigmas.tv) * hash_normal(k_tv, np.arange(rows))
-    th = np.float32(sigmas.th) * hash_normal(k_th, np.arange(cols))
-    tvh = np.float32(sigmas.tvh) * field_normal(k_tvh, shape)
-    frame = t + fixed.v[:, None] + fixed.h[None, :] + tv[:, None] + th[None, :] + fixed.vh + tvh
+    frame = np.zeros(shape, dtype=np.float32)
+    frame += fixed.v[:, None]
+    frame += fixed.h[None, :]
+    frame += fixed.vh
+    # temporal terms; a zero sigma skips the draw (no behaviour change, saves the hashing)
+    if sigmas.t > 0:
+        frame += np.float32(sigmas.t) * hash_normal(k_t, np.array([0]))[0]
+    if sigmas.tv > 0:
+        frame += (np.float32(sigmas.tv) * hash_normal(k_tv, np.arange(rows)))[:, None]
+    if sigmas.th > 0:
+        frame += (np.float32(sigmas.th) * hash_normal(k_th, np.arange(cols)))[None, :]
+    if sigmas.tvh > 0:
+        frame += np.float32(sigmas.tvh) * field_normal(k_tvh, shape)
     out = np.asarray(frame, dtype=np.float32)
     if not np.all(np.isfinite(out)):
         raise ValueError("synthesised noise is not finite")

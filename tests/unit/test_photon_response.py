@@ -132,7 +132,7 @@ def test_determinism_and_dtype_gates(tophat_mwir_lut: BandLUT) -> None:
         and a.sigma_dn.dtype == np.float32
     )
     with pytest.raises(TypeError, match="float16"):
-        det.response(flux.astype(np.float16), 0, 1)
+        det.response(np.ones(s.fpa_shape, dtype=np.float16), 0, 1)
     with pytest.raises(ValueError):
         PhotonDetector(det.params, NoiseBudget(kind="bolometer", sigma_gaussian=1.0))
 
