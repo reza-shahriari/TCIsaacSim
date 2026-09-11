@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.thermal.solar` (M6.4): NOAA sun position (elevation, azimuth, declination, equation of time,
+  solar noon; vectorised over Julian days), ENU sun vector, `solar_loading = S·max(0,n·s)·DNI + V_s·DHI`,
+  `absorbed_solar = α·Q` (ADR 0034).
 - `irsim.thermal.convection` (M6.3): h = max(c|ΔT|^{1/3}, a + b v_rel^n) with v_rel = |wind| + |vehicle|
   (ADR 0033); h(28 m/s) = 62.5 vs 5.0 parked.
 - `irsim.thermal.weather_io` (M6.2): project weather CSV (`# irsim weather v1`, unit-suffixed columns,

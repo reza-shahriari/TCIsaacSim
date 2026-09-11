@@ -10,10 +10,28 @@ from irsim.thermal.convection import (
     free_forced_crossover_k,
     relative_air_speed,
 )
+from irsim.thermal.solar import (
+    SunPosition,
+    absorbed_solar,
+    julian_day,
+    solar_loading,
+    solar_noon_utc,
+    sun_direction,
+    sun_position,
+    sun_position_utc,
+)
 from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, seconds_since
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
 
 __all__ = [
+    "SunPosition",
+    "absorbed_solar",
+    "julian_day",
+    "solar_loading",
+    "solar_noon_utc",
+    "sun_direction",
+    "sun_position",
+    "sun_position_utc",
     "DEFAULT_CONVECTION",
     "ConvectionParams",
     "convection_coefficient",
