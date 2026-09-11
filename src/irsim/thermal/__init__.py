@@ -10,6 +10,12 @@ from irsim.thermal.convection import (
     free_forced_crossover_k,
     relative_air_speed,
 )
+from irsim.thermal.longwave import (
+    clear_sky_emissivity,
+    longwave_down,
+    longwave_down_from_sample,
+    sky_emissivity,
+)
 from irsim.thermal.solar import (
     SunPosition,
     absorbed_solar,
@@ -24,6 +30,10 @@ from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, 
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
 
 __all__ = [
+    "clear_sky_emissivity",
+    "longwave_down",
+    "longwave_down_from_sample",
+    "sky_emissivity",
     "SunPosition",
     "absorbed_solar",
     "julian_day",

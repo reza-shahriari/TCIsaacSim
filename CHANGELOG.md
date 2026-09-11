@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.thermal.longwave` (M6.5): Q_LW↓ = V_s·ε_sky·σT_air⁴ + (1−V_s)·σT_surround⁴ with Brunt (default)
+  or Idso clear-sky emissivity and a linear cloud blend to 1; fed by the shared `WeatherSample` (ADR 0035).
 - `irsim.thermal.solar` (M6.4): NOAA sun position (elevation, azimuth, declination, equation of time,
   solar noon; vectorised over Julian days), ENU sun vector, `solar_loading = S·max(0,n·s)·DNI + V_s·DHI`,
   `absorbed_solar = α·Q` (ADR 0034).
