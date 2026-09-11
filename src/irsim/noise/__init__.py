@@ -13,6 +13,7 @@ from irsim.noise.seeding import (
     sensor_rng,
     stream_key,
 )
+from irsim.noise.three_d import FixedPattern, Sigmas7, synthesize_frame
 
 __all__ = [
     "NoiseStream",
@@ -23,4 +24,7 @@ __all__ = [
     "noise_rng",
     "sensor_rng",
     "stream_key",
+    "FixedPattern",
+    "Sigmas7",
+    "synthesize_frame",
 ]
