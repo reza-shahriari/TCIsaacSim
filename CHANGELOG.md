@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.thermal.weather.WeatherSeries` / `WeatherSample` (M6.1): immutable validated hourly weather
+  (T_air K, RH fraction, wind, cloud, DNI/DHI, visibility, precip), linear `at(t)`, extrapolation
+  refused, `content_hash`; never opens a file (ADR 0032). `SOLAR_CONSTANT_W_M2 = 1361` in constants.
 - `irsim.config.atmosphere` (`AtmospherePreset`: per-band γ₀/β/aerosol ratio, regime, profile,
   provenance; rejects weather-like keys at any depth — CLAUDE.md #6), seven presets in
   `configs/atmospheres/` fitted to the §7.2 table, `irsim.atmosphere.library`,

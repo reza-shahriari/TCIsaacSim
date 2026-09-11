@@ -62,6 +62,11 @@ R_V_WATER: Final[float] = 461.5
 # exact ln 50 so tau(V) = 0.02 holds to round-off; the conventional rounded value is 3.912.
 KOSCHMIEDER: Final[float] = 3.912023005428146  # ln(50)
 
+# --- Solar --------------------------------------------------------------------
+# Total solar irradiance at 1 AU, W m^-2 (Kopp & Lean 2011, SORCE/TIM: 1360.8 +- 0.5). Upper bound
+# for any surface irradiance in a weather file; the solar-path transmittance (M11) scales it.
+SOLAR_CONSTANT_W_M2: Final[float] = 1361.0
+
 # --- Semiconductor band gaps for the Arrhenius dark-current model (docs/physics-model.md §9.1) ----
 # i_dark ∝ T^1.5 exp(-E_g / 2 k_B T). Values at the detectors' operating temperatures:
 #   InSb   0.23 eV at 77 K   (Littler & Seiler 1985; Vurgaftman et al. 2001 -- 0.235 eV at 0 K)
