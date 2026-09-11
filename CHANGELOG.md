@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.atmosphere.sky.SkyModel` (MS.2): clear-sky elevation LUT over the layered column emission
+  (fast path within 0.5 K), tilt LUT with an analytic azimuth kernel (`effective_radiance(β)`,
+  `effective_radiance_from_sky_view(V_s)`), cloud blend to L_B(T_air), `broadband_downwelling` via M6.5,
+  `fit_cos_q` deriving the §5.3(a) form and its error (ADR 0044).
 - `irsim.atmosphere.layered` (MS.1): `LayeredAtmosphere` -- exponential sum over spectral classes per
   band (Planck-weighted class weights from the sensor response; water/air scale heights; horizontal
   200 m anchored to the grey preset; opaque CO₂/H₂O cores on top), analytic slant-path transmittance,

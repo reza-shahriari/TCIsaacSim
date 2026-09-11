@@ -164,6 +164,12 @@ def column_length(distance_m: Any, elevation_rad: float, scale_height_m: float) 
         return scale_height_m / st * (1.0 - np.exp(-d * st / scale_height_m))
 
 
+def _scaled(gamma: float, column: NDArray[np.float64]) -> NDArray[np.float64]:
+    if gamma == 0.0:
+        return np.zeros_like(column)
+    return np.asarray(gamma * column, dtype=np.float64)
+
+
 @dataclass(frozen=True)
 class ExponentialSum:
     """τ_B(path) = Σ_k w_k exp(−γ_k,0 C_k(path) − γ_aer C_aer(path)) for one band and weather."""
@@ -188,13 +194,15 @@ class ExponentialSum:
     def optical_depths(self, distance_m: Any, elevation_rad: float) -> NDArray[np.float64]:
         """Per class optical depth along the ray, shape (n_terms, *distance.shape)."""
         d = np.asarray(distance_m, dtype=np.float64)
-        aer = self.gamma_aerosol * np.asarray(
+        col_aer = np.asarray(
             column_length(d, elevation_rad, self.aerosol_scale_height_m), dtype=np.float64
         )
+        # 0 * inf (a zero extinction on an infinite horizontal path) is 0, not NaN
+        aer = _scaled(self.gamma_aerosol, col_aer)
         out = np.empty((self.n_terms, *d.shape))
         for k in range(self.n_terms):
             col = column_length(d, elevation_rad, float(self.scale_heights_m[k]))
-            out[k] = self.gamma_0[k] * np.asarray(col, dtype=np.float64) + aer
+            out[k] = _scaled(float(self.gamma_0[k]), np.asarray(col, dtype=np.float64)) + aer
         return out
 
     def transmittance(self, distance_m: Any, elevation_rad: float = 0.0) -> NDArray[np.float64]:

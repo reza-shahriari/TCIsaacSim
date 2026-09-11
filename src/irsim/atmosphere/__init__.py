@@ -31,6 +31,7 @@ from irsim.atmosphere.layered import (
 )
 from irsim.atmosphere.library import available_presets, load_atmosphere_preset, preset_hash
 from irsim.atmosphere.model import Atmosphere, AtmosphereState
+from irsim.atmosphere.sky import CosQFit, SkyModel
 from irsim.atmosphere.spectral import (
     band_transmittance_spectral,
     effective_gamma,
@@ -62,6 +63,8 @@ __all__ = [
     "available_presets",
     "load_atmosphere_preset",
     "preset_hash",
+    "CosQFit",
+    "SkyModel",
     "band_transmittance_spectral",
     "effective_gamma",
     "fit_grey_gamma",
