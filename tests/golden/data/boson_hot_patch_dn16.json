@@ -1,0 +1,13 @@
+{
+  "atol": 1.0,
+  "config_hash": "fc71f8d0077d84ba5fe490f363f1e0f08ddc1d7726a638fbd2fbc66037ad2d3d",
+  "dtype": "uint16",
+  "name": "boson_hot_patch_dn16",
+  "numpy_version": "2.3.1",
+  "rtol": null,
+  "shape": [
+    256,
+    256
+  ],
+  "units": "DN16"
+}

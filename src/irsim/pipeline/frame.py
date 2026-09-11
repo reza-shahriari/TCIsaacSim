@@ -7,13 +7,13 @@
     stage 5  noise             + correlated 3-D components              (irsim.noise.stage)
     ADC      quantise          floor + clip → uint16                    (irsim.detector.quantise)
     stage 6  ISP               radiometric branch → radiance, T_app     (irsim.isp.radiometric)
-             AGC / display     identity (None) until M5
+             display branch    AGC → gamma → DDE → polarity → palette  (irsim.isp.display)
 
 Outputs follow §12.2 ``outputs``: ``radiance`` (float32, scene band radiance at the native grid),
-``apparent_t`` (float32 K, from the float32 signal route), ``dn16`` (uint16), ``display8`` (None
-until M5). A flag set to ``false`` yields ``None`` -- never zeros. The bolometer path uses the
-energy-form LUT table; a photon FPA runs the same chain on the photon table with
-N_e = η t_int Φ_q (ADR 0021).
+``apparent_t`` (float32 K, from the float32 signal route), ``dn16`` (uint16), ``display8``
+(RGBA8 through the isp block, ADR 0031). A flag set to ``false`` yields ``None`` -- never zeros.
+The bolometer path uses the energy-form LUT table; a photon FPA runs the same chain on the
+photon table with N_e = η t_int Φ_q (ADR 0021).
 
 docs/physics-model.md §13.4, §12.2 outputs, §16.4 step 3
 """
@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 
 from irsim.detector.params import BolometerParams, PhotonParams
 from irsim.detector.quantise import quantise
+from irsim.isp.display import run_display_branch
 from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
@@ -40,9 +41,10 @@ class Outputs:
     radiance: NDArray[np.float32] | None
     apparent_t: NDArray[np.float32] | None
     dn16: NDArray[np.uint16] | None
-    display8: NDArray[np.uint8] | None
+    display8: NDArray[np.uint8] | None  # (H, W, 4) RGBA8
     signal_dn: NDArray[np.float32]  # un-quantised stage-4 signal, always kept for benches
     flux: NDArray[np.float32]  # stage-3 pixel power (W or photons/s), always kept
+    isp_hash: str | None = None  # config hash of the isp block that produced display8
 
 
 def _detector_signal(
@@ -101,12 +103,18 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
             radiance = scene
         if outputs.apparent_temperature:
             apparent_t = apparent_temperature(scene, lut, q)
+    display8 = None
+    isp_hash = None
+    if outputs.display_8:
+        display = run_display_branch(dn16, sensor.isp, sensor.fpa.bit_depth)
+        display8, isp_hash = display.display8, display.isp_hash
     state.advance()
     return Outputs(
         radiance=radiance,
         apparent_t=apparent_t,
         dn16=dn16 if outputs.dn_16 else None,
-        display8=None,
+        display8=display8,
         signal_dn=signal,
         flux=flux,
+        isp_hash=isp_hash,
     )

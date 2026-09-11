@@ -56,16 +56,27 @@ def test_output_dtypes_and_state_advance(tophat_lwir_lut: BandLUT) -> None:
     )
     assert out.apparent_t is not None and out.apparent_t.dtype == np.float32
     assert out.dn16 is not None and out.dn16.dtype == np.uint16
-    assert (
-        out.display8 is None and out.signal_dn.dtype == np.float32 and out.flux.dtype == np.float32
-    )
+    assert out.display8 is not None and out.display8.dtype == np.uint8
+    assert out.display8.shape == (16, 32, 4) and out.isp_hash is not None
+    assert out.signal_dn.dtype == np.float32 and out.flux.dtype == np.float32
     assert state.frame_index == 1
 
 
 def test_flags_omit_outputs_never_zeros(tophat_lwir_lut: BandLUT) -> None:
-    cfg = _config(tophat_lwir_lut, radiance_linear=False, apparent_temperature=False, dn_16=False)
+    cfg = _config(
+        tophat_lwir_lut,
+        radiance_linear=False,
+        apparent_temperature=False,
+        dn_16=False,
+        display_8=False,
+    )
     out = run_frame(_uniform_gbuffer((16, 32), 300.0), cfg, PipelineState())
-    assert out.radiance is None and out.apparent_t is None and out.dn16 is None
+    assert (
+        out.radiance is None
+        and out.apparent_t is None
+        and out.dn16 is None
+        and out.display8 is None
+    )
     only_t = _config(tophat_lwir_lut, radiance_linear=False)
     out2 = run_frame(_uniform_gbuffer((16, 32), 300.0), only_t, PipelineState())
     assert out2.radiance is None and out2.apparent_t is not None
