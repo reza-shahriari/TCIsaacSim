@@ -17,6 +17,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.atmosphere.model import Atmosphere
 from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
@@ -56,7 +57,7 @@ class PipelineConfig:
     sensor_seed: int
     noise_enabled: bool
     psf: NDArray[np.float64] | None  # optical PSF at the k× pitch; None = no optical blur
-    atmosphere: Atmosphere | None = None  # stage 2; None = no atmosphere (identity)
+    atmosphere: Atmosphere | LayeredAtmosphere | None = None  # stage 2; None = identity
     tau_override: float | None = (
         None  # L1 fallback: constant τ, path radiance at the weather's T_air
     )
@@ -80,7 +81,7 @@ class PipelineConfig:
         noise_enabled: bool = True,
         psf_enabled: bool = True,
         reference_wavelength_um: float | None = None,
-        atmosphere: Atmosphere | None = None,
+        atmosphere: Atmosphere | LayeredAtmosphere | None = None,
         tau_override: float | None = None,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
@@ -102,10 +103,14 @@ class PipelineConfig:
                 raise ValueError("tau_override needs an Atmosphere (its weather gives T_air)")
             if not 0.0 <= tau_override <= 1.0:
                 raise ValueError("tau_override must lie in [0, 1]")
-        if atmosphere is not None and sensor.sensor.band.band_id not in atmosphere.bands:
+        if atmosphere is not None and sensor.sensor.band.band_id not in atmosphere.preset.bands:
             raise ValueError(
                 f"atmosphere preset has no band {sensor.sensor.band.band_id!r} "
-                f"(has {atmosphere.bands})"
+                f"(has {sorted(atmosphere.preset.bands)})"
+            )
+        if tau_override is not None and isinstance(atmosphere, LayeredAtmosphere):
+            raise ValueError(
+                "tau_override is the grey L1 fallback; use the grey Atmosphere with it"
             )
         if lut is None:
             if lut_dir is None:

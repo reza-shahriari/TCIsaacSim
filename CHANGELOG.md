@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.atmosphere.layered` (MS.1): `LayeredAtmosphere` -- exponential sum over spectral classes per
+  band (Planck-weighted class weights from the sensor response; water/air scale heights; horizontal
+  200 m anchored to the grey preset; opaque CO₂/H₂O cores on top), analytic slant-path transmittance,
+  per-class optical-depth quadrature for path radiance, `sky_radiance = L_path(∞, θ)`,
+  `apparent_sky_temperature_k`; `fit_exponential_sum`, `exponential_sum_from_piecewise`;
+  `scripts/validate_sky_r13.py`. Stage 2 accepts a `LayeredAtmosphere` (per-term horizontal form).
+  Preset profile gains `aerosol_scale_height_m`, `air_scale_height_m`, `tropopause_m` defaults. ADR 0071.
 - `irsim.materials.mapping` (M7.17): `MaterialResolver` (override → semantic → name pattern → loud
   miss with id 0), `configs/materials/mapping.yaml`, `audit()` and `scripts/audit_materials.py`
   (coverage %, misses grouped, non-zero exit below the 95 % threshold; ADR 0047).

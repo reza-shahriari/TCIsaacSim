@@ -22,6 +22,13 @@ from irsim.atmosphere.humidity import (
     saturation_vapour_pressure_hpa,
     vapour_pressure_hpa,
 )
+from irsim.atmosphere.layered import (
+    ExponentialSum,
+    LayeredAtmosphere,
+    class_weights,
+    exponential_sum_from_piecewise,
+    fit_exponential_sum,
+)
 from irsim.atmosphere.library import available_presets, load_atmosphere_preset, preset_hash
 from irsim.atmosphere.model import Atmosphere, AtmosphereState
 from irsim.atmosphere.spectral import (
@@ -34,6 +41,11 @@ from irsim.atmosphere.spectral import (
 __all__ = [
     "Atmosphere",
     "AtmosphereState",
+    "ExponentialSum",
+    "LayeredAtmosphere",
+    "class_weights",
+    "exponential_sum_from_piecewise",
+    "fit_exponential_sum",
     "apply_atmosphere",
     "apply_tau_override",
     "path_radiance",

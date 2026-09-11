@@ -81,6 +81,9 @@ class AtmosphereProfile(_Frozen):
 
     water_vapour_scale_height_m: float = Field(gt=0.0)
     lapse_rate_k_per_m: float = Field(ge=0.0, le=0.02)
+    aerosol_scale_height_m: float = Field(default=1200.0, gt=0.0)  # boundary-layer aerosol
+    air_scale_height_m: float = Field(default=8000.0, gt=0.0)  # well-mixed gases (CO2)
+    tropopause_m: float = Field(default=11000.0, gt=0.0)  # isothermal above (USSA 1976)
 
 
 class AtmosphereProvenance(_Frozen):

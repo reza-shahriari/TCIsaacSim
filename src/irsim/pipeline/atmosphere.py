@@ -17,9 +17,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.atmosphere.beer_lambert import apply_atmosphere, apply_tau_override
+from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 
-__all__ = ["apply_atmosphere_gbuffer", "atmosphere_stage", "AtmosphereStage"]
+__all__ = [
+    "apply_atmosphere_gbuffer",
+    "apply_layered_gbuffer",
+    "atmosphere_stage",
+    "AtmosphereStage",
+]
 
 
 def apply_atmosphere_gbuffer(
@@ -47,12 +53,49 @@ def apply_atmosphere_gbuffer(
     return out
 
 
+def apply_layered_gbuffer(
+    atmosphere: LayeredAtmosphere,
+    band: str,
+    t_s: float,
+    radiance: NDArray[np.floating],
+    distance_m: NDArray[np.floating],
+    quantity: str,
+    sky_mask: NDArray[np.bool_] | None = None,
+) -> NDArray[np.floating]:
+    """Per-term horizontal form of MS.1 on the radiance plane (per-pixel slant paths: MS.8)."""
+    l_in = np.asarray(radiance)
+    if l_in.dtype == np.float16:
+        raise TypeError("radiance is float16 (non-negotiable #2)")
+    d = np.asarray(distance_m)
+    if d.shape != l_in.shape:
+        raise ValueError(f"distance_m shape {d.shape} != radiance shape {l_in.shape}")
+    out = atmosphere.apply(band, t_s, l_in, d, 0.0, quantity)  # type: ignore[arg-type]
+    if sky_mask is not None:
+        sky = np.asarray(sky_mask)
+        if sky.dtype != np.bool_ or sky.shape != l_in.shape:
+            raise ValueError("sky_mask must be a bool plane with the radiance shape")
+        out = np.where(sky, l_in, out).astype(l_in.dtype, copy=False)
+    return out
+
+
 def atmosphere_stage(planes: Planes, config: PipelineConfig, state: PipelineState) -> Planes:
     """Stage-2 entry point on the plane dict: replaces ``radiance``; identity without an
     Atmosphere."""
     radiance = np.asarray(planes["radiance"])
     if config.atmosphere is None:
         return {"radiance": radiance}
+    if isinstance(config.atmosphere, LayeredAtmosphere):
+        return {
+            "radiance": apply_layered_gbuffer(
+                config.atmosphere,
+                config.sensor.sensor.band.band_id,
+                state.t_s,
+                radiance,
+                np.asarray(planes["distance_m"]),
+                config.quantity,
+                sky_mask=planes.get("sky_mask"),
+            )
+        }
     atm_state = config.atmosphere.state(state.t_s)
     band = config.sensor.sensor.band.band_id
     l_air = float(config.lut.lookup(np.float64(atm_state.t_air_k), config.quantity)[()])

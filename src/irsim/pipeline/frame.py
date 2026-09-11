@@ -25,12 +25,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.detector.params import BolometerParams, PhotonParams
 from irsim.detector.quantise import quantise
 from irsim.isp.display import run_display_branch
 from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
-from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer
+from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer, apply_layered_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.radiance import band_radiance
 
@@ -92,7 +93,17 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
         t, planes["material_id"], config.materials, lut, q, sky_mask=planes.get("sky_mask")
     )
     # stage 2 (k× grid): per-ray atmosphere; sky pixels pass through (ADR 0050)
-    if config.atmosphere is not None:
+    if isinstance(config.atmosphere, LayeredAtmosphere):
+        radiance_ss = apply_layered_gbuffer(
+            config.atmosphere,
+            sensor.band.band_id,
+            state.t_s,
+            radiance_ss,
+            np.asarray(planes["distance_m"]),
+            q,
+            sky_mask=planes.get("sky_mask"),
+        )
+    elif config.atmosphere is not None:
         atm_state = config.atmosphere.state(state.t_s)
         l_air = float(lut.lookup(np.float64(atm_state.t_air_k), q)[()])
         radiance_ss = apply_atmosphere_gbuffer(
