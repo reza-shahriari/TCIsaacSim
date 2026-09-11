@@ -1,0 +1,76 @@
+"""Two-point non-uniformity correction (docs/physics-model.md §11.2).
+
+    DN_corr = G_ij (DN_ij − O_ij)
+    G_ij = (mean DN_H − mean DN_L) / (DN_H_ij − DN_L_ij),   O_ij = DN_L_ij
+
+calibrated against two blackbodies. ``mode: ideal`` (§12.2) means exactly these coefficients
+with no residual: a linear FPA is corrected perfectly, and the corrected cold blackbody reads
+**0** -- the NUC level convention of ADR 0021, so the radiometric branch's DN ↔ L calibration and
+this operator share a reference. The residual model (coefficients calibrated at one FPA
+temperature and applied at another, growth between shutter events, the FFC freeze) is M9.
+
+A pure per-frame operator: the coefficient tables are explicit state a wrapper keeps in
+``PipelineState`` (ADR 0014: an SPG port cannot hold them). Float32 throughout; float16 refused.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+from numpy.typing import NDArray
+
+__all__ = ["TwoPointNuc"]
+
+Float32Array = NDArray[np.float32]
+
+
+def _as_signal(x: object, what: str) -> NDArray[np.float64]:
+    arr = np.asarray(x)
+    if arr.dtype == np.float16:
+        raise TypeError(f"{what} is float16 (non-negotiable #2)")
+    if arr.ndim != 2:
+        raise ValueError(f"{what} must be (H, W)")
+    return arr.astype(np.float64)
+
+
+@dataclass(frozen=True)
+class TwoPointNuc:
+    """Per-pixel gain and offset tables (float32)."""
+
+    gain: Float32Array
+    offset: Float32Array
+
+    def __post_init__(self) -> None:
+        if self.gain.dtype != np.float32 or self.offset.dtype != np.float32:
+            raise TypeError("NUC coefficient tables must be float32")
+        if self.gain.shape != self.offset.shape:
+            raise ValueError("gain and offset must share a shape")
+
+    @classmethod
+    def calibrate(cls, dn_low: object, dn_high: object) -> TwoPointNuc:
+        """§11.2: G_ij = (mean DN_H − mean DN_L)/(DN_H_ij − DN_L_ij), O_ij = DN_L_ij."""
+        lo = _as_signal(dn_low, "dn_low")
+        hi = _as_signal(dn_high, "dn_high")
+        if lo.shape != hi.shape:
+            raise ValueError("the two blackbody frames must share a shape")
+        span = hi - lo
+        if np.any(span <= 0.0):
+            raise ValueError(
+                "every pixel must respond more to the hot blackbody than to the cold one"
+            )
+        gain = (hi.mean() - lo.mean()) / span
+        return cls(gain=gain.astype(np.float32), offset=lo.astype(np.float32))
+
+    @classmethod
+    def identity(cls, shape: tuple[int, int]) -> TwoPointNuc:
+        return cls(gain=np.ones(shape, np.float32), offset=np.zeros(shape, np.float32))
+
+    def apply(self, dn: object) -> Float32Array:
+        """DN_corr = G (DN − O), float32; the corrected cold blackbody is 0."""
+        x = _as_signal(dn, "dn")
+        if x.shape != self.gain.shape:
+            raise ValueError(f"frame shape {x.shape} != coefficient shape {self.gain.shape}")
+        return np.asarray(
+            self.gain.astype(np.float64) * (x - self.offset.astype(np.float64)), dtype=np.float32
+        )
