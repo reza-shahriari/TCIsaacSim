@@ -1,0 +1,26 @@
+# Material-mapping rules for imported assets (irsim.materials.mapping, ADR 0047).
+# Precedence: prim override -> semantic class -> material-name pattern (ordered, first match,
+# case-insensitive glob) -> UNMAPPED (id 0, rendered magenta, counted by scripts/audit_materials.py).
+schema_version: 1
+mapping:
+  coverage_threshold: 0.95
+  semantic:
+    car_body: car_paint_black
+    vehicle: car_paint_black
+    aircraft: bare_aluminium
+    drone: car_paint_black
+    road: asphalt_dry
+    pedestrian: human_skin
+    person: human_skin
+    glass: glass_windshield
+  patterns:
+    - {match: "*windshield*", material: glass_windshield}
+    - {match: "*glass*", material: glass_windshield}
+    - {match: "*chrome*", material: bare_aluminium}
+    - {match: "*alumin*", material: bare_aluminium}
+    - {match: "*metal*", material: bare_aluminium}
+    - {match: "*white*", material: car_paint_white}
+    - {match: "*paint*", material: car_paint_black}
+    - {match: "*asphalt*", material: asphalt_dry}
+    - {match: "*road*", material: asphalt_dry}
+    - {match: "*skin*", material: human_skin}

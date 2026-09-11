@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.materials.mapping` (M7.17): `MaterialResolver` (override → semantic → name pattern → loud
+  miss with id 0), `configs/materials/mapping.yaml`, `audit()` and `scripts/audit_materials.py`
+  (coverage %, misses grouped, non-zero exit below the 95 % threshold; ADR 0047).
 - `irsim.config.environment` (M7.11): `EnvironmentConfig` (sky ΔT_clear per band + q, ground mode,
   solar glint model, night airglow with an explicit unit key / k_cloud / moon), ranges validated per
   regime against §5.3/§5.5, weather-like keys refused; presets `configs/environments/{clear_dry,
