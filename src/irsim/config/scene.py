@@ -28,7 +28,7 @@ __all__ = [
     "load_scene_config",
 ]
 
-SCENE_SCHEMA_VERSION = 1
+SCENE_SCHEMA_VERSION = 2  # v2: optional environment_preset (M7.13)
 
 
 class _Frozen(BaseModel):
@@ -83,6 +83,7 @@ class SceneSpec(_Frozen):
     description: str = ""
     weather_file: str = Field(min_length=1)  # relative to the data root (ADR 0008)
     atmosphere_preset: str = Field(min_length=1)  # name in configs/atmospheres
+    environment_preset: str | None = None  # configs/environments (sky, ground, solar terms)
     site: SiteSpec
     start_utc: datetime
     targets: list[TargetSpec] = Field(default_factory=list)

@@ -1,6 +1,6 @@
 """``run_frame``: the whole CPU reference chain for one frame (docs/physics-model.md §13.4).
 
-    stage 1  band radiance     ε₀ L_B(T) on the k× G-buffer          (irsim.pipeline.radiance)
+    stage 1  band radiance     ε₀ L_B(T) + (1−ε₀) L_env on the k× G-buffer (irsim.pipeline.radiance)
     stage 2  atmosphere        τL + (1−τ)L_B(T_air) on the k× grid   (irsim.pipeline.atmosphere)
     stage 3  optics            PSF, box ↓k, aperture·cos⁴·A_d, +Φ_self (irsim.optics.stage)
     stage 4  detector          Φ → signal in DN with per-pixel noise    (irsim.detector, ADR 0026)
@@ -33,6 +33,7 @@ from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
 from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer, apply_layered_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
+from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.radiance import band_radiance
 
 __all__ = ["Outputs", "run_frame"]
@@ -88,9 +89,20 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
             "set optics.supersample_factor to match the render"
         )
 
-    # stage 1 (k× grid)
+    # stage 1 (k× grid): emission + the reflected environment when a SkyModel is configured
+    l_env = None
+    if config.sky is not None:
+        l_env = environment_radiance(
+            config.sky, lut, state.t_s, np.asarray(planes["sky_view_factor"]), q
+        )
     radiance_ss = band_radiance(
-        t, planes["material_id"], config.materials, lut, q, sky_mask=planes.get("sky_mask")
+        t,
+        planes["material_id"],
+        config.materials,
+        lut,
+        q,
+        sky_mask=planes.get("sky_mask"),
+        l_env=l_env,
     )
     # stage 2 (k× grid): per-ray atmosphere; sky pixels pass through (ADR 0050)
     if isinstance(config.atmosphere, LayeredAtmosphere):

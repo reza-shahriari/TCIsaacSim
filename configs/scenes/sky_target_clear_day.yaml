@@ -2,12 +2,13 @@
 # Schema: irsim.config.scene (M6.17). The weather FILE is named here and nowhere else: the
 # Scene loads it once and injects the one WeatherSeries into the atmosphere and the targets.
 
-schema_version: 1
+schema_version: 2
 scene:
   name: sky_target_clear_day
   description: "Prescribed-temperature aerial target, clear day, US Standard atmosphere"
   weather_file: weather/clear_midlat_summer_48h.csv     # relative to the data root
   atmosphere_preset: us_standard_clear                  # configs/atmospheres/
+  environment_preset: clear_dry                         # configs/environments/ (sky, ground, solar)
   site: {latitude_deg: 48.1, longitude_deg: 11.6, altitude_m: 520.0}
   start_utc: "2024-06-21T04:00:00Z"                     # 06:00 local; 4 h into the 48 h file
   targets:

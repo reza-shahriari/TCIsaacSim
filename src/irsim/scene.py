@@ -22,11 +22,14 @@ from typing import Any
 
 import numpy as np
 
+from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.atmosphere.library import load_atmosphere_preset
 from irsim.atmosphere.model import Atmosphere
+from irsim.atmosphere.sky import SkyModel
+from irsim.config.environment import EnvironmentSpec, load_environment_preset
 from irsim.config.loader import resolve_data_dir
 from irsim.config.scene import SceneConfig, SceneSpec, TargetSpec, load_scene_config
-from irsim.radiometry.lut import BandLUT
+from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.thermal.solvers import NewtonCoolingSolver, PrescribedSolver, TemperatureSolver
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 from irsim.thermal.weather_io import load_weather_csv
@@ -51,6 +54,9 @@ class Scene:
     atmosphere: Atmosphere
     targets: Mapping[str, TemperatureSolver]
     t0_s: float
+    layered: LayeredAtmosphere | None = None  # MS.1 model on the same weather
+    environment: EnvironmentSpec | None = None
+    sky_models: Mapping[str, SkyModel] = field(default_factory=dict)  # per band (MS.2)
     extra_consumers: Mapping[str, Any] = field(
         default_factory=dict
     )  # phase-2 objects with .weather
@@ -71,6 +77,9 @@ class Scene:
     @property
     def consumers(self) -> dict[str, Any]:
         out: dict[str, Any] = {"atmosphere": self.atmosphere}
+        if self.layered is not None:
+            out["layered"] = self.layered
+        out.update({f"sky:{k}": v for k, v in self.sky_models.items()})
         out.update({f"target:{k}": v for k, v in self.targets.items()})
         out.update(self.extra_consumers)
         return out
@@ -82,13 +91,32 @@ class Scene:
         config: SceneConfig | SceneSpec,
         luts: Mapping[str, BandLUT] | None = None,
         data_dir: str | os.PathLike[str] | None = None,
+        quantity: Quantity = "lb",
     ) -> Scene:
         spec = config.scene if isinstance(config, SceneConfig) else config
         weather = load_weather_csv(resolve_data_dir(data_dir) / spec.weather_file)  # once
         t0_s = weather.seconds_of(spec.start_utc)
-        atmosphere = Atmosphere(load_atmosphere_preset(spec.atmosphere_preset), weather, luts)
+        preset = load_atmosphere_preset(spec.atmosphere_preset)
+        atmosphere = Atmosphere(preset, weather, luts)
         targets = {t.name: build_target(t, weather, t0_s) for t in spec.targets}
-        return cls(spec=spec, weather=weather, atmosphere=atmosphere, targets=targets, t0_s=t0_s)
+        layered = None
+        environment = None
+        sky_models: dict[str, SkyModel] = {}
+        if spec.environment_preset is not None:
+            environment = load_environment_preset(spec.environment_preset)
+            layered = LayeredAtmosphere(preset, weather, luts)
+            for band, lut in (luts or {}).items():
+                sky_models[band] = SkyModel(layered, environment, band, lut, quantity)
+        return cls(
+            spec=spec,
+            weather=weather,
+            atmosphere=atmosphere,
+            targets=targets,
+            t0_s=t0_s,
+            layered=layered,
+            environment=environment,
+            sky_models=sky_models,
+        )
 
     @classmethod
     def from_file(
@@ -96,8 +124,9 @@ class Scene:
         path: str | os.PathLike[str],
         luts: Mapping[str, BandLUT] | None = None,
         data_dir: str | os.PathLike[str] | None = None,
+        quantity: Quantity = "lb",
     ) -> Scene:
-        return cls.from_config(load_scene_config(path), luts, data_dir)
+        return cls.from_config(load_scene_config(path), luts, data_dir, quantity)
 
     # -- time helpers ---------------------------------------------------------------------
     def weather_at(self, t_rel_s: float) -> WeatherSample:

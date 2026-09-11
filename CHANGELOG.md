@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Stage 1 reflected environment term (M7.13): `band_radiance(..., l_env=)`, `irsim.pipeline.environment`
+  (`sky_view_factor = occlusion·(1+n·up)/2`, `environment_radiance` from the SkyModel tilt LUT and the
+  ground mode), `PipelineConfig.sky`; scene schema v2 adds `environment_preset` and the Scene builds the
+  layered atmosphere and per-band sky models on the same weather. ADR 0045.
 - `irsim.atmosphere.sky.SkyModel` (MS.2): clear-sky elevation LUT over the layered column emission
   (fast path within 0.5 K), tilt LUT with an analytic azimuth kernel (`effective_radiance(β)`,
   `effective_radiance_from_sky_view(V_s)`), cloud blend to L_B(T_air), `broadband_downwelling` via M6.5,

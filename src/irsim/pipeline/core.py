@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.atmosphere.model import Atmosphere
+from irsim.atmosphere.sky import SkyModel
 from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
 from irsim.detector.anchor import anchor_noise
@@ -61,6 +62,7 @@ class PipelineConfig:
     tau_override: float | None = (
         None  # L1 fallback: constant τ, path radiance at the weather's T_air
     )
+    sky: SkyModel | None = None  # stage-1 reflected term (M7.13); None = emission only
 
     @property
     def quantity(self) -> Quantity:
@@ -83,6 +85,7 @@ class PipelineConfig:
         reference_wavelength_um: float | None = None,
         atmosphere: Atmosphere | LayeredAtmosphere | None = None,
         tau_override: float | None = None,
+        sky: SkyModel | None = None,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
@@ -112,6 +115,21 @@ class PipelineConfig:
             raise ValueError(
                 "tau_override is the grey L1 fallback; use the grey Atmosphere with it"
             )
+        if sky is not None:
+            if sky.band != sensor.sensor.band.band_id:
+                raise ValueError(
+                    f"sky model is for band {sky.band!r}, sensor is {sensor.sensor.band.band_id!r}"
+                )
+            if atmosphere is not None and sky.weather is not atmosphere.weather:
+                raise ValueError("sky model and atmosphere hold different WeatherSeries (#6)")
+            if sky.environment.ground.mode == "solver":
+                raise ValueError("ground.mode 'solver' needs the environment solver (M6.12)")
+            expected_q = "lb" if fpa_params_from_config(sensor).type == "bolometer" else "lb_q"
+            if sky.quantity != expected_q:
+                raise ValueError(
+                    f"sky model built in the {sky.quantity!r} form; "
+                    f"this sensor runs on {expected_q!r}"
+                )
         if lut is None:
             if lut_dir is None:
                 raise ValueError("give a BandLUT or a lut_dir to load one from (make luts)")
@@ -162,6 +180,7 @@ class PipelineConfig:
             psf=psf,
             atmosphere=atmosphere,
             tau_override=tau_override,
+            sky=sky,
         )
 
     @classmethod

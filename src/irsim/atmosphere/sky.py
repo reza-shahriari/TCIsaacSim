@@ -114,6 +114,14 @@ class SkyModel:
     def environment(self) -> EnvironmentSpec:
         return self._env
 
+    @property
+    def quantity(self) -> Quantity:
+        return self._q
+
+    @property
+    def lut(self) -> BandLUT:
+        return self._lut
+
     # -- clear-sky elevation LUT ----------------------------------------------------------
     def _clear_lut(self, t_s: float) -> NDArray[np.float64]:
         """L_clear(θ) on the elevation grid (the layered column emission), cached per time."""

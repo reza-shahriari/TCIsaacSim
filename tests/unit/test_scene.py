@@ -45,7 +45,7 @@ def test_weather_loaded_once_and_shared(
         w = getattr(solver, "weather", None)
         assert w is None or w is scene.weather, name
     assert scene.targets["airframe"].weather is scene.weather  # type: ignore[attr-defined]
-    assert scene.t0_s == 4 * 3600.0 and set(scene.consumers) == {
+    assert scene.t0_s == 4 * 3600.0 and set(scene.consumers) >= {
         "atmosphere",
         "target:airframe",
         "target:engine",
@@ -110,7 +110,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
 
 def test_scene_config_guards() -> None:
     raw = {
-        "schema_version": 1,
+        "schema_version": 2,
         "scene": {
             "name": "x",
             "weather_file": "weather/clear_midlat_summer_48h.csv",
