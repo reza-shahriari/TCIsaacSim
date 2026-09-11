@@ -1,0 +1,17 @@
+# Environment preset: clear, dry sky (docs/physics-model.md section 5.3-5.5). Illumination-model
+# settings only; cloud, humidity and temperature come from the WeatherSeries (CLAUDE.md #6).
+schema_version: 1
+environment:
+  name: clear_dry
+  description: "Clear dry sky: deep LWIR zenith depression, specular solar glint, ~10 nW/cm^2 airglow"
+  regime: clear
+  sky:
+    delta_t_clear_k: {lwir: 62.0, mwir: 15.0, swir: 0.0, nir: 0.0}   # section 5.3: 55-70 K LWIR; MWIR ESTIMATED
+    q: 0.75
+  ground: {mode: air}
+  solar: {enabled: true, glint_model: specular}
+  night:
+    airglow_irradiance_nw_cm2: 10.0       # section 5.5 default (range 3.5-39)
+    airglow_shape_file: null              # flat until M11 supplies the OH spectrum
+    k_cloud: 0.5
+    moon: {enabled: true, phase_fraction: 0.5}

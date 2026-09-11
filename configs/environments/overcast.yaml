@@ -1,0 +1,16 @@
+# Environment preset: thick overcast (section 5.3: T_sky -> T_air, residual 5-10 K depression).
+schema_version: 1
+environment:
+  name: overcast
+  description: "Thick overcast: sky near T_air, flat thermal contrast, no glint"
+  regime: overcast
+  sky:
+    delta_t_clear_k: {lwir: 7.0, mwir: 3.0, swir: 0.0, nir: 0.0}
+    q: 0.75
+  ground: {mode: air}
+  solar: {enabled: false, glint_model: lambertian}
+  night:
+    airglow_irradiance_nw_cm2: 10.0
+    airglow_shape_file: null
+    k_cloud: 0.5
+    moon: {enabled: false, phase_fraction: 0.5}

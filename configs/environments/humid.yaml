@@ -1,0 +1,16 @@
+# Environment preset: humid clear sky (section 5.3: depression drops with high humidity).
+schema_version: 1
+environment:
+  name: humid
+  description: "Humid clear sky: reduced LWIR zenith depression (water-vapour continuum), specular glint"
+  regime: humid
+  sky:
+    delta_t_clear_k: {lwir: 35.0, mwir: 10.0, swir: 0.0, nir: 0.0}   # ESTIMATED within section 5.3
+    q: 0.6
+  ground: {mode: air}
+  solar: {enabled: true, glint_model: specular}
+  night:
+    airglow_irradiance_nw_cm2: 10.0
+    airglow_shape_file: null
+    k_cloud: 0.5
+    moon: {enabled: true, phase_fraction: 0.5}

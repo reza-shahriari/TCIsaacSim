@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.environment` (M7.11): `EnvironmentConfig` (sky ΔT_clear per band + q, ground mode,
+  solar glint model, night airglow with an explicit unit key / k_cloud / moon), ranges validated per
+  regime against §5.3/§5.5, weather-like keys refused; presets `configs/environments/{clear_dry,
+  humid, overcast}.yaml`.
 - `MaterialTable.from_library` / `save` / `load` (M7.18): packed float32 per-band columns (ε₀, ρ, τ,
   Level-B (a, p) or (0, 4) placeholders, roughness, thermal), id 0 = UNMAPPED, ids stable across loads,
   `.npz` + sidecar with the library hash, `StaleMaterialTableError`; float16 refused.

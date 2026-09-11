@@ -64,3 +64,15 @@ list these fields (spec issue to be added to `docs/spec-issues.md` by the next d
 
 The spec owner adopts or rejects the proposed fields, or a field's default proves to matter for
 Tier 4 results (then it becomes required).
+
+## Environment presets (M7.11)
+
+`irsim.config.environment` adds the illumination-model settings §12.2 never listed: the §5.3(a)
+sky depression ΔT_clear per band and exponent q, the ground mode, the solar glint model, and the
+§5.5 night terms (airglow level with the unit in the key -- `airglow_irradiance_nw_cm2` or
+`airglow_irradiance_w_m2`, exactly one -- shape file, cloud factor, moon). Ranges are validated
+against the spec per regime (clear: LWIR ΔT 55–70 K; humid 15–55; overcast 0–15; q 0.5–1.0;
+airglow 3.5–39 nW cm⁻²) and weather-like keys are refused (CLAUDE.md #6). Three presets live in
+`configs/environments/`: clear_dry, humid, overcast. The sky model (MS.2) reads ΔT_clear and q
+only as the fitted fast path (ADR 0044); the layered atmosphere supplies the physics.
+
