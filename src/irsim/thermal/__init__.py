@@ -26,10 +26,22 @@ from irsim.thermal.solar import (
     sun_position,
     sun_position_utc,
 )
+from irsim.thermal.solvers import (
+    SOLVER_TYPES,
+    NewtonCoolingSolver,
+    PrescribedSolver,
+    SolverState,
+    TemperatureSolver,
+)
 from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, seconds_since
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
 
 __all__ = [
+    "SOLVER_TYPES",
+    "NewtonCoolingSolver",
+    "PrescribedSolver",
+    "SolverState",
+    "TemperatureSolver",
     "clear_sky_emissivity",
     "longwave_down",
     "longwave_down_from_sample",
