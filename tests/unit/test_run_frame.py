@@ -29,7 +29,7 @@ def _config(
     d["sensor"]["optics"]["supersample_factor"] = supersample
     d["sensor"]["outputs"].update(outputs)
     return PipelineConfig.from_sensor(
-        SensorConfig.model_validate(d), MaterialTable.constant(1.0), lut=lut
+        SensorConfig.model_validate(d), MaterialTable.constant(1.0), lut=lut, noise_enabled=False
     )
 
 
@@ -133,9 +133,46 @@ def test_photon_fpa_runs_the_same_chain(boson_lut: BandLUT) -> None:
     d["sensor"]["optics"]["supersample_factor"] = 1
     # the LWIR LUT stands in for an MWIR one here: only the chain's plumbing is under test
     cfg = PipelineConfig.from_sensor(
-        SensorConfig.model_validate(d), MaterialTable.constant(1.0), lut=boson_lut
+        SensorConfig.model_validate(d),
+        MaterialTable.constant(1.0),
+        lut=boson_lut,
+        noise_enabled=False,
     )
     assert cfg.quantity == "lb_q" and cfg.calibration is None
     out = run_frame(_uniform_gbuffer((16, 32), 300.0), cfg, PipelineState())
     assert out.dn16 is not None and out.dn16.dtype == np.uint16 and out.apparent_t is not None
     assert abs(float(out.apparent_t[8, 16]) - 300.0) < 0.01
+
+
+def test_noise_on_by_default_and_reproducible(tophat_lwir_lut: BandLUT) -> None:
+    """The default chain is noisy (M4.9): two frames differ, the same seed replays exactly, and
+    the ideal chain is the noise-free limit."""
+    import pathlib
+
+    import yaml
+
+    from irsim.config.sensor import SensorConfig
+
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    d = yaml.safe_load((repo / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
+    d["sensor"]["fpa"].update(width=32, height=16)
+    d["sensor"]["optics"]["supersample_factor"] = 1
+    sensor = SensorConfig.model_validate(d)
+    noisy = PipelineConfig.from_sensor(
+        sensor, MaterialTable.constant(1.0), lut=tophat_lwir_lut, sensor_seed=5
+    )
+    assert noisy.noise_enabled
+    g = _uniform_gbuffer((16, 32), 300.0)
+    a = run_frame(g, noisy, PipelineState(housing_temp_k=noisy.t_housing_cal_k))
+    b = run_frame(g, noisy, PipelineState(housing_temp_k=noisy.t_housing_cal_k))
+    assert a.dn16 is not None and b.dn16 is not None and np.array_equal(a.dn16, b.dn16)
+    state = PipelineState(housing_temp_k=noisy.t_housing_cal_k)
+    f0, f1 = run_frame(g, noisy, state), run_frame(g, noisy, state)
+    assert f0.dn16 is not None and f1.dn16 is not None and not np.array_equal(f0.dn16, f1.dn16)
+    ideal = _config(tophat_lwir_lut)
+    i0 = run_frame(g, ideal, PipelineState(housing_temp_k=ideal.t_housing_cal_k)).signal_dn
+    i1 = run_frame(g, ideal, PipelineState(housing_temp_k=ideal.t_housing_cal_k)).signal_dn
+    assert np.array_equal(i0, i1), (
+        "the ideal chain is deterministic (only the cos^4 gradient varies)"
+    )
+    assert (a.signal_dn - i0).std() > 1.0, "the noisy chain adds noise on top of the ideal frame"

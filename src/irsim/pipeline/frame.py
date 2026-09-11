@@ -3,8 +3,8 @@
     stage 1  band radiance     ε₀ L_B(T) on the k× G-buffer          (irsim.pipeline.radiance)
     stage 2  atmosphere        identity until M8
     stage 3  optics            box ↓k, aperture·cos⁴·A_d, +Φ_self     (irsim.optics.stage)
-    stage 4  detector          Φ → un-quantised signal in DN           (irsim.detector)
-    stage 5  noise             identity until M4
+    stage 4  detector          Φ → signal in DN with per-pixel noise    (irsim.detector, ADR 0026)
+    stage 5  noise             + correlated 3-D components              (irsim.noise.stage)
     ADC      quantise          floor + clip → uint16                    (irsim.detector.quantise)
     stage 6  ISP               radiometric branch → radiance, T_app     (irsim.isp.radiometric)
              AGC / display     identity (None) until M5
@@ -26,7 +26,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.detector.params import BolometerParams, PhotonParams
-from irsim.detector.photon import electrons_to_signal_dn
 from irsim.detector.quantise import quantise
 from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
@@ -46,15 +45,15 @@ class Outputs:
     flux: NDArray[np.float32]  # stage-3 pixel power (W or photons/s), always kept
 
 
-def _detector_signal(flux: NDArray[np.float32], config: PipelineConfig) -> NDArray[np.float32]:
-    fpa = config.fpa
-    if isinstance(fpa, BolometerParams):
-        assert config.calibration is not None
-        return config.calibration.transfer.signal_dn(flux)
-    if isinstance(fpa, PhotonParams):
-        n_e = fpa.quantum_efficiency * fpa.integration_time_s * flux.astype(np.float64)
-        return electrons_to_signal_dn(n_e, fpa)
-    raise TypeError(f"unknown FPA params {type(fpa).__name__}")  # pragma: no cover
+def _detector_signal(
+    flux: NDArray[np.float32], config: PipelineConfig, state: PipelineState
+) -> NDArray[np.float32]:
+    """Stage 4 + 5: detector response (per-pixel noise) then the correlated 3-D noise; the
+    ideal chain when noise is disabled. Seeded by the sensor's own frame index (ADR 0022)."""
+    if not config.noise_enabled:
+        return config.detector.noiseless_signal_dn(flux)
+    frame = config.detector.response(flux, state.frame_index, config.sensor_seed)
+    return config.noise.apply(frame.signal_dn, frame.sigma_dn, state.frame_index)
 
 
 def _scene_radiance_from_signal(
@@ -89,8 +88,8 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
     flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k)
-    # stage 4; stage 5 identity; ADC
-    signal = _detector_signal(flux, config)
+    # stages 4-5 (detector noise, correlated noise); ADC
+    signal = _detector_signal(flux, config, state)
     dn16 = quantise(signal, sensor.fpa.bit_depth)
     # stage 6: radiometric branch inverts with the *calibration* housing level (ADR 0021)
     lb_housing_cal = float(lut.lookup(config.t_housing_cal_k, q)[()])

@@ -19,9 +19,14 @@ from numpy.typing import NDArray
 
 from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
-from irsim.detector.params import FpaParams, fpa_params_from_config
+from irsim.detector.anchor import anchor_noise
+from irsim.detector.bolometer import MicrobolometerDetector
+from irsim.detector.params import BolometerParams, FpaParams, PhotonParams, fpa_params_from_config
+from irsim.detector.photon import PhotonDetector
+from irsim.detector.response import Detector
 from irsim.isp.radiometric import RadiometricCalibration
 from irsim.materials.table import MaterialTable
+from irsim.noise.stage import NoiseStage
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.radiometry.lut_files import load_band_lut_for_config
 
@@ -44,6 +49,10 @@ class PipelineConfig:
     supersample: int
     calibration: RadiometricCalibration | None
     t_housing_cal_k: float
+    detector: Detector
+    noise: NoiseStage
+    sensor_seed: int
+    noise_enabled: bool
 
     @property
     def quantity(self) -> Quantity:
@@ -60,11 +69,16 @@ class PipelineConfig:
         data_dir: str | os.PathLike[str] | None = None,
         t_housing_cal_k: float | None = None,
         radiometric_range_k: tuple[float, float] = RADIOMETRIC_RANGE_K,
+        sensor_seed: int = 0,
+        noise_enabled: bool = True,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
         The calibrated transfer (ADR 0021) is built for bolometer cameras with the housing at
-        ``t_housing_cal_k`` (default: ``optics.housing_temp_k`` if fixed, else 300 K).
+        ``t_housing_cal_k`` (default: ``optics.housing_temp_k`` if fixed, else 300 K). The
+        detector's noise is anchored to ``noise.netd_mk_at_300k`` (ADR 0025) and the correlated
+        3-D stage seeded with ``sensor_seed`` (ADR 0022); ``noise_enabled=False`` runs the ideal
+        chain (the ablation switch of ME.8).
         """
         if lut is None:
             if lut_dir is None:
@@ -75,10 +89,17 @@ class PipelineConfig:
             fixed = sensor.sensor.optics.housing_temp_k
             t_housing_cal_k = fixed if fixed is not None else 300.0
         calibration = None
-        if fpa.type == "bolometer":
+        budget = anchor_noise(sensor.sensor, lut)
+        detector: Detector
+        if isinstance(fpa, BolometerParams):
             calibration = RadiometricCalibration.from_scene_range(
                 sensor.sensor, lut, radiometric_range_k[0], radiometric_range_k[1], t_housing_cal_k
             )
+            detector = MicrobolometerDetector(fpa, calibration.transfer, budget)
+        elif isinstance(fpa, PhotonParams):
+            detector = PhotonDetector(fpa, budget)
+        else:  # pragma: no cover
+            raise TypeError(f"unknown FPA params {type(fpa).__name__}")
         return cls(
             sensor=sensor,
             lut=lut,
@@ -87,6 +108,10 @@ class PipelineConfig:
             supersample=sensor.sensor.optics.supersample_factor,
             calibration=calibration,
             t_housing_cal_k=t_housing_cal_k,
+            detector=detector,
+            noise=NoiseStage.from_sensor(sensor.sensor, sensor_seed, enabled=noise_enabled),
+            sensor_seed=sensor_seed,
+            noise_enabled=noise_enabled,
         )
 
     @classmethod

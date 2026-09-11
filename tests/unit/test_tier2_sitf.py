@@ -34,7 +34,10 @@ def boson_config(boson_lut: BandLUT) -> PipelineConfig:
     d = sensor.model_dump(mode="json")
     d["sensor"]["optics"]["supersample_factor"] = 1
     return PipelineConfig.from_sensor(
-        SensorConfig.model_validate(d), MaterialTable.from_mapping({1: 1.0, 2: 0.9}), lut=boson_lut
+        SensorConfig.model_validate(d),
+        MaterialTable.from_mapping({1: 1.0, 2: 0.9}),
+        lut=boson_lut,
+        noise_enabled=False,  # SITF characterises the ideal transfer; NETD is its own bench
     )
 
 
