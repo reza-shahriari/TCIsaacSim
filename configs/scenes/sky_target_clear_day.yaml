@@ -1,0 +1,16 @@
+# Phase-1 scene: a small aerial target against a clear mid-latitude summer sky.
+# Schema: irsim.config.scene (M6.17). The weather FILE is named here and nowhere else: the
+# Scene loads it once and injects the one WeatherSeries into the atmosphere and the targets.
+
+schema_version: 1
+scene:
+  name: sky_target_clear_day
+  description: "Prescribed-temperature aerial target, clear day, US Standard atmosphere"
+  weather_file: weather/clear_midlat_summer_48h.csv     # relative to the data root
+  atmosphere_preset: us_standard_clear                  # configs/atmospheres/
+  site: {latitude_deg: 48.1, longitude_deg: 11.6, altitude_m: 520.0}
+  start_utc: "2024-06-21T04:00:00Z"                     # 06:00 local; 4 h into the 48 h file
+  targets:
+    - {name: airframe, solver: newton, t0_k: 296.15, tau_s: 900.0}       # relaxes to T_air
+    - {name: engine, solver: prescribed, schedule_s: [0.0, 300.0, 1800.0, 7200.0],
+       schedule_k: [300.0, 340.0, 350.0, 350.0]}                         # scripted warm-up

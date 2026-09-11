@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.scene` (`SceneConfig`: weather file, atmosphere preset, site, aware start, newton/
+  prescribed targets) and `irsim.scene.Scene` (M6.17): loads the weather once, injects the same
+  `WeatherSeries` into the `Atmosphere` and every target solver, refuses a consumer holding another
+  weather object; `configs/scenes/sky_target_clear_day.yaml` sample.
 - `irsim.atmosphere.Atmosphere` (M8.5): preset + the shared `WeatherSeries` (+ band LUTs) →
   `state(t)` with T_air, w, V, γ per band, L_air per band and a regime-mismatch flag; `transmittance`,
   `air_radiance`, `apply` (the per-pixel Beer–Lambert kernel at time t). A path raises TypeError.

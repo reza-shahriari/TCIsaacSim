@@ -48,6 +48,16 @@ round-trip representation so write → read is bit-exact. The sample
 `data/weather/clear_midlat_summer_48h.csv` is synthetic (`synthetic_clear_day`) and a test regenerates
 it, so file and generator cannot drift.
 
+## The Scene builder (M6.17)
+
+`irsim.scene.Scene.from_config` is the single code path from a weather *file name* (in the scene
+config, `irsim.config.scene`) to a `WeatherSeries`: it loads the file once, builds the
+`Atmosphere` and the target solvers with that object, and its constructor refuses any consumer
+whose `.weather` is a different object (identity, not equality -- two equal-content series loaded
+twice are still two objects and are still refused). Phase-2 consumers (sky model, housing, FPA
+node, environment solver) join by taking the object and exposing it as `.weather`; the check
+covers them through `extra_consumers` without new code.
+
 ## Consequences
 
 - Any consumer signature with a `weather_file`/path parameter is a defect (tests grep for it).
