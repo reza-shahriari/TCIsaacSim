@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.noise.seeding`: counter-based per-element hashing (`stream_key`, `hash_u64`, `hash_uniform`,
+  `hash_normal`, `field_normal`: splitmix64 over (sensor seed, sensor frame index, stream, pixel index),
+  Box–Muller in float32) so any pixel is regenerable alone, traversal-independent and reproducible bit-
+  for-bit by a Warp kernel; `NoiseStream` values frozen; PCG64 `noise_rng` / `sensor_rng` kept for Poisson
+  draws and the bad-pixel map (ADR 0022).
+- Noise schema (v4): `Ratios3D.as_vector()` / `total_over_tvh()` (1.0604 for the Boson ratios),
+  `noise.netd_ref_f_number`, `noise.bad_pixel_type_mix` (sums to 1).
 - Isaac Sim gate spike (roadmap M2.1–M2.4, ADR 0014): `irsim_isaac.probe` (environment report; 64-quad
   emissive temperature ramp; AOV dtype, resolution, exposure and distance semantics; segmentation-id and
   float32 position transport) and `irsim_isaac.spg_probe` (SPG pass-through, cross-frame state, LUT
