@@ -21,6 +21,23 @@ phase 2 is ground scenes and automotive (ADR 0003).
 Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phenomenology ·
 **T4** vs. real data · **T5** task-level. See `docs/physics-model.md` §15.
 
+What promotes a row (the table claims nothing above its evidence):
+
+- **T1** — analytic identities, independent implementations or known answers, in physical units,
+  in `tests/unit` (ir-sim-testing skill). Every row starts here.
+- **T2** — a standard lab characterisation reproduced *inside the simulator* on the CPU reference
+  (SITF, two-blackbody NETD, 3-D noise decomposition, MTF from a slant edge) with a stated tolerance.
+  Until a camera is available these are self-consistency checks (ADR 0003).
+- **T3** — a phenomenology item of §15 that emerges from the model and is asserted as a scalar (the
+  hot-exhaust AGC collapse, thermal crossover, fog vs band, FFC freeze …); a manual look does not count.
+- **T4** — a statistic measured on public imagery (`docs/validation/`) and matched within the
+  ADR 0068 targets, with N and a confidence interval.
+- **T5** — a detector-transfer experiment (real↔synthetic); external to this table and reported
+  in `docs/validation/`, never as a row state.
+
+A 🟢 row means the L2 scope of `docs/physics-model.md` §1 is implemented for that module and its
+tier evidence is in the suite; 🟡 means partial with the notes saying what is missing.
+
 | Component | State | Tier | Notes |
 |---|---|---|---|
 | `radiometry` | 🟢 done | T1–T2 | Planck (both forms, derivatives, exitances; σ, σ_q to 1e-6), encoding (0.05 mK), R(λ) contract, Simpson oracle, band averaging, float32 LUT (0.03 mK) + inverse (< 1 mK), bundles + `make luts`; golden LUT slice at 1 mK; ADRs 0005–0013 |
@@ -36,7 +53,15 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `validation` | 🟡 partial | T2 | Tier 2 SITF and two-blackbody NETD benches; leakage-corrected NVESD 3-D decomposition, spatial/temporal PSD, `compare_psd` (ADR 0023) |
 | `irsim_isaac` | 🟡 partial | T1 | `env.py` probes; **M2 gate spike done (ADR 0014):** no float32 colour AOV carries temperature (all fp16, exposure-scaled) → the renderer transports **instance ids + float32 geometry** and temperature comes from a Warp table; `omni.rtx.spg` 0.4.0 present, float32 pass-through bit-exact, **no cross-frame state** (stateful stages stay in Warp), LUT baked into the `.cu`. `probe.py`/`spg_probe.py` + `scripts/probe_isaac_*.py` reproduce it; `tests/integration` (10 tests, one Kit per session) pin it. Normals/AO/motion semantics still open (M10.1) |
 
-Tier 2 today is self-consistency (no camera, ADR 0003): SITF strictly increasing, linear in L_B(T) to 0.29 LSB rms, blackbody T_app < 10 mK.
+Tier 2 today is self-consistency (no camera, ADR 0003): SITF strictly increasing, linear in L_B(T) to
+0.29 LSB rms, blackbody T_app < 10 mK; two-blackbody NETD within 10 % of the anchor; 3-D ratios within
+the estimator floors. Tier 3 items landed: the hot-exhaust AGC collapse (linear AGC halves a
+pedestrian's 8-bit contrast; plateau 0.012 keeps > 50 % of the background std).
+
+**First image.** `make check` writes `outputs/first_image_boson_hot_patch.png` (the golden test): a
+295 K background with a 305 K block and a 600 K patch through the Boson configuration, noise on,
+plateau equalisation. The dark corners are the cos⁴ vignetting that plateau equalisation stretches
+on an un-NUC'd camera; the NUC stage (M9) removes it. The atmosphere (stage 2) is still identity.
 
 Bands configured: **LWIR** (`flir_boson_640_lwir`, estimated VOx response — ADR 0013; `make luts` builds the table) · Cameras modelled: _none yet_ (radiometry only; the pipeline starts at M3)
 

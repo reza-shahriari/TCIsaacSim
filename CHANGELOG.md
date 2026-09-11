@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- README: tier-promotion rules (what evidence moves a row to T2/T3/T4; T5 is external), the first-image
+  note, and status rows for the first LWIR camera through the ISP (isp 🟢, pipeline T2–T3).
 - `run_frame` emits `display8` (RGBA8 through the isp block) and `isp_hash`; `irsim.io.png` (stdlib PNG
   writer for the human look); end-to-end goldens `boson_ramp_*` and `boson_hot_patch_*` (radiance 1e-5,
   T_app 1 mK, DN16 ±1, DN8 ±1) keyed on config hash + NumPy version; Tier 3 phenomenology through the
