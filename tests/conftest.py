@@ -57,6 +57,17 @@ def tophat_lwir_lut(tmp_path_factory: pytest.TempPathFactory):  # type: ignore[n
     return BandLUT.build(load_spectral_response(p))
 
 
+@pytest.fixture(scope="session")
+def tophat_mwir_lut(tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
+    """BandLUT for an exact 3-5 um top-hat (photon-detector tests)."""
+    from irsim.radiometry.lut import BandLUT
+    from irsim.radiometry.spectral_response import load_spectral_response
+
+    p = tmp_path_factory.mktemp("lut") / "tophat_3_5.csv"
+    p.write_text("# exact top-hat\n3.0,1.0\n5.0,1.0\n")
+    return BandLUT.build(load_spectral_response(p))
+
+
 @pytest.fixture
 def rng() -> np.random.Generator:
     """Seeded generator. Every test that uses randomness must take this."""

@@ -3,11 +3,20 @@
 docs/physics-model.md §9
 """
 
+from irsim.detector.anchor import anchor_noise
 from irsim.detector.bolometer import (
     BolometerTransfer,
     absorbed_power_w,
     membrane_delta_t_k,
     static_responsivity_v_per_w,
+)
+from irsim.detector.netd import (
+    NoiseBudget,
+    bolometer_floors,
+    predict_netd_k,
+    shot_variance,
+    sigma_total,
+    signal_derivative_per_k,
 )
 from irsim.detector.params import BolometerParams, FpaParams, PhotonParams, fpa_params_from_config
 from irsim.detector.photon import electrons_to_dn, electrons_to_signal_dn, photoelectrons
@@ -27,4 +36,11 @@ __all__ = [
     "photoelectrons",
     "electrons_to_signal_dn",
     "electrons_to_dn",
+    "NoiseBudget",
+    "anchor_noise",
+    "bolometer_floors",
+    "predict_netd_k",
+    "shot_variance",
+    "sigma_total",
+    "signal_derivative_per_k",
 ]
