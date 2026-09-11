@@ -22,7 +22,7 @@ from irsim.pipeline.core import PipelineConfig, PipelineState
 from irsim.pipeline.frame import run_frame
 from irsim.radiometry.encoding import encode_temperature
 
-__all__ = ["SitfResult", "sitf", "blackbody_gbuffer"]
+__all__ = ["SitfResult", "sitf", "blackbody_gbuffer", "measured_netd_k"]
 
 
 def blackbody_gbuffer(
@@ -112,3 +112,22 @@ def sitf(
         signal_mean=np.asarray(sig),
         roi_fraction=roi_fraction,
     )
+
+
+def measured_netd_k(
+    cube_lo: NDArray[np.floating], cube_hi: NDArray[np.floating], delta_t_k: float
+) -> float:
+    """Two-blackbody NETD (§15 Tier 2): ΔT · σ_temporal / ΔS with σ_temporal the rms over pixels
+    of the per-pixel temporal standard deviation of the cold stack and ΔS the difference of the
+    stack means. Gain-free: works on DN, signal units or electrons alike."""
+    lo = np.asarray(cube_lo, dtype=np.float64)
+    hi = np.asarray(cube_hi, dtype=np.float64)
+    if lo.ndim != 3 or hi.ndim != 3 or lo.shape[0] < 2:
+        raise ValueError("cubes must be (frames >= 2, H, W)")
+    if delta_t_k <= 0.0:
+        raise ValueError("delta_t_k must be positive")
+    sigma_t = float(np.sqrt(np.mean(lo.var(axis=0, ddof=1))))
+    delta_s = float(hi.mean() - lo.mean())
+    if delta_s <= 0.0:
+        raise ValueError("the hot stack must read higher than the cold stack")
+    return delta_t_k * sigma_t / delta_s

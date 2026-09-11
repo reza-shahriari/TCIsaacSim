@@ -3,6 +3,6 @@
 docs/physics-model.md §15
 """
 
-from irsim.validation.bench import SitfResult, sitf
+from irsim.validation.bench import SitfResult, measured_netd_k, sitf
 
-__all__ = ["SitfResult", "sitf"]
+__all__ = ["SitfResult", "measured_netd_k", "sitf"]

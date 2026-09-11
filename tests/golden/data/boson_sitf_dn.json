@@ -1,0 +1,12 @@
+{
+  "atol": 1.0,
+  "config_hash": "fa4bd1b1339a8dcafaad2f9a8291f17ac25d306ff22d5f27d8c3d306c8bf4804",
+  "dtype": "uint16",
+  "name": "boson_sitf_dn",
+  "numpy_version": "2.3.1",
+  "rtol": null,
+  "shape": [
+    10
+  ],
+  "units": "DN (noiseless floor DN at 253-453 K, 10 steps)"
+}

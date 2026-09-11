@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `PhotonDetector.response` (Poisson shot + dark + background and hashed read noise in electron space,
+  then DN) with Arrhenius `dark_current_a` (InSb/InGaAs band gaps in `constants.py`), and
+  `MicrobolometerDetector.response` (static transfer + anchored σ in signal space, then DN);
+  `DetectorFrame(signal_dn, dn, sigma_dn)`; `measured_netd_k` two-blackbody bench; golden
+  `boson_sitf_dn` (ADR 0026). NETD(300 K) within 10 % of the anchor; bolometer NETD(373)/NETD(300) =
+  0.576 while the DN noise std is scene-independent.
 - `irsim.detector.netd` / `figures_of_merit`: NETD predictor NETD(T) = σ_total/(∂S/∂T) for both detector
   classes (∂S/∂T through the transfer, +1 aperture form), NEP, D*, the 4F² datasheet form as a labelled
   conversion (1.25 at F/1), ENBW = 1/(4τ_th) and the sampled-IIR ENBW, Johnson and temperature-

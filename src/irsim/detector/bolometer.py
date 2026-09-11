@@ -23,8 +23,11 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.detector.netd import NoiseBudget
 from irsim.detector.params import BolometerParams
 from irsim.detector.quantise import dn_max_for_bits, quantise
+from irsim.detector.response import DetectorFrame
+from irsim.noise.seeding import NoiseStream, field_normal, stream_key
 
 __all__ = [
     "PHOTON_SCALE_GUARD",
@@ -32,6 +35,7 @@ __all__ = [
     "membrane_delta_t_k",
     "static_responsivity_v_per_w",
     "BolometerTransfer",
+    "MicrobolometerDetector",
 ]
 
 # In-band power on one LWIR pixel is ~1e-8 W; a photon *rate* on the same pixel is ~1e12 /s.
@@ -116,3 +120,43 @@ class BolometerTransfer:
         if s.dtype == np.float16:
             raise TypeError("signal is float16")
         return s.astype(np.float64) / self.gain_dn_per_w + self.offset_w
+
+
+@dataclass(frozen=True)
+class MicrobolometerDetector:
+    """§9.2 microbolometer with its noise: static transfer + the anchored scene-independent
+    Gaussian σ (pixel-power units, ADR 0025) added in signal space, then DN (ADR 0026).
+
+    The τ_th IIR across frames and the FPA-temperature gain/offset coupling are M9; this is the
+    static response. Noise is never added in kelvin (non-negotiable #3): a Kelvin-space σ would
+    give NETD(373)/NETD(300) = 1 instead of the derivative ratio 0.576.
+    """
+
+    params: BolometerParams
+    transfer: BolometerTransfer
+    budget: NoiseBudget
+
+    def __post_init__(self) -> None:
+        if self.budget.kind != "bolometer":
+            raise ValueError("MicrobolometerDetector needs a bolometer NoiseBudget")
+
+    @property
+    def sigma_signal_dn(self) -> float:
+        """σ_TVH in DN units: the anchored σ (W) through the DN-per-W gain."""
+        return self.transfer.gain_dn_per_w * self.budget.sigma_gaussian
+
+    def noiseless_signal_dn(self, flux: NDArray[np.floating]) -> NDArray[np.float32]:
+        return self.transfer.signal_dn(flux)
+
+    def response(
+        self, flux: NDArray[np.floating], frame_index: int, sensor_seed: int
+    ) -> DetectorFrame:
+        signal = self.transfer.signal_dn(flux).astype(np.float64)
+        noise = self.sigma_signal_dn * field_normal(
+            stream_key(sensor_seed, frame_index, NoiseStream.TVH), signal.shape
+        ).astype(np.float64)
+        noisy = np.asarray(signal + noise, dtype=np.float32)
+        sigma = np.full(signal.shape, self.sigma_signal_dn, dtype=np.float32)
+        return DetectorFrame(
+            signal_dn=noisy, dn=quantise(noisy, self.params.bit_depth), sigma_dn=sigma
+        )
