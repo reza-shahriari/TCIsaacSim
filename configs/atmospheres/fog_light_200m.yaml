@@ -1,0 +1,28 @@
+# Atmosphere preset "fog_light_200m" -- an atmosphere TYPE, not weather. T_air, RH and visibility
+# come from the WeatherSeries (CLAUDE.md #6). Schema: irsim.config.atmosphere (ADR 0048, 0049).
+#
+# gamma_B = gamma0 + beta * w + aerosol_ratio_to_visible * gamma_aer,vis(V)   [1/m, w in g/m^3]
+# All values ESTIMATED: fitted to the docs/physics-model.md section 7.2 table midpoints, see
+# docs/decisions/0049-aerosol-scaling-and-fog-regimes.md for the derivation. Replace with a
+# MODTRAN-fitted table when one is available.
+
+schema_version: 1
+atmosphere:
+  name: fog_light_200m
+  description: "Light radiation fog, 200 m visibility class: droplet (geometric-optics) extinction ratios"
+  aerosol_regime: droplet
+  valid_range_m: 500
+  bands:
+    # molecular coefficients (water vapour) are the same physics in every preset
+    lwir:    {gamma0_per_m: 7.5e-5,  beta_per_m_per_g_m3: 4.61e-5, aerosol_ratio_to_visible: 0.16}
+    mwir:    {gamma0_per_m: 1.56e-4, beta_per_m_per_g_m3: 1.63e-5, aerosol_ratio_to_visible: 0.24}
+    swir:    {gamma0_per_m: 9.4e-5,  beta_per_m_per_g_m3: 1.16e-5, aerosol_ratio_to_visible: 0.40}
+    nir:     {gamma0_per_m: 2.0e-6,  beta_per_m_per_g_m3: 3.0e-6,  aerosol_ratio_to_visible: 0.60}   # no table row: interpolated
+    visible: {gamma0_per_m: 1.2e-5,  beta_per_m_per_g_m3: 0.0,     aerosol_ratio_to_visible: 1.0}  # Rayleigh at 0.55 um
+  profile:
+    water_vapour_scale_height_m: 2000
+    lapse_rate_k_per_m: 6.5e-3
+  provenance:
+    status: ESTIMATED
+    source: "docs/physics-model.md section 7.2 table midpoints; ADR 0049"
+    note: "Checked against the 'Light fog (200 m vis)' row at 283.15 K, RH 1.0 (9.4 g/m^3), V = 200 m."

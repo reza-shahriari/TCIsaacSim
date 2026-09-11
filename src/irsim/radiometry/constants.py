@@ -56,6 +56,11 @@ SIGMA_Q: Final[float] = (
 # Specific gas constant of water vapour, J kg^-1 K^-1 (R / M_water = 8.314462618 / 0.018015):
 # absolute humidity rho_v = e / (R_v T); the §7.3 factor 216.7 g m^-3 hPa^-1 K is 1e5 / R_v.
 R_V_WATER: Final[float] = 461.5
+# Koschmieder constant: meteorological optical range V is the path over which the contrast of a
+# black target against the horizon sky falls to the 2 % threshold, V = ln(1/0.02) / gamma_vis
+# (Koschmieder 1924; WMO Guide to Meteorological Instruments, MOR definition). Kept as the
+# exact ln 50 so tau(V) = 0.02 holds to round-off; the conventional rounded value is 3.912.
+KOSCHMIEDER: Final[float] = 3.912023005428146  # ln(50)
 
 # --- Semiconductor band gaps for the Arrhenius dark-current model (docs/physics-model.md §9.1) ----
 # i_dark ∝ T^1.5 exp(-E_g / 2 k_B T). Values at the detectors' operating temperatures:

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.atmosphere` (`AtmospherePreset`: per-band γ₀/β/aerosol ratio, regime, profile,
+  provenance; rejects weather-like keys at any depth — CLAUDE.md #6), seven presets in
+  `configs/atmospheres/` fitted to the §7.2 table, `irsim.atmosphere.library`,
+  `irsim.atmosphere.extinction` (Koschmieder `3.912/V` on total visible extinction, per-band ratios,
+  droplet regime for fog; `KOSCHMIEDER` in constants). ADR 0049 resolves the haze row (its τ values
+  imply 1.5 km visibility, not 5 km; spec issue T18).
 - G-buffer contract: optional bool `sky_mask` plane (renderer hit nothing). Stage 1 treats masked
   pixels as blackbody-equivalent (ε = 1, the apparent sky temperature is what the plane carries) and
   ignores their material id, so the renderer's background id 0 is no longer confused with UNMAPPED;

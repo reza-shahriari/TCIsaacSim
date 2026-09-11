@@ -47,6 +47,25 @@ Keep the single grey γ_B per band for phase 1 (the L2 atmosphere), with these r
 4. Beer–Lambert stays in radiance space with path radiance (1 − τ) L_B(T_air): the isothermal
    invariance and the contrast identity hold exactly for the grey model.
 
+## Coefficient provenance (M8.3)
+
+The molecular coefficients γ₀,B and β_B are fitted to the §7.2 table midpoints at 200 m, using the
+1976 US Standard sea-level water vapour (5.9 g m⁻³: 288.15 K, RH 0.46) for the "Clear, dry" row and
+the row's own 30 °C / 80 % (24.3 g m⁻³) for "Humid", after subtracting the rural aerosol at a 23 km
+visibility (ADR 0049); two rows, two unknowns per band:
+
+| band | γ₀ (m⁻¹) | β (m⁻¹ per g m⁻³) | note |
+|---|---|---|---|
+| LWIR | 7.5e-5 | 4.61e-5 | water-vapour continuum dominates |
+| MWIR | 1.56e-4 | 1.63e-5 | |
+| SWIR | 9.4e-5 | 1.16e-5 | |
+| NIR | 2.0e-6 | 3.0e-6 | no table row: Rayleigh-scaled, weak 0.94 µm band, ESTIMATED |
+| visible | 1.2e-5 | 0 | Rayleigh at 0.55 µm, sea level |
+
+They are the same in every preset (`configs/atmospheres/*.yaml`); presets differ in aerosol regime
+and profile shape. All values are ESTIMATED (the table rows are 5–10 % wide) and a MODTRAN-fitted
+table replaces them without a code change.
+
 ## Consequences
 
 - `irsim.atmosphere.beer_lambert` is the phase-1 kernel; `irsim.atmosphere.spectral` is the oracle

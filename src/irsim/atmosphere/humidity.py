@@ -5,7 +5,7 @@ accurate to 0.1 % over −30…+35 °C. Absolute humidity (water-vapour density,
 
     w = e / (R_v T) = 216.7 · RH · e_s(T) / T_K,        216.7 = 10⁵ / R_v   (R_v = 461.5 J kg⁻¹ K⁻¹)
 
-The spec calls w "precipitable water"; it is the absolute humidity (spec issue S5), and the
+The spec calls w "precipitable water"; it is the absolute humidity (spec issue T19), and the
 factor is derived from R_v here rather than typed in. RH is a **fraction**: 80 raises. The
 molecular part of the band extinction is the engineering form γ_mol,B = γ₀,B + β_B w.
 

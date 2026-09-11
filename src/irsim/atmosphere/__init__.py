@@ -9,12 +9,20 @@ from irsim.atmosphere.beer_lambert import (
     path_radiance,
     transmittance,
 )
+from irsim.atmosphere.extinction import (
+    extinction_per_band,
+    gamma_aerosol,
+    gamma_aerosol_visible,
+    regime_for_visibility,
+    transmittance_per_band,
+)
 from irsim.atmosphere.humidity import (
     absolute_humidity_g_m3,
     gamma_molecular,
     saturation_vapour_pressure_hpa,
     vapour_pressure_hpa,
 )
+from irsim.atmosphere.library import available_presets, load_atmosphere_preset, preset_hash
 from irsim.atmosphere.spectral import (
     band_transmittance_spectral,
     effective_gamma,
@@ -31,6 +39,14 @@ __all__ = [
     "gamma_molecular",
     "saturation_vapour_pressure_hpa",
     "vapour_pressure_hpa",
+    "extinction_per_band",
+    "gamma_aerosol",
+    "gamma_aerosol_visible",
+    "regime_for_visibility",
+    "transmittance_per_band",
+    "available_presets",
+    "load_atmosphere_preset",
+    "preset_hash",
     "band_transmittance_spectral",
     "effective_gamma",
     "fit_grey_gamma",
