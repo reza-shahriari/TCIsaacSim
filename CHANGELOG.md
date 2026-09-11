@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.optics.mtf` (diffraction, detector sinc, motion, Gaussian, cascade, cut-off and Nyquist) and
+  `irsim.optics.psf` (`optical_psf` = diffraction·Gaussian at the supersampled pitch, `apply_psf` FFT
+  convolution); the PSF is now the first step of `apply_optics` and `PipelineConfig` builds it from the
+  band's R-weighted mean wavelength (`psf_enabled=False` skips it). `irsim.validation.mtf.slant_edge_mtf`
+  (ISO 12233-style) and the Tier 2 MTF bench: 0.31 ± 0.05 at Nyquist for the Boson, supersampled path
+  aliases while a native blur does not (ADR 0059). Goldens regenerated with the PSF in the chain.
 - README: tier-promotion rules (what evidence moves a row to T2/T3/T4; T5 is external), the first-image
   note, and status rows for the first LWIR camera through the ISP (isp 🟢, pipeline T2–T3).
 - `run_frame` emits `display8` (RGBA8 through the isp block) and `isp_hash`; `irsim.io.png` (stdlib PNG

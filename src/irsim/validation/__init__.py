@@ -4,6 +4,7 @@ docs/physics-model.md §15
 """
 
 from irsim.validation.bench import SitfResult, measured_netd_k, sitf
+from irsim.validation.mtf import SlantEdgeResult, slant_edge_mtf
 from irsim.validation.noise import (
     Decomposition3D,
     SpatialPSD,
@@ -16,6 +17,8 @@ from irsim.validation.noise import (
 
 __all__ = [
     "SitfResult",
+    "SlantEdgeResult",
+    "slant_edge_mtf",
     "measured_netd_k",
     "sitf",
     "Decomposition3D",
