@@ -6,6 +6,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.atmosphere.Atmosphere` (M8.5): preset + the shared `WeatherSeries` (+ band LUTs) →
+  `state(t)` with T_air, w, V, γ per band, L_air per band and a regime-mismatch flag; `transmittance`,
+  `air_radiance`, `apply` (the per-pixel Beer–Lambert kernel at time t). A path raises TypeError.
 - `irsim.thermal.solvers` (M6.6): `TemperatureSolver` protocol (`advance(t, dt)`, `temperature()`,
   `state`), `PrescribedSolver` (schedule, nodes exact, no extrapolation) and `NewtonCoolingSolver`
   (exact exponential update, midpoint ambient; accepts the shared `WeatherSeries` as ambient and

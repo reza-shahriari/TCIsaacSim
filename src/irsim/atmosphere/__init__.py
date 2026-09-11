@@ -23,6 +23,7 @@ from irsim.atmosphere.humidity import (
     vapour_pressure_hpa,
 )
 from irsim.atmosphere.library import available_presets, load_atmosphere_preset, preset_hash
+from irsim.atmosphere.model import Atmosphere, AtmosphereState
 from irsim.atmosphere.spectral import (
     band_transmittance_spectral,
     effective_gamma,
@@ -31,6 +32,8 @@ from irsim.atmosphere.spectral import (
 )
 
 __all__ = [
+    "Atmosphere",
+    "AtmosphereState",
     "apply_atmosphere",
     "apply_tau_override",
     "path_radiance",
