@@ -52,6 +52,14 @@ SIGMA_Q: Final[float] = (
     4.0 * 3.141592653589793 * ZETA_3 * K_BOLTZMANN**3 / (H_PLANCK**3 * C_LIGHT**2)
 )
 
+# --- Semiconductor band gaps for the Arrhenius dark-current model (docs/physics-model.md §9.1) ----
+# i_dark ∝ T^1.5 exp(-E_g / 2 k_B T). Values at the detectors' operating temperatures:
+#   InSb   0.23 eV at 77 K   (Littler & Seiler 1985; Vurgaftman et al. 2001 -- 0.235 eV at 0 K)
+#   InGaAs 0.75 eV at 300 K  (In0.53Ga0.47As lattice-matched to InP; Vurgaftman et al. 2001)
+BAND_GAP_INSB_EV: Final[float] = 0.23
+BAND_GAP_INGAAS_EV: Final[float] = 0.75
+EV_PER_K: Final[float] = 8.617333262e-5  # k_B in eV/K (CODATA 2018)
+
 # --- Temperature encoding and LUT grid --------------------------------------
 # One definition, shared by the config layer, the LUT builder, the Warp/SPG kernels and the
 # Isaac AOV adapter. The G-buffer carries c = (T - T_ENCODE_REF_K) / T_ENCODE_SPAN_K in float32,

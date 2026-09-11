@@ -6,10 +6,12 @@ docs/physics-model.md §9
 from irsim.detector.anchor import anchor_noise
 from irsim.detector.bolometer import (
     BolometerTransfer,
+    MicrobolometerDetector,
     absorbed_power_w,
     membrane_delta_t_k,
     static_responsivity_v_per_w,
 )
+from irsim.detector.dark_current import dark_current_a, dark_electrons
 from irsim.detector.netd import (
     NoiseBudget,
     bolometer_floors,
@@ -19,8 +21,14 @@ from irsim.detector.netd import (
     signal_derivative_per_k,
 )
 from irsim.detector.params import BolometerParams, FpaParams, PhotonParams, fpa_params_from_config
-from irsim.detector.photon import electrons_to_dn, electrons_to_signal_dn, photoelectrons
+from irsim.detector.photon import (
+    PhotonDetector,
+    electrons_to_dn,
+    electrons_to_signal_dn,
+    photoelectrons,
+)
 from irsim.detector.quantise import dn_max_for_bits, quantise
+from irsim.detector.response import Detector, DetectorFrame
 
 __all__ = [
     "BolometerParams",
@@ -43,4 +51,10 @@ __all__ = [
     "shot_variance",
     "sigma_total",
     "signal_derivative_per_k",
+    "MicrobolometerDetector",
+    "PhotonDetector",
+    "Detector",
+    "DetectorFrame",
+    "dark_current_a",
+    "dark_electrons",
 ]
