@@ -28,7 +28,7 @@ Validation tiers: **T1** unit/analytic · **T2** radiometric bench · **T3** phe
 | `thermal` | ⬜ not started | — | |
 | `atmosphere` | ⬜ not started | — | |
 | `optics` | 🟡 partial | T1–T2 | Aperture factor π/(4F²+1) defined once (AST guard), FPA irradiance, pixel power; pinhole field angles and cos⁴ vignetting (ADR 0015); self-emission single-lens form + Kirchhoff-closed element stack, 87 mK/K shutterless drift (ADR 0016); box downsample + composed optics stage with inverse, blackbody round trip < 1 mK (ADR 0020) |
-| `detector` | 🟡 partial | T1–T2 | `FpaParams`; ideal bolometer static transfer (linear DN-per-W gain, ADR 0019), ideal photon transfer (η applied once, 17/5 aperture identity), shared floor-and-clip quantiser |
+| `detector` | 🟡 partial | T1–T2 | `FpaParams`; ideal bolometer/photon transfers (ADR 0019), shared quantiser; NETD predictor in the +1 form with datasheet conversions (ADR 0024) and anchoring to `netd_mk_at_300k` (ADR 0025) |
 | `noise` | 🟡 partial | T1 | Counter-based per-pixel hash RNG (ADR 0022); NVESD seven-component synthesiser (variance closure, row-mean identity); NETD anchoring and the noise stage pending |
 | `isp` | 🟡 partial | T1 | Radiometric branch: calibrated DN ↔ radiance (housing at T_cal = NUC level), T_app via LUT inverse, float32 and ½-LSB DN16 routes (ADR 0021); NUC/AGC/palette pending |
 | `config` | 🟡 partial | T1 | `GBuffer` contract; pydantic `SensorConfig` (ADR 0007); YAML loader with data-root resolution, `config_hash`/`band_hash` (ADR 0008); band registry with derived/checked `band.id` and regime-driven illumination terms; optics/detector/noise extensions (schema v4, ADR 0017); 3-D ratio vector and variance closure `total_over_tvh` |
