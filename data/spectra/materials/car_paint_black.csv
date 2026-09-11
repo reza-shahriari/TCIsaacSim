@@ -1,0 +1,11 @@
+# Spectral emissivity of black automotive paint, lambda (um), epsilon (fraction).
+# ESTIMATED: a piecewise-flat sketch consistent with docs/physics-model.md section 16.2
+# (LWIR 0.90, MWIR 0.88) and the solar absorptivity 0.94 (Kirchhoff: epsilon = alpha in the
+# solar band for an opaque coating). Replace with a measured curve (M7.5, ADR 0041).
+0.30,0.94
+2.50,0.94
+3.00,0.88
+5.00,0.88
+7.50,0.90
+13.50,0.90
+15.00,0.90

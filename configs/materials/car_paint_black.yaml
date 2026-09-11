@@ -1,0 +1,20 @@
+# Black automotive paint on a thin steel panel -- the docs/physics-model.md section 12.3 example
+# in the one-file-per-material layout (ADR 0040). Values: section 16.2 (literature), ESTIMATED
+# where marked. Schema: irsim.config.materials.
+schema_version: 1
+material:
+  name: car_paint_black
+  source: literature
+  reference: "docs/physics-model.md section 16.2; thickness from section 12.3"
+  description: "Painted body panel (any dark colour); colour changes solar absorptivity, not epsilon"
+  thermal:
+    density_kg_m3: 7800
+    specific_heat_j_kgk: 470
+    conductivity_w_mk: 45
+    thickness_m: 0.0012
+    solar_absorptivity: 0.94
+  optical:
+    spectral_emissivity: spectra/materials/car_paint_black.csv   # relative to the data root
+    roughness_per_band: {nir: 0.35, swir: 0.30, mwir: 0.18, lwir: 0.12}   # section 4.3, ESTIMATED
+    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}

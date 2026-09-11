@@ -1,0 +1,16 @@
+# Dry asphalt: rough, high-emissivity dielectric -- Level C is adequate (section 4.2).
+schema_version: 1
+material:
+  name: asphalt_dry
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  thermal:
+    density_kg_m3: 2200
+    specific_heat_j_kgk: 920
+    conductivity_w_mk: 0.75
+    thickness_m: 0.05
+    solar_absorptivity: 0.90
+  optical:
+    emissivity_per_band: {nir: 0.92, swir: 0.90, mwir: 0.92, lwir: 0.94}
+    roughness_per_band: {nir: 0.80, swir: 0.80, mwir: 0.75, lwir: 0.70}
+    angular_model: {type: constant}

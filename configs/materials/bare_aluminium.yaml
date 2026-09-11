@@ -1,0 +1,18 @@
+# Bare / polished aluminium: a mirror in the thermal IR (epsilon 0.09), shows the sky, not itself.
+# Section 16.2; NIR/SWIR ESTIMATED (aluminium reflects ~0.9 across the near IR).
+schema_version: 1
+material:
+  name: bare_aluminium
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Trim, wheels, unpainted aircraft skin; Level C angular model until M7.6 (metals rise toward grazing)"
+  thermal:
+    density_kg_m3: 2700
+    specific_heat_j_kgk: 900
+    conductivity_w_mk: 205
+    thickness_m: 0.002
+    solar_absorptivity: 0.15
+  optical:
+    emissivity_per_band: {nir: 0.08, swir: 0.05, mwir: 0.06, lwir: 0.09}
+    roughness_per_band: {nir: 0.10, swir: 0.08, mwir: 0.05, lwir: 0.03}
+    angular_model: {type: constant}

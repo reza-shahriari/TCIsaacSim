@@ -68,7 +68,7 @@ S17 runtime regime switch (M0.9, ADR 0007), S27 both palette sets (M0.7). Everyt
 |---|---|---|
 | T1 | `np.trapezoid` needs NumPy ≥ 2.0; `pyproject` allows ≥ 1.24; suite red on 1.x; CHANGELOG claims green | M0.1 |
 | T2 | `make golden-update` passes an unregistered option; `tests/golden` never runs in `make check` | M0.2 |
-| T3 | CLAUDE.md #2 and #4 claim tests that do not exist | M0.5 (encode/decode), M7.9 (library walk) |
+| T3 | CLAUDE.md #2 and #4 claim tests that do not exist | M0.5 (encode/decode), M7.2 (`test_committed_library_closes_in_every_band`, the library walk) |
 | T4 | Spectral-response path stated four ways (`responses/`, `spectra/`, `data/spectra/`, skill) and the file is missing | M0.10 fixes the spec to `data/spectra/responses/`; M0.8 resolves it; M1.3 authors the file |
 | T5 | `.gitignore` ignores `data/lut/*` while the ir-radiometry skill says LUTs are committed | ADR 0012 |
 | T6 | Stefan–Boltzmann tolerance: spec 1e-6, skill 1e-12, test 2e-5 with no ADR | M0.4 (ADR 0005) |

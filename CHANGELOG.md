@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.config.materials` (M7.2): `MaterialConfig` -- one YAML per material with a `material:` block,
+  `source` required, exactly one of spectral/scalar ε or ρ authored, optional τ/roughness per band,
+  angular model union; `irsim.materials.library` derives the third quantity per band (ADR 0010 band
+  average for spectra) and refuses ε + τ > 1; `irsim.materials.spectra` property-spectrum loader;
+  `configs/materials/` six §16.2 materials; the CLAUDE.md #4 closure library walk. ADR 0040.
 - `irsim.pipeline.atmosphere` + stage 2 in `run_frame` (M8.6): τ(d)L + (1−τ)L_B(T_air) on the k× grid
   from `PipelineConfig.atmosphere` at `PipelineState.t_s`; sky pixels bit-identical; `tau_override`
   L1 fallback; identity without an Atmosphere (goldens unchanged). ADR 0050.
