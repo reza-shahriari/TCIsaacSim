@@ -9,6 +9,13 @@ from irsim.atmosphere.beer_lambert import (
     path_radiance,
     transmittance,
 )
+from irsim.atmosphere.cloud import (
+    CloudField,
+    cloud_base_temperature_k,
+    generate_cloud_field,
+    lifting_condensation_level_m,
+    psd_slope,
+)
 from irsim.atmosphere.extinction import (
     extinction_per_band,
     gamma_aerosol,
@@ -55,6 +62,11 @@ __all__ = [
     "gamma_molecular",
     "saturation_vapour_pressure_hpa",
     "vapour_pressure_hpa",
+    "CloudField",
+    "cloud_base_temperature_k",
+    "generate_cloud_field",
+    "lifting_condensation_level_m",
+    "psd_slope",
     "extinction_per_band",
     "gamma_aerosol",
     "gamma_aerosol_visible",

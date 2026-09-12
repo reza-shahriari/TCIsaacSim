@@ -12,9 +12,11 @@ L_clear,B(θ) = L_path,B(∞, θ). One object serves both paths (ADR 0035):
 * ``broadband_downwelling(...)`` -- delegated to M6.5's clear-sky emissivity relation (never the
                                    in-band T_sky, which is not a broadband quantity).
 
-Cloud: with cloud fraction c from the shared WeatherSeries, L_sky = (1 − c) L_clear + c L_B(T_base)
-with the base at the surface air temperature until MS.3 supplies the LCL base and the structured
-field; at c = 1 the sky is L_B(T_air) at every angle and tilt.
+Cloud (MS.3, ADR 0070): with cloud fraction c from the shared WeatherSeries, the base at the
+lifting condensation level of the same weather and T_base by the preset's lapse rate, the
+blend is L_sky = (1 − c ε) L_clear + c ε L_B(T_base), ε = 1 − τ_cloud (thick → ε = 1; at c = 1
+the sky is L_B(T_base) at every angle and tilt; with RH = 1 the base is at the surface and the sky
+reads T_air). ``radiance_field`` adds the seeded 1/f^β structure per pixel.
 
 The spec's T_sky = T_air − ΔT (1 − c) cos^q(θ_zen) (§5.3 a) is **not authored** here: ``fit_cos_q``
 derives (ΔT, q) from the layered model and reports the fit error, and ADR 0044 records that the
@@ -37,6 +39,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import least_squares
 
+from irsim.atmosphere.cloud import (
+    CloudField,
+    cloud_base_temperature_k,
+    cloud_radiance,
+    generate_cloud_field,
+    lifting_condensation_level_m,
+)
 from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.config.environment import EnvironmentSpec
 from irsim.radiometry.lut import BandLUT, Quantity
@@ -139,10 +148,52 @@ class SkyModel:
             self._cache[key] = (values, tilt)
         return self._cache[key][0]
 
-    def _cloud(self, t_s: float) -> tuple[float, float]:
+    # -- clouds (MS.3, ADR 0070) ------------------------------------------------------------
+    def cloud_base_m(self, t_s: float) -> float:
         sample = self.weather.at(t_s)
-        base_temp = sample.t_air_k  # MS.3: the LCL base and the environmental lapse rate
-        return sample.cloud_fraction, float(self._lut.lookup(np.float64(base_temp), self._q)[()])
+        c = self._env.clouds
+        return lifting_condensation_level_m(
+            sample.t_air_k, sample.rh_fraction, c.min_base_m, c.max_base_m
+        )
+
+    def cloud_base_temperature_k(self, t_s: float) -> float:
+        sample = self.weather.at(t_s)
+        lapse = self._atm.preset.profile.lapse_rate_k_per_m
+        return cloud_base_temperature_k(sample.t_air_k, self.cloud_base_m(t_s), lapse)
+
+    def _cloud(self, t_s: float) -> tuple[float, float]:
+        """(effective covered fraction c (1 − τ), the cloud's own radiance L_B(T_base))."""
+        sample = self.weather.at(t_s)
+        eps = self._env.clouds.emissivity
+        l_base = float(
+            self._lut.lookup(np.float64(self.cloud_base_temperature_k(t_s)), self._q)[()]
+        )
+        return sample.cloud_fraction * eps, l_base
+
+    def cloud_field(self, t_s: float, shape: tuple[int, int], seed: int) -> CloudField:
+        """The seeded 1/f^β structure covering the weather's cloud fraction of an image plane."""
+        return generate_cloud_field(
+            shape, self._env.clouds.beta, self.weather.at(t_s).cloud_fraction, seed
+        )
+
+    def radiance_field(
+        self, t_s: float, elevation_rad: Any, coverage: NDArray[np.bool_]
+    ) -> NDArray[np.float64]:
+        """Per-pixel sky radiance with structured cloud: covered pixels read
+        ε L_B(T_base) + τ L_clear."""
+        clear = self.clear_radiance(t_s, elevation_rad)
+        _, l_base = self._cloud(t_s)
+        return cloud_radiance(clear, l_base, self._env.clouds.tau, coverage)
+
+    def apparent_temperature_field(
+        self, t_s: float, elevation_rad: Any, coverage: NDArray[np.bool_]
+    ) -> NDArray[np.float64]:
+        return np.asarray(
+            self._lut.apparent_temperature(
+                self.radiance_field(t_s, elevation_rad, coverage), self._q
+            ),
+            dtype=np.float64,
+        )
 
     def clear_radiance(self, t_s: float, elevation_rad: Any) -> NDArray[np.float64]:
         """Clear-sky column emission at elevation(s), linear on the 0.5° LUT (the fast path)."""
@@ -154,7 +205,8 @@ class SkyModel:
         )
 
     def radiance(self, t_s: float, elevation_rad: Any) -> NDArray[np.float64]:
-        """L_sky,B(θ) with the cloud blend (1 − c) L_clear + c L_B(T_base)."""
+        """L_sky,B(θ) with the uniform cloud blend (1 − c ε) L_clear + c ε L_B(T_base): the
+        expectation over the structured field, used for the LUTs and the tilt-integrated sky."""
         c, l_cloud = self._cloud(t_s)
         return np.asarray(
             (1.0 - c) * self.clear_radiance(t_s, elevation_rad) + c * l_cloud, dtype=np.float64

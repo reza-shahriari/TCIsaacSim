@@ -22,6 +22,7 @@ __all__ = [
     "saturation_vapour_pressure_hpa",
     "vapour_pressure_hpa",
     "absolute_humidity_g_m3",
+    "dew_point_k",
     "gamma_molecular",
     "ABS_HUMIDITY_FACTOR",
 ]
@@ -63,6 +64,17 @@ def vapour_pressure_hpa(t_k: float, rh_fraction: float) -> float:
 def absolute_humidity_g_m3(t_k: float, rh_fraction: float) -> float:
     """w = 216.7 · RH · e_s / T_K in g m⁻³ (24.3 at 30 °C / 80 %)."""
     return ABS_HUMIDITY_FACTOR * vapour_pressure_hpa(t_k, rh_fraction) / t_k
+
+
+def dew_point_k(t_k: float, rh_fraction: float) -> float:
+    """Dew point by inverting the Magnus form: T_d(T, RH) with e = RH e_s(T); RH → 1 gives T."""
+    _check_t_k(t_k)
+    _check_rh(rh_fraction)
+    if rh_fraction <= 0.0:
+        raise ValueError("dew point needs RH > 0")
+    e = vapour_pressure_hpa(t_k, rh_fraction)
+    x = math.log(e / MAGNUS_A_HPA)
+    return MAGNUS_C_C * x / (MAGNUS_B - x) + 273.15
 
 
 def gamma_molecular(w_g_m3: float, gamma0_per_m: float, beta_per_m_per_g_m3: float) -> float:

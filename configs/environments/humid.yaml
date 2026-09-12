@@ -1,5 +1,5 @@
 # Environment preset: humid clear sky (section 5.3: depression drops with high humidity).
-schema_version: 1
+schema_version: 2
 environment:
   name: humid
   description: "Humid clear sky: reduced LWIR zenith depression (water-vapour continuum), specular glint"
@@ -14,3 +14,4 @@ environment:
     airglow_shape_file: null
     k_cloud: 0.5
     moon: {enabled: true, phase_fraction: 0.5}
+  clouds: {tau: 0.0, beta: 1.8}                 # thick cloud (eps = 1), 1/f^1.8 structure (MS.3)

@@ -84,7 +84,7 @@ def test_regime_enum_round_trips_and_ground_mode() -> None:
         raw["environment"]["sky"]["delta_t_clear_k"]["lwir"] = dt
         spec = EnvironmentConfig.model_validate(raw).environment
         dumped = yaml.safe_load(
-            yaml.safe_dump({"schema_version": 1, "environment": spec.model_dump(mode="json")})
+            yaml.safe_dump({"schema_version": 2, "environment": spec.model_dump(mode="json")})
         )
         assert EnvironmentConfig.model_validate(dumped).environment == spec
     raw = _raw()

@@ -43,13 +43,14 @@ __all__ = [
     "SolarSpec",
     "MoonSpec",
     "NightSpec",
+    "CloudSpec",
     "EnvironmentSpec",
     "EnvironmentConfig",
     "load_environment_preset",
     "available_environments",
 ]
 
-ENVIRONMENT_SCHEMA_VERSION = 1
+ENVIRONMENT_SCHEMA_VERSION = 2  # v2: optional clouds block (MS.3)
 ENVIRONMENT_DIR = pathlib.Path(__file__).resolve().parents[3] / "configs" / "environments"
 Regime = Literal["clear", "humid", "overcast"]
 # §5.3: zenith clear-sky depression in the LWIR window by regime (kelvin)
@@ -142,6 +143,21 @@ class NightSpec(_Frozen):
         return float(self.airglow_irradiance_nw_cm2) * NW_CM2_TO_W_M2
 
 
+class CloudSpec(_Frozen):
+    """Cloud clutter (MS.3, ADR 0070): τ_cloud authored (0 = thick, ε_cloud = 1 − τ derived), the
+    1/f^β spectral slope of the spatial structure, and bounds on the LCL base height. The cloud
+    fraction itself is weather (WeatherSeries.cloud_fraction), never authored here."""
+
+    tau: float = Field(default=0.0, ge=0.0, le=0.99)
+    beta: float = Field(default=1.8, ge=0.5, le=4.0)
+    min_base_m: float = Field(default=0.0, ge=0.0)  # 0: saturated air puts the base at the surface
+    max_base_m: float = Field(default=8000.0, gt=0.0)
+
+    @property
+    def emissivity(self) -> float:
+        return 1.0 - self.tau
+
+
 class EnvironmentSpec(_Frozen):
     name: str = Field(min_length=1)
     description: str = ""
@@ -150,6 +166,7 @@ class EnvironmentSpec(_Frozen):
     ground: GroundSpec
     solar: SolarSpec = SolarSpec()
     night: NightSpec
+    clouds: CloudSpec = CloudSpec()
 
     @model_validator(mode="after")
     def _delta_t_matches_regime(self) -> EnvironmentSpec:

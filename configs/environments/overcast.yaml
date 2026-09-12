@@ -1,5 +1,5 @@
 # Environment preset: thick overcast (section 5.3: T_sky -> T_air, residual 5-10 K depression).
-schema_version: 1
+schema_version: 2
 environment:
   name: overcast
   description: "Thick overcast: sky near T_air, flat thermal contrast, no glint"
@@ -14,3 +14,4 @@ environment:
     airglow_shape_file: null
     k_cloud: 0.5
     moon: {enabled: false, phase_fraction: 0.5}
+  clouds: {tau: 0.0, beta: 1.8}                 # thick cloud (eps = 1), 1/f^1.8 structure (MS.3)

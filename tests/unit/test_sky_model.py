@@ -44,8 +44,9 @@ def _sky(lwir, cloud: float = 0.0, preset: str = "us_standard_clear", rh: float 
 
 
 def test_overcast_limit_and_cloud_blend(lwir) -> None:  # type: ignore[no-untyped-def]
+    """RH = 1: the cloud base (LCL) is at the surface, so thick overcast reads T_air exactly."""
     _, lut = lwir
-    sky = _sky(lwir, cloud=1.0)
+    sky = _sky(lwir, cloud=1.0, rh=1.0)
     lb_air = float(lut.lookup(np.float64(T_AIR))[()])
     for tilt in (0.0, 45.0, 90.0, 135.0, 180.0):
         assert float(sky.effective_radiance(0.0, math.radians(tilt))) == pytest.approx(
@@ -56,8 +57,8 @@ def test_overcast_limit_and_cloud_blend(lwir) -> None:  # type: ignore[no-untype
         assert float(sky.apparent_temperature_k(0.0, math.radians(el))) == pytest.approx(
             T_AIR, abs=1e-3
         )
-    half = _sky(lwir, cloud=0.5)
-    clear = _sky(lwir, cloud=0.0)
+    half = _sky(lwir, cloud=0.5, rh=1.0)
+    clear = _sky(lwir, cloud=0.0, rh=1.0)
     el = math.radians(30.0)
     expect = 0.5 * float(clear.radiance(0.0, el)) + 0.5 * lb_air
     assert float(half.radiance(0.0, el)) == pytest.approx(expect, rel=1e-12)
