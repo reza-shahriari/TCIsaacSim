@@ -6,6 +6,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- The M9 sensor chain wired into `run_frame` (roadmap M9.8, ADR 0058): `irsim.pipeline.SensorChain`
+  owns the housing and FPA nodes, the breathing fixed pattern, the defect map and its state, the
+  NUC residual and the FFC controller, and advances them together so nothing runs on a stale clock.
+  Per-frame order follows §11.1: nodes and drift first (the housing temperature is what stage 3's
+  self-emission needs), then defects on the quantised plane, replacement, the residual, the
+  temporal filter and the freeze. `attach_sensor_chain` is the one place ∂DN/∂T is evaluated, so
+  ADR 0056's "converted once" is enforced by there being a single site that can do it.
+- The assembly's real hazard is double-counting, so the headline test is a budget:
+  post-correction spatial noise is `√(σ_V² + σ_H² + σ_VH² + σ_residual²)` within 10 % -- **two
+  mechanisms in quadrature, not four added up**. Three things had to be right for that to mean
+  anything. The flat-field reference is subtracted, because `vignetting_cos4` alone puts a 0.9 %
+  cos⁴ falloff across the array -- a larger spatial std than the whole noise budget, so a raw
+  frame std measures the lens. Frames are averaged, because a single frame's spatial std also
+  contains temporal per-pixel noise that is indistinguishable from fixed pattern. And it runs at
+  two drift rates: at the roadmap's 0.05 K/s the residual is nearly thirty times the 3-D term and
+  could hide a spurious third mechanism, so a second rate makes the two equal, where a linear sum
+  would be 41 % high against a 10 % tolerance.
+- ADR 0058 also records the two things the chain deliberately omits. §11.1's unnamed "temporal
+  filter" stays an **identity** until ME.5's temporal PSD on flat sky shows whether real cores
+  low-pass at all: the stage sits directly on σ_TVH, the quantity NETD is defined from, so an
+  invented coefficient would change measured NETD by √(α/(2−α)) in a way nobody could later
+  distinguish from a detector-model error. And the chain applies the NUC residual but **not** M9.2's
+  raw gain/offset(T_FPA) polynomials, which are what the NUC removes -- applying both would form a
+  large number and subtract almost all of it back, in float32, to reach what the residual gives
+  directly (ADR 0053).
+- `chain=None` remains the default and is a meaningful configuration, not an unwired one: it is the
+  ideal camera every M9 mechanism is measured against, and the one the radiometric goldens
+  describe. Those goldens are therefore **unchanged** by this step -- the roadmap anticipated
+  updating them, which turned out to be the wrong trade, because a golden containing both the
+  radiometry and the defect map can no longer fail informatively for either. The assembled chain
+  gets its own golden (`boson_sensor_chain_dn16` / `_apparent_t`) instead.
 - FFC controller (roadmap M9.7, ADR 0057): `irsim.isp.FfcController` is §11.2's shutter event --
   the part the spec singles out as "worth more than another decimal place of radiometry". It owns
   the schedule, the freeze, and the ΔT_FPA that M9.6's residual is evaluated at, which is what

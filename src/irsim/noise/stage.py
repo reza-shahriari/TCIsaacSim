@@ -55,9 +55,19 @@ class NoiseStage:
         return Sigmas7(t=s.t, v=s.v, h=s.h, tv=s.tv, th=s.th, vh=s.vh, tvh=0.0)
 
     def apply(
-        self, signal_dn: Float32Array, sigma_dn: Float32Array, frame_index: int
+        self,
+        signal_dn: Float32Array,
+        sigma_dn: Float32Array,
+        frame_index: int,
+        fixed_override: FixedPattern | None = None,
     ) -> Float32Array:
-        """Add the correlated components to the detector's signal (DN units, float32)."""
+        """Add the correlated components to the detector's signal (DN units, float32).
+
+        ``fixed_override`` replaces this stage's own unit fixed pattern for one frame. M9.4's
+        drift owns a *breathing* pattern, so on a wired chain the pattern changes every frame and
+        the stage must be told which one to use rather than holding a stale copy. It is still in
+        sigma_TVH = 1 units and is scaled here exactly like the static one.
+        """
         signal = np.asarray(signal_dn)
         if signal.dtype != np.float32:
             raise TypeError(f"signal_dn must be float32, got {signal.dtype}")
@@ -70,10 +80,13 @@ class NoiseStage:
             return signal
         sig = self.sigmas(sigma_tvh)
         scale = np.float32(sigma_tvh)
+        unit = self.unit_fixed if fixed_override is None else fixed_override
+        if unit.shape != self.shape:
+            raise ValueError(f"fixed pattern shape {unit.shape} != stage shape {self.shape}")
         fixed = FixedPattern(
-            v=(self.unit_fixed.v * scale).astype(np.float32),
-            h=(self.unit_fixed.h * scale).astype(np.float32),
-            vh=(self.unit_fixed.vh * scale).astype(np.float32),
+            v=(unit.v * scale).astype(np.float32),
+            h=(unit.h * scale).astype(np.float32),
+            vh=(unit.vh * scale).astype(np.float32),
         )
         return np.asarray(
             signal + synthesize_frame(self.shape, sig, fixed, self.sensor_seed, frame_index),

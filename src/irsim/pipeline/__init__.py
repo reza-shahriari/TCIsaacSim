@@ -11,6 +11,7 @@ from irsim.pipeline.core import PipelineConfig, PipelineState, Stage
 from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance_stage
+from irsim.pipeline.sensor_chain import FrameReport, SensorChain, attach_sensor_chain
 
 __all__ = [
     "PointTarget",
@@ -21,4 +22,7 @@ __all__ = [
     "band_radiance_stage",
     "Outputs",
     "run_frame",
+    "SensorChain",
+    "FrameReport",
+    "attach_sensor_chain",
 ]

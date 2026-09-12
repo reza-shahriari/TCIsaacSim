@@ -63,6 +63,11 @@ class PipelineConfig:
         None  # L1 fallback: constant τ, path radiance at the weather's T_air
     )
     sky: SkyModel | None = None  # stage-1 reflected term (M7.13); None = emission only
+    #: The M9 sensor chain (M9.8): housing and FPA nodes, pattern drift, defects, NUC
+    #: residual and the FFC. ``None`` is the ideal camera -- the chain every M9 mechanism is
+    #: measured against -- and is the default so that existing benches and goldens describe
+    #: the radiometry alone. ``attach_sensor_chain`` turns it on.
+    chain: Any = None  # SensorChain; Any avoids a cycle through irsim.pipeline.sensor_chain
 
     @property
     def quantity(self) -> Quantity:

@@ -22,13 +22,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.detector.params import BolometerParams, PhotonParams
-from irsim.detector.quantise import quantise
+from irsim.detector.quantise import dn_max_for_bits, quantise
 from irsim.isp.display import run_display_branch
 from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
@@ -50,17 +51,24 @@ class Outputs:
     signal_dn: NDArray[np.float32]  # un-quantised stage-4 signal, always kept for benches
     flux: NDArray[np.float32]  # stage-3 pixel power (W or photons/s), always kept
     isp_hash: str | None = None  # config hash of the isp block that produced display8
+    report: Any = None  # FrameReport from the M9 chain (M9.8); None when no chain is attached
 
 
 def _detector_signal(
     flux: NDArray[np.float32], config: PipelineConfig, state: PipelineState
 ) -> NDArray[np.float32]:
     """Stage 4 + 5: detector response (per-pixel noise) then the correlated 3-D noise; the
-    ideal chain when noise is disabled. Seeded by the sensor's own frame index (ADR 0022)."""
+    ideal chain when noise is disabled. Seeded by the sensor's own frame index (ADR 0022).
+
+    With an M9 chain attached the fixed pattern stage 5 adds is the *breathing* one (M9.4), so it
+    is handed to the stage each frame rather than left to the stage's own static copy."""
     if not config.noise_enabled:
         return config.detector.noiseless_signal_dn(flux)
     frame = config.detector.response(flux, state.frame_index, config.sensor_seed)
-    return config.noise.apply(frame.signal_dn, frame.sigma_dn, state.frame_index)
+    fixed = None if config.chain is None else config.chain.fixed_pattern
+    return config.noise.apply(
+        frame.signal_dn, frame.sigma_dn, state.frame_index, fixed_override=fixed
+    )
 
 
 def _scene_radiance_from_signal(
@@ -147,11 +155,26 @@ def run_frame(
             q,
             k,
         )
+    # The M9 chain owns the thermal nodes and the drift, so it clocks first: stage 3 needs the
+    # housing temperature it produces (M9.3), and stage 5 needs the pattern it advanced (M9.4).
+    t_fpa_k = state.housing_temp_k
+    if config.chain is not None:
+        housing_k, t_fpa_k = config.chain.begin_frame(state.t_s, state.frame_index)
+        state.housing_temp_k = housing_k
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])
     flux = apply_optics(radiance_ss, sensor, lb_housing_now, supersample=k, psf=config.psf)
-    # stages 4-5 (detector noise, correlated noise); ADC
+    # stages 4-5 (detector noise, correlated noise)
     signal = _detector_signal(flux, config, state)
+    # §11.1's post-ADC half, when a chain is attached: defects, replacement, the NUC residual, the
+    # temporal filter (identity, ADR 0058) and the FFC freeze. Everything downstream -- including
+    # the radiometric branch -- reads the corrected plane, so a frozen frame is stale in every
+    # output at once rather than only in the picture.
+    report = None
+    if config.chain is not None:
+        signal, report = config.chain.finish_frame(
+            signal, dn_max_for_bits(sensor.fpa.bit_depth), state.frame_index, t_fpa_k
+        )
     dn16 = quantise(signal, sensor.fpa.bit_depth)
     # stage 6: radiometric branch inverts with the *calibration* housing level (ADR 0021)
     lb_housing_cal = float(lut.lookup(config.t_housing_cal_k, q)[()])
@@ -177,4 +200,5 @@ def run_frame(
         signal_dn=signal,
         flux=flux,
         isp_hash=isp_hash,
+        report=report,
     )
