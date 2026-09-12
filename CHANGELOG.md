@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `scripts/stage_own_hunk.sh`: stage only your own edit to a file several sessions are editing at
+  once. It three-way merges your change (snapshot -> worktree) onto HEAD, so another session's
+  *committed* change is a no-op instead of a failed patch, and a same-line collision conflicts loudly
+  rather than silently picking a side. Snapshots are keyed by `$STAGE_OWN_HUNK_ID` so two sessions do
+  not share a baseline. `tests/unit/test_stage_own_hunk.py` drives the real two-session collision,
+  including the one blind spot it cannot cover (an uncommitted edit made after your snapshot).
 - Warp stages 2 and 3 (roadmap M10.5): the atmosphere and the optics run on the device as twins of
   `irsim.pipeline.atmosphere` and `irsim.optics.stage`. One atmosphere kernel serves the grey M8.1
   path, MS.1's multi-term exponential sum and the constant-tau L1 fallback, because the class weights

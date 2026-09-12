@@ -148,3 +148,22 @@ temperature flows, noise in radiance space, Kirchhoff closure) and the per-step 
 
 Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
 one commit.
+
+**Several people work in one tree at once.** Commit named paths, never `git add -A`: a blanket add
+stages whoever else had `README.md`, `CHANGELOG.md` or `docs/roadmap.md` open, and their prose lands in
+your commit under your message. For shared files, `scripts/stage_own_hunk.sh` stages your edit alone —
+it three-way merges your change onto HEAD, so a change someone else *committed* meanwhile is a no-op
+rather than a conflict:
+
+```bash
+export STAGE_OWN_HUNK_ID=my-session          # snapshots are keyed by this; make it unique
+scripts/stage_own_hunk.sh snapshot README.md CHANGELOG.md   # immediately BEFORE you edit
+# ... edit ...
+scripts/stage_own_hunk.sh stage README.md CHANGELOG.md      # then promptly after
+git commit -m ...
+```
+
+Snapshot late and stage promptly: the snapshot is the only record of what the file looked like before
+you touched it, so an *uncommitted* edit someone makes inside that window is attributed to you. `stage`
+prints the hunks it staged for exactly that reason. Also remember `make check` lints and type-checks the
+whole tree, so an uncommitted error in your files turns everyone's gate red.
