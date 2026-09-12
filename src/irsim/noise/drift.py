@@ -44,6 +44,7 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from irsim.noise.seeding import NoiseStream, sensor_rng
 from irsim.noise.three_d import FixedPattern, Sigmas7
@@ -68,8 +69,12 @@ def drift_rng(sensor_seed: int) -> np.random.Generator:
 
 
 def ou_step(
-    x: np.ndarray, sigma: float, dt_s: float, tau_s: float, rng: np.random.Generator
-) -> np.ndarray:
+    x: NDArray[np.floating],
+    sigma: float,
+    dt_s: float,
+    tau_s: float,
+    rng: np.random.Generator,
+) -> NDArray[np.float32]:
     """One exact Ornstein-Uhlenbeck step on ``x`` toward zero mean with stationary σ (§10.3).
 
     Exact for any ``dt_s``: the decay and the innovation variance are the closed-form solution of
