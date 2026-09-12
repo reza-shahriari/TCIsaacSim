@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Mean-reverting drift of the fixed-pattern components (roadmap M9.4, ADR 0054):
+  `irsim.noise.FpnDrift` makes §10.3's "pattern breathing" real. The V, H and VH terms follow an
+  Ornstein--Uhlenbeck process advanced by its exact update
+  `x ← x e^{−dt/τ} + σ√(1−e^{−2dt/τ}) ξ` with τ = `noise.fpn_drift_tau_s`. **Not a random walk:**
+  a random walk's variance grows without bound, so it destroys the configured 3-D ratios -- the
+  sensor's identity -- a little every frame while each individual frame still looks like plausible
+  thermal imagery, which is precisely the failure no single-frame test or visual check would catch.
+  The OU form is stationary by construction at any step size, and using the *exact* update rather
+  than Euler--Maruyama is what stops the same camera modelled at 9 Hz and 60 Hz from ending up with
+  different FPN. All three fixed terms drift because they share one physical cause and because
+  breathing VH alone would leave the column stripes frozen -- among the most recognisable real
+  artefacts, and the ones sim-to-real transfer is most sensitive to; `components` can restrict the
+  set for an ablation. Passing the global term raises: the DC level drifts *physically* through the
+  housing and FPA nodes (M3.3, M9.3) and the ΔT_FPA residual is M9.6's alone (ADR 0053), so putting
+  a random walk on top would count one effect three times. Measured over long runs against closed
+  forms: lag-τ autocorrelation e⁻¹ ± 0.05 at τ, 2τ and 3τ (with a matched random walk run through
+  the same estimator as a control, reading > 0.9), σ stationary within 5 % after 2000 frames, the
+  ratio vector intact within 8 %, zero mean, and τ = ∞ frozen bit-identical. Drift is the one
+  sequential stream in the chain -- the OU state cannot be drawn from `(seed, frame_index)` -- so
+  `drift_rng()` is the single blessed generator and M10.7's Warp twin is held to statistical, not
+  bit, equivalence.
 - Housing temperature source (roadmap M9.3, ADR 0016 addendum): `irsim.optics.HousingTemperature`
   supplies the `T_housing` that §8.2's self-emission term has needed since M3.3, in the three modes
   §12.2's `housing_temp_mode` already named. `fixed` is a bench number and shows no drift at all;
