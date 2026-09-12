@@ -20,26 +20,16 @@ from irsim.atmosphere.cloud import (
 from irsim.atmosphere.humidity import dew_point_k
 from irsim.config.environment import EnvironmentConfig, load_environment_preset
 from irsim.radiometry.lut import BandLUT
-from irsim.radiometry.spectral_response import load_spectral_response
 from irsim.thermal import WeatherSample, WeatherSeries
 
 T_AIR = 288.15
 
 
-@pytest.fixture(scope="module")
-def lwir(tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
-    p = tmp_path_factory.mktemp("cloud") / "tophat_7p5_13p5.csv"
-    p.write_text("# top-hat\n7.5,1.0\n13.5,1.0\n")
-    r = load_spectral_response(p)
-    return r, BandLUT.build(r)
-
-
-def _sky(lwir, cloud: float, rh: float, tau: float = 0.0) -> SkyModel:  # type: ignore[no-untyped-def]
-    r, lut = lwir
+def _sky(lut: BandLUT, cloud: float, rh: float, tau: float = 0.0) -> SkyModel:
+    """The session-scoped 7.5-13.5 um top-hat LUT is also the layered model's nominal LWIR
+    response, so no per-module LUT build is needed here (the unit suite is near its budget)."""
     w = WeatherSeries.constant(WeatherSample(T_AIR, rh, 1.0, cloud, 0.0, 0.0, 23000.0, 0.0), 3600.0)
-    atm = LayeredAtmosphere(
-        load_atmosphere_preset("us_standard_clear"), w, {"lwir": lut}, {"lwir": r}
-    )
+    atm = LayeredAtmosphere(load_atmosphere_preset("us_standard_clear"), w, {"lwir": lut})
     env = load_environment_preset("clear_dry")
     if tau > 0.0:
         raw = {"schema_version": 2, "environment": env.model_dump(mode="json")}
@@ -60,9 +50,10 @@ def test_dew_point_and_lcl_from_the_weather() -> None:
         lifting_condensation_level_m(T_AIR, 0.0)
 
 
-def test_thick_cloud_is_uniform_at_the_base_temperature_and_clear_is_ms2(lwir) -> None:  # type: ignore[no-untyped-def]
-    _, lut = lwir
-    sky = _sky(lwir, cloud=1.0, rh=0.5)
+def test_thick_cloud_is_uniform_at_the_base_temperature_and_clear_is_ms2(
+    tophat_lwir_lut: BandLUT,
+) -> None:
+    sky = _sky(tophat_lwir_lut, cloud=1.0, rh=0.5)
     els = np.radians(np.array([[2.0, 15.0, 45.0], [60.0, 80.0, 90.0]]))
     cov = np.ones(els.shape, dtype=bool)
     t = sky.apparent_temperature_field(0.0, els, cov)
@@ -73,9 +64,9 @@ def test_thick_cloud_is_uniform_at_the_base_temperature_and_clear_is_ms2(lwir) -
     assert t_base == pytest.approx(T_AIR - 6.5e-3 * sky.cloud_base_m(0.0), rel=1e-12)
     for el in (2.0, 45.0, 90.0):
         assert float(sky.radiance(0.0, math.radians(el))) == pytest.approx(
-            float(lut.lookup(np.float64(t_base))[()]), rel=1e-9
+            float(tophat_lwir_lut.lookup(np.float64(t_base))[()]), rel=1e-9
         )
-    clear = _sky(lwir, cloud=0.0, rh=0.5)
+    clear = _sky(tophat_lwir_lut, cloud=0.0, rh=0.5)
     none = np.zeros(els.shape, dtype=bool)
     np.testing.assert_array_equal(
         clear.radiance_field(0.0, els, none), clear.clear_radiance(0.0, els)
@@ -83,10 +74,12 @@ def test_thick_cloud_is_uniform_at_the_base_temperature_and_clear_is_ms2(lwir) -
     np.testing.assert_array_equal(clear.radiance(0.0, els), clear.clear_radiance(0.0, els))
 
 
-def test_cloud_edges_warmer_than_clear_zenith_and_thin_cloud_in_between(lwir) -> None:  # type: ignore[no-untyped-def]
+def test_cloud_edges_warmer_than_clear_zenith_and_thin_cloud_in_between(
+    tophat_lwir_lut: BandLUT,
+) -> None:
     # a ~1 km base: T - T_d = 8 K -> RH such that the dew point is 280.15 K
     rh = 0.59
-    sky = _sky(lwir, cloud=0.5, rh=rh)
+    sky = _sky(tophat_lwir_lut, cloud=0.5, rh=rh)
     base = sky.cloud_base_m(0.0)
     assert 800.0 < base < 1200.0, base
     zenith = math.radians(90.0)
@@ -99,7 +92,7 @@ def test_cloud_edges_warmer_than_clear_zenith_and_thin_cloud_in_between(lwir) ->
     t = sky.apparent_temperature_field(0.0, np.array([[zenith, zenith]]), cov)
     assert t[0, 0] - t[0, 1] > 20.0, (t, t_clear)
     assert t[0, 1] == pytest.approx(t_clear, abs=1e-6)
-    thin = _sky(lwir, cloud=0.5, rh=rh, tau=0.5)
+    thin = _sky(tophat_lwir_lut, cloud=0.5, rh=rh, tau=0.5)
     t_thin = thin.apparent_temperature_field(0.0, np.array([[zenith]]), np.array([[True]]))[0, 0]
     assert t[0, 1] < t_thin < t[0, 0], "thin cloud lies between the clear sky and the thick cloud"
     # the uniform blend is the expectation of the structured field:
