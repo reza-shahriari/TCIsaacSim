@@ -30,10 +30,16 @@ __all__ = [
     "extinction_per_band",
     "transmittance_per_band",
     "regime_for_visibility",
+    "MAX_SOLAR_ZENITH_DEG",
+    "airmass",
+    "solar_transmittance",
 ]
 
 # WMO: fog is visibility below 1 km (mist 1-5 km). Below this the droplet ratios apply.
 FOG_VISIBILITY_M = 1000.0
+# Plane-parallel airmass sec(theta) is within ~2 % of the refracted value to 80 deg and diverges
+# at the horizon; beyond this the caller needs the spherical form (deferred to M11, ADR 0051).
+MAX_SOLAR_ZENITH_DEG = 85.0
 
 
 def gamma_aerosol_visible(visibility_m: float, gamma_mol_visible_per_m: float = 0.0) -> float:
@@ -102,3 +108,26 @@ def regime_for_visibility(visibility_m: float) -> str:
     if not visibility_m > 0.0:
         raise ValueError("visibility_m must be positive")
     return "droplet" if visibility_m < FOG_VISIBILITY_M else "aerosol"
+
+
+def airmass(zenith_rad: float) -> float:
+    """Plane-parallel airmass sec θ_zen (1 at zenith, 2 at 60°); refused beyond 85° (ADR 0051)."""
+    deg = math.degrees(zenith_rad)
+    if not -1e-9 <= deg <= MAX_SOLAR_ZENITH_DEG + 1e-9:
+        raise ValueError(
+            f"solar zenith angle {deg:.1f}° outside [0, {MAX_SOLAR_ZENITH_DEG}°]: the "
+            "plane-parallel airmass diverges at the horizon (ADR 0051)"
+        )
+    return 1.0 / math.cos(zenith_rad)
+
+
+def solar_transmittance(preset: AtmospherePreset, band: str, zenith_rad: float) -> float:
+    """τ_sun(θ_zen) = τ_zenith^{1/cos θ} for one band (§5.4 stub; ADR 0051).
+
+    Bouguer's law for a plane-parallel atmosphere: the slant column is sec θ times the vertical
+    one, so the transmittance is the zenith value raised to the airmass. τ_sun(60°) = τ_zenith²
+    exactly.
+    """
+    if band not in preset.solar.zenith_transmittance:
+        raise KeyError(f"preset has no solar transmittance for band {band!r}")
+    return float(preset.solar.zenith_transmittance[band] ** airmass(zenith_rad))

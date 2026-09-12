@@ -6,7 +6,7 @@
 # docs/decisions/0049-aerosol-scaling-and-fog-regimes.md for the derivation. Replace with a
 # MODTRAN-fitted table when one is available.
 
-schema_version: 1
+schema_version: 2
 atmosphere:
   name: tropical
   description: "Tropical, maritime aerosol (large sea-salt particles: flatter extinction with wavelength)"
@@ -22,6 +22,10 @@ atmosphere:
   profile:
     water_vapour_scale_height_m: 2000
     lapse_rate_k_per_m: 6.2e-3
+  solar:
+    # tau_sun(theta_zen) = tau_zenith ** (1 / cos theta) -- plane-parallel Bouguer (M8.8).
+    # ESTIMATED whole-column values (tropical, maritime aerosol); the real solar path arrives with M11 (ADR 0051).
+    zenith_transmittance: {visible: 0.66, nir: 0.78, swir: 0.83, mwir: 0.76, lwir: 0.7}
   provenance:
     status: ESTIMATED
     source: "docs/physics-model.md section 7.2 table midpoints; ADR 0049"

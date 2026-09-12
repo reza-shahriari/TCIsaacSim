@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `tests/unit/test_tier3_atmosphere.py` and the solar-path stub (M8.8, ADR 0051): every preset is
+  checked for the §7.2 band orderings, the humid crossover (τ_LWIR < τ_SWIR in humid clear air) and
+  the fog reversal from the weather alone, a target at T_air is distance-invariant to 1e-9 on a
+  horizontal path for both atmosphere models, and a 300 m path at 10° reads within 0.1 K of the same
+  length horizontally while 5 km differs by more than a kelvin. New `AtmospherePreset.solar.
+  zenith_transmittance` (atmosphere schema v2, all seven presets, ESTIMATED) with
+  `irsim.atmosphere.extinction.solar_transmittance` / `airmass`: τ_sun(θ) = τ_zenith^{sec θ},
+  exact at τ_zenith² for 60°, refused beyond 85°.
 - Warp is reachable without booting Kit (ADR 0014 addendum). `irsim_isaac.env.ensure_warp_on_path`
   locates the `omni.warp.core` extension in the Isaac build's `extscache` (or `$IRSIM_WARP_PATH`) and
   puts it on `sys.path`; it never shadows an already-resolving Warp. ADR 0014 had recorded Warp as

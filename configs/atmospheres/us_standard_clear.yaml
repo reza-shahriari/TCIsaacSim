@@ -6,7 +6,7 @@
 # docs/decisions/0049-aerosol-scaling-and-fog-regimes.md for the derivation. Replace with a
 # MODTRAN-fitted table when one is available.
 
-schema_version: 1
+schema_version: 2
 atmosphere:
   name: us_standard_clear
   description: "1976 US Standard atmosphere with rural aerosol (23 km visibility class)"
@@ -22,6 +22,10 @@ atmosphere:
   profile:
     water_vapour_scale_height_m: 2000
     lapse_rate_k_per_m: 6.5e-3
+  solar:
+    # tau_sun(theta_zen) = tau_zenith ** (1 / cos theta) -- plane-parallel Bouguer (M8.8).
+    # ESTIMATED whole-column values (1976 US Standard, rural aerosol at 23 km); the real solar path arrives with M11 (ADR 0051).
+    zenith_transmittance: {visible: 0.8, nir: 0.85, swir: 0.88, mwir: 0.82, lwir: 0.75}
   provenance:
     status: ESTIMATED
     source: "docs/physics-model.md section 7.2 table midpoints; ADR 0049"

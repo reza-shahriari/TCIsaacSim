@@ -139,7 +139,7 @@ def test_schema_guards() -> None:
     with pytest.raises(ValueError, match="Koschmieder"):
         AtmosphereConfig.model_validate(bad)
     bad = copy.deepcopy(raw)
-    bad["schema_version"] = 2
+    bad["schema_version"] = 99  # 2 is current (M8.8 added the solar block)
     with pytest.raises(ValueError, match="schema_version"):
         AtmosphereConfig.model_validate(bad)
     bad = copy.deepcopy(raw)

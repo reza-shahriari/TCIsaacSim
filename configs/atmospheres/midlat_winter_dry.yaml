@@ -6,7 +6,7 @@
 # docs/decisions/0049-aerosol-scaling-and-fog-regimes.md for the derivation. Replace with a
 # MODTRAN-fitted table when one is available.
 
-schema_version: 1
+schema_version: 2
 atmosphere:
   name: midlat_winter_dry
   description: "Mid-latitude winter, dry continental air, rural aerosol"
@@ -22,6 +22,10 @@ atmosphere:
   profile:
     water_vapour_scale_height_m: 2000
     lapse_rate_k_per_m: 5.5e-3
+  solar:
+    # tau_sun(theta_zen) = tau_zenith ** (1 / cos theta) -- plane-parallel Bouguer (M8.8).
+    # ESTIMATED whole-column values (dry winter column); the real solar path arrives with M11 (ADR 0051).
+    zenith_transmittance: {visible: 0.84, nir: 0.88, swir: 0.9, mwir: 0.85, lwir: 0.78}
   provenance:
     status: ESTIMATED
     source: "docs/physics-model.md section 7.2 table midpoints; ADR 0049"

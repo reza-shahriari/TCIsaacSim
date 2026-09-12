@@ -32,11 +32,12 @@ __all__ = [
     "AtmosphereBandCoefficients",
     "AtmosphereProfile",
     "AtmosphereProvenance",
+    "SolarPathSpec",
     "AtmospherePreset",
     "AtmosphereConfig",
 ]
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: solar-path stub (M8.8, ADR 0051)
 ATMOSPHERE_BAND_KEYS: frozenset[str] = frozenset({*BAND_IDS, "visible"})
 # Names that describe weather, not an atmosphere type. Rejected at every nesting level.
 WEATHER_LIKE_KEYS: frozenset[str] = frozenset(
@@ -92,6 +93,32 @@ class AtmosphereProvenance(_Frozen):
     note: str = ""
 
 
+class SolarPathSpec(_Frozen):
+    """Solar-path transmittance at zenith, per band (the M8.8 stub; ADR 0051).
+
+    The slant solar path uses the plane-parallel Bouguer form τ_sun(θ_zen) = τ_zenith^{1/cos θ},
+    i.e. an airmass of sec θ. Only the reflective bands consume it (§5.4, M11); the LWIR entry
+    exists so every preset carries the same band-key set.
+    """
+
+    zenith_transmittance: dict[str, float]
+
+    @field_validator("zenith_transmittance")
+    @classmethod
+    def _bands_complete(cls, values: dict[str, float]) -> dict[str, float]:
+        missing = ATMOSPHERE_BAND_KEYS - values.keys()
+        unknown = values.keys() - ATMOSPHERE_BAND_KEYS
+        if missing or unknown:
+            raise ValueError(
+                f"solar.zenith_transmittance must name exactly {sorted(ATMOSPHERE_BAND_KEYS)}: "
+                f"missing {sorted(missing)}, unknown {sorted(unknown)}"
+            )
+        for band, tau in values.items():
+            if not 0.0 < tau <= 1.0:
+                raise ValueError(f"solar.zenith_transmittance[{band!r}] = {tau} is not in (0, 1]")
+        return values
+
+
 class AtmospherePreset(_Frozen):
     name: str = Field(min_length=1)
     description: str = ""
@@ -99,6 +126,7 @@ class AtmospherePreset(_Frozen):
     valid_range_m: float = Field(gt=0.0, default=500.0)
     bands: dict[str, AtmosphereBandCoefficients]
     profile: AtmosphereProfile
+    solar: SolarPathSpec
     provenance: AtmosphereProvenance
 
     @field_validator("bands")
