@@ -70,6 +70,8 @@ class NoiseStream(IntEnum):
     H_DRIFT = 22
     BAD_PIXEL_MAP = 30  # defect map (once per sensor)
     RTS = 31  # random telegraph / blinking state
+    NUC_GAIN = 50  # NUC residual gain field, redrawn per FFC epoch (M9.6)
+    NUC_OFFSET = 51  # NUC residual offset field, likewise
     SHOT = 40  # Poisson shot noise (photon detectors)
     DARK = 41  # dark-current shot noise
 

@@ -14,6 +14,7 @@ from irsim.noise.defects import (
     generate_map,
 )
 from irsim.noise.drift import DRIFTING_COMPONENTS, FpnDrift, drift_rng, ou_step
+from irsim.noise.nuc_residual import RESIDUAL_REFERENCE_K, NucResidual
 from irsim.noise.seeding import (
     NoiseStream,
     field_normal,
@@ -36,6 +37,8 @@ __all__ = [
     "advance_state",
     "apply_defects",
     "active_defect_mask",
+    "NucResidual",
+    "RESIDUAL_REFERENCE_K",
     "DRIFTING_COMPONENTS",
     "FpnDrift",
     "drift_rng",

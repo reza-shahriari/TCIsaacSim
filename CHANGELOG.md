@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- NUC residual (roadmap M9.6, ADR 0056): `irsim.noise.NucResidual` is what survives the two-point
+  correction -- `g_ij = 1 + ppm·1e-6·ΔT_FPA·ξ_g` and `o_ij = mK/K·1e-3·ΔT_FPA·(∂DN/∂T)·ξ_o` -- with
+  both fields redrawn by `ffc_reset`. At ΔT_FPA = 0 the gain is exactly 1 and the offset exactly 0,
+  by construction rather than cancellation, so a freshly shuttered camera is perfectly corrected.
+  Per ADR 0053 this is the **only** ΔT_FPA-driven mechanism in the chain: the detector's raw
+  gain/offset(T_FPA) polynomials (M9.2) are what the NUC removes, and M9.4's OU drift is stationary
+  and contributes no growth, so applying more than one would count the same physics twice at a rate
+  that still looks plausible.
+- ADR 0056 settles the unit question the config poses. `residual_offset_mk_per_k` is authored in
+  millikelvin because that is how datasheets quote it, but a residual *applied* in kelvin would be
+  right only at the temperature it was tuned at: measured on the committed Boson chain ∂DN/∂T runs
+  97.2 / 178.0 / 309.0 / 439.6 DN/K at 250 / 300 / 373 / 450 K. The conversion therefore happens
+  once, at construction, at 300 K -- where §9.4 anchors NETD and where datasheet figures are quoted
+  -- and `∂DN/∂T` is supplied by the caller from `irsim.isp.dn_per_kelvin` so `irsim.noise` stays
+  independent of `irsim.isp` and the "converted once" rule is visible at the call site.
+  `test_residual_not_kelvin_flat` pins the payoff: the apparent-temperature error at 373 K is
+  0.576× the 300 K one, exactly the measured derivative ratio -- and the same 0.576 ADR 0026
+  arrived at independently for the two-blackbody NETD bench. A kelvin-space implementation would be
+  flat across that range and would still produce entirely plausible images.
+- `irsim.isp.dn_per_kelvin`: ∂DN/∂T of the calibrated transfer by central difference through the
+  real forward chain (LUT → optics → detector), the same object the Tier 2 SITF bench measures.
 - Bad-pixel replacement (roadmap M9.5b, ADR 0055 addendum): `irsim.isp.replace_bad_pixels` is the
   mean of the valid 4-neighbours, iterated until clusters fill. §10.4 asks for the defect *and* the
   replacement because "the replacement artefact is what a detector actually sees", and the stencil

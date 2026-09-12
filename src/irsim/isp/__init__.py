@@ -10,9 +10,11 @@ from irsim.isp.radiometric import (
     RadiometricCalibration,
     apparent_temperature,
     apparent_temperature_from_dn,
+    dn_per_kelvin,
 )
 
 __all__ = [
+    "dn_per_kelvin",
     "replace_bad_pixels",
     "MAX_PASSES",
     "RadiometricCalibration",

@@ -32,7 +32,12 @@ from irsim.detector.bolometer import BolometerTransfer
 from irsim.optics.stage import apply_optics, invert_optics
 from irsim.radiometry.lut import BandLUT, Quantity
 
-__all__ = ["RadiometricCalibration", "apparent_temperature", "apparent_temperature_from_dn"]
+__all__ = [
+    "RadiometricCalibration",
+    "apparent_temperature",
+    "apparent_temperature_from_dn",
+    "dn_per_kelvin",
+]
 
 Float32Array = NDArray[np.float32]
 
@@ -104,3 +109,38 @@ def apparent_temperature_from_dn(
 ) -> Float32Array:
     """The DN16 validation route: quantised image → radiance → T_app (½-LSB bound)."""
     return lut.apparent_temperature(calibration.radiance_from_dn(dn16))
+
+
+def dn_per_kelvin(
+    calibration: RadiometricCalibration,
+    lut: BandLUT,
+    t_k: float,
+    step_k: float = 0.5,
+    quantity: Quantity = "lb",
+) -> float:
+    """∂DN/∂T of the calibrated transfer at ``t_k`` (DN per kelvin of scene temperature).
+
+    This is the conversion reference the NUC residual uses to turn a millikelvin figure into a
+    fixed number of DN, once (M9.6, ADR 0056). A central difference over ``step_k`` rather than an
+    analytic derivative, because the transfer is a composition of the LUT, the optics stage and the
+    detector and a finite difference is the same object the SITF bench measures.
+
+    It is a strong function of temperature -- that dependence is exactly why a residual specified
+    in kelvin and *applied* in kelvin would be wrong everywhere but one point (non-negotiable #3).
+    """
+    if not step_k > 0.0:
+        raise ValueError("step_k must be positive")
+    lo, hi = float(t_k) - float(step_k), float(t_k) + float(step_k)
+    if lo <= 0.0:
+        raise ValueError("the difference step reaches non-positive temperature")
+    radiances = np.array([float(lut.lookup(t, quantity)[()]) for t in (lo, hi)], dtype=np.float64)
+    shape = calibration.sensor.fpa_shape
+    signals = [
+        float(
+            calibration.signal_from_radiance(np.full(shape, value, dtype=np.float32))[
+                shape[0] // 2, shape[1] // 2
+            ]
+        )
+        for value in radiances
+    ]
+    return (signals[1] - signals[0]) / (2.0 * float(step_k))
