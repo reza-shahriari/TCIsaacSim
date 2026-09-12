@@ -1,6 +1,6 @@
 {
   "atol": null,
-  "config_hash": "3d5928a424c113bde36d2935db921234dfa5036eb952bcc58742a4629c45122a",
+  "config_hash": "65ecfc8519bdd31cb6aab26db2e4c7d206f6b5bcfbd986a049bb39aa03a85a6e",
   "dtype": "float32",
   "name": "boson_ramp_radiance",
   "numpy_version": "2.3.1",

@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Housing temperature source (roadmap M9.3, ADR 0016 addendum): `irsim.optics.HousingTemperature`
+  supplies the `T_housing` that §8.2's self-emission term has needed since M3.3, in the three modes
+  §12.2's `housing_temp_mode` already named. `fixed` is a bench number and shows no drift at all;
+  `ambient` is the air with no lag; `coupled` is the lumped node `dT/dt = (T_air + ΔT_self − T)/τ`,
+  which is the physical origin of shutterless drift on the optics side -- a housing warming under a
+  NUC table calibrated at a different housing temperature, at ADR 0016's 87 mK of apparent
+  temperature per kelvin. The coupled node delegates to M6.6's `NewtonCoolingSolver` rather than
+  carrying a second lumped-node integrator; the FPA node's RK2 (ADR 0053) stays the deliberate
+  exception. Verified against closed forms, not against itself: the step response matches
+  `T∞ + (T0 − T∞)e^{−t/τ}` at τ, 2τ and 5τ to 0.01 K, one 5τ leap equals 5000 sub-steps to 1e-9
+  (the exact update is unconditionally stable where forward Euler would diverge), the steady state
+  is `T_air + ΔT_self` and not bare `T_air`, `ambient` tracks the weather to 1e-6 K, and under a
+  24 h drive the node reproduces the first-order Bode response -- amplitude `1/√(1+(ωτ)²)` within
+  2 % and the peak delayed by `arctan(ωτ)/ω` within half a sample, which a second-order node or a
+  moving average would fail. It registers with the `Scene` through `.weather`, so a housing built
+  on a different `WeatherSeries` than the atmosphere is refused at construction (non-negotiable #6)
+  -- worth the guard because a wrong housing temperature is a smooth pedestal, not a visible
+  artefact.
 - Warp stage 4 (roadmap M10.6): the detector transfer and the microbolometer's membrane lag on the
   device. The IIR updates a persistent `wp.array` in place and writes the frame to a separate
   output, so the state is never round-tripped to the host; `WarpPipelineState` owns the device
@@ -357,6 +375,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sidecars regenerated for the new `config_hash` -- all twelve arrays bit-identical (ADR 0004).
 
 ### Changed
+- Sensor schema v6: `housing_temp_mode: coupled` now **requires** `housing_tau_s`, mirroring the
+  rule ADR 0053 set for `fpa_temp_mode: coupled`. A lumped node with no time constant cannot be
+  integrated, and defaulting the lag would put a number nobody authored into the drift the whole
+  M9 chain rests on. `configs/sensors/flir_boson_640_lwir.yaml` declared `coupled` and authored
+  neither parameter, so it gains `housing_tau_s: 900 s` and `housing_self_heating_k: 4 K` -- both
+  ESTIMATED, no published figure for either, both candidates for ME.3's measured drift band to
+  constrain. Golden references were regenerated for the config-hash change only: every stored
+  array is bit-identical, because nothing reads the new fields until M9.8 wires the node in.
 - `CLAUDE.md` now matches the repository it describes: the layout block gains `tests/conftest.py`
   (the synthetic G-buffer fixtures), `configs/environments/`, `docs/roadmap.md`,
   `docs/spec-issues.md`, `docs/maps/`, `.github/workflows/` and the `$IRSIM_DATA_DIR` override, and

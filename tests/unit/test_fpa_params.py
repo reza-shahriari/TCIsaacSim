@@ -54,7 +54,7 @@ def test_boson_known_answers() -> None:
         1e5,
     )
     assert p.fpa_temp_k is None and p.fpa_self_heating_k == 0.0
-    assert SCHEMA_VERSION == 5
+    assert SCHEMA_VERSION >= 5
 
 
 def test_boson_yaml_without_photon_null_keys_loads() -> None:

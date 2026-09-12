@@ -4,6 +4,7 @@ docs/physics-model.md §8
 """
 
 from irsim.optics.aperture import aperture_factor, cone_half_angle, fpa_irradiance, pixel_power
+from irsim.optics.housing import HousingTemperature, HousingTempMode
 from irsim.optics.mtf import (
     cutoff_frequency_cyc_per_mm,
     mtf_detector,
@@ -25,6 +26,8 @@ from irsim.optics.stage import apply_optics, invert_optics, optics_field
 from irsim.optics.vignetting import cos4_at_radius, cos4_field, field_angle_map
 
 __all__ = [
+    "HousingTemperature",
+    "HousingTempMode",
     "aperture_factor",
     "cone_half_angle",
     "fpa_irradiance",

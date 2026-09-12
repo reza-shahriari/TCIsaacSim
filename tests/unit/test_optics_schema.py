@@ -42,12 +42,40 @@ def test_boson_derived_quantities_match_spec_worked_numbers() -> None:
 
 
 def test_new_fields_default_and_schema_version() -> None:
+    """The ADR 0017 optional fields default as documented, and the version is the current one.
+
+    The defaults are checked on a config with the optional fields *stripped*, not on the Boson:
+    the Boson authors its housing lag and self-heating (M9.3), so reading defaults off it would
+    have silently stopped testing the defaults the moment a camera started authoring them.
+    """
     cfg = SensorConfig.model_validate(BOSON)
-    assert cfg.schema_version == SCHEMA_VERSION == 5
-    o = cfg.sensor.optics
+    assert cfg.schema_version == SCHEMA_VERSION == 6
+
+    bare = copy.deepcopy(BOSON)
+    for field in ("housing_tau_s", "housing_self_heating_k", "supersample_factor", "mtf"):
+        bare["sensor"]["optics"].pop(field, None)
+    bare["sensor"]["optics"]["housing_temp_mode"] = "ambient"  # 'coupled' now requires the lag
+    o = SensorConfig.model_validate(bare).sensor.optics
     assert o.supersample_factor == 4 and o.housing_temp_k is None and o.vignetting_map is None
     assert o.mtf.aberration_sigma_um == 0.0 and o.mtf.apply_motion_mtf is False
-    assert o.housing_self_heating_k == 0.0
+    assert o.housing_self_heating_k == 0.0 and o.housing_tau_s is None
+
+
+def test_the_boson_authors_its_housing_lag_and_self_heating() -> None:
+    """M9.3: a 'coupled' housing needs a time constant, so the committed camera has to have one."""
+    o = SensorConfig.model_validate(BOSON).sensor.optics
+    assert o.housing_temp_mode == "coupled"
+    assert o.housing_tau_s == 900.0
+    assert o.housing_self_heating_k == 4.0
+
+
+def test_coupled_housing_without_a_time_constant_is_refused() -> None:
+    """A lumped node with no tau cannot be integrated; defaulting it would invent the drift."""
+    d = copy.deepcopy(BOSON)
+    d["sensor"]["optics"]["housing_temp_mode"] = "coupled"
+    d["sensor"]["optics"].pop("housing_tau_s")
+    with pytest.raises(ValidationError, match="requires housing_tau_s"):
+        SensorConfig.model_validate(d)
 
 
 def test_fixed_housing_mode_requires_temperature() -> None:

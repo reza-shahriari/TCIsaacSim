@@ -18,6 +18,11 @@ sensor:
     focal_length_mm: 14.0                        # 32 deg HFOV variant
     transmittance: 0.92                          # ESTIMATED (germanium + AR coat)
     housing_temp_mode: coupled                   # fixed | ambient | coupled
+    housing_tau_s: 900.0                         # ESTIMATED -- body/lens assembly lag.
+                                                 # A ~40 g uncooled core in its housing
+                                                 # settles in ~15 min; no published figure.
+    housing_self_heating_k: 4.0                  # ESTIMATED -- steady rise above ambient
+                                                 # from the core's ~500 mW in still air.
     cold_shield_efficiency: 1.0                  # n/a for uncooled
     distortion:
       model: brown_conrady

@@ -52,3 +52,37 @@ after FFC. Narcissus and cold-shield terms are separate optional stages (O10, O1
 
 A cooled MWIR camera is modelled (cold shield replaces most of the housing term, M3.4/ADR 0066), or a
 measured shutterless-drift figure for the Boson disagrees with 87 mK/K by more than 20 %.
+
+## Addendum (M9.3, 2026-09-12): the housing node as built
+
+`irsim.optics.HousingTemperature` implements the three modes this ADR named. Two choices are worth
+recording because neither is forced by the physics:
+
+- **The coupled node delegates to M6.6's `NewtonCoolingSolver`** rather than integrating itself.
+  That solver already provides the exact exponential update, which is unconditionally stable and
+  overshoot-free at any step size, and the housing is precisely the linear, radiation-free,
+  solar-free case it was scoped for — it sits inside the camera body, not exchanging with the sky.
+  A second lumped-node implementation would be two things to keep in agreement for no physical
+  gain. The FPA node (ADR 0053) stays on its own RK2 integrator because it is independently
+  parameterised and is not the same node; it is the deliberate exception, not a precedent.
+
+  The one visible consequence is inherited: `NewtonCoolingSolver` evaluates the ambient at the step
+  *midpoint*, so a housing whose τ is far below the tick relaxes onto the midpoint air temperature
+  rather than the endpoint one — a half-tick lag, bounded by how far the air moves in half a step
+  (at 600 s ticks under a 10 K diurnal swing, ~0.1 K). For any realistic housing τ this is far
+  below the lag being modelled. It is pinned as a derived bound in
+  `tests/unit/test_housing_temperature.py`, not hidden.
+
+- **`housing_temp_mode: coupled` now *requires* `housing_tau_s`** (sensor schema v6). A lumped node
+  with no time constant cannot be integrated, and defaulting the lag would put a number nobody
+  authored into the drift the whole M9 chain is built on. This mirrors the rule ADR 0053 set for
+  `fpa_temp_mode: coupled`. The consequence is that `configs/sensors/flir_boson_640_lwir.yaml`,
+  which declared `coupled` and authored neither parameter, now carries `housing_tau_s: 900 s` and
+  `housing_self_heating_k: 4 K` — both **ESTIMATED**, with no published figure for either, and
+  both candidates for the ME.3 between-FFC drift band to constrain.
+
+The node registers with the `Scene` through the `.weather` property, so non-negotiable #6 covers it
+with no new code in `irsim.scene`: a housing built on a different `WeatherSeries` than the
+atmosphere and the thermal solvers is refused at construction. That matters more here than it looks,
+because a wrong housing temperature produces a smooth radiometric pedestal rather than a
+recognisable artefact — nobody would catch it by looking at the image.

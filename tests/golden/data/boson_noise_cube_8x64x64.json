@@ -1,6 +1,6 @@
 {
   "atol": 0.0001,
-  "config_hash": "824656d7d971dad01274b9faeab4abc5561d644cc69ee2f387a18dda648c2f9c",
+  "config_hash": "45e0f1d1858ce1084bf43ccf2b69161dd8ad4943d88db72d6ea59d9becf19010",
   "dtype": "float32",
   "name": "boson_noise_cube_8x64x64",
   "numpy_version": "2.3.1",

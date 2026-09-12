@@ -35,7 +35,10 @@ def _coupled(ambient: float | None = None, **over: object) -> FpaThermalModel:
 
 
 def test_schema_version_bumped_for_the_fpa_node() -> None:
-    assert SCHEMA_VERSION == 5
+    # A floor, not the current number: this guards that the FPA node bumped the version, and
+    # later steps bump it again (M9.3 took it to 6). The current value is pinned once, in
+    # tests/unit/test_optics_schema.py.
+    assert SCHEMA_VERSION >= 5
 
 
 def test_steady_state_is_ambient_plus_self_heating() -> None:

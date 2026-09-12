@@ -51,7 +51,9 @@ __all__ = [
 # constants (bolometer thermal/bias, photon dark current & read noise, FPA thermal node);
 # 4: noise.bad_pixel_type_mix and noise.netd_ref_f_number. ADR 0017.
 # 5: fpa_temp_mode and the raw gain/offset(T_FPA) polynomials with their T_cal (M9.2, ADR 0053).
-SCHEMA_VERSION = 5
+# 6: housing_temp_mode 'coupled' now requires housing_tau_s -- a tightening, not a new field,
+# because M9.3 gave the coupled housing an integrator and it needs a time constant to be one.
+SCHEMA_VERSION = 6
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -157,8 +159,9 @@ class OpticsSpec(_Frozen):
     """§12.2 ``optics`` plus the optional fields the spec omits (ADR 0017).
 
     No aperture factor here -- see ``irsim.optics`` (non-negotiable #5). The housing fields feed
-    the self-emission term (ADR 0016): ``fixed`` needs ``housing_temp_k``; ``coupled`` may set the
-    lag ``housing_tau_s`` and steady self-heating ``housing_self_heating_k`` above ambient.
+    the self-emission term (ADR 0016): ``fixed`` needs ``housing_temp_k``; ``coupled`` needs the
+    lag ``housing_tau_s`` and may set the steady self-heating ``housing_self_heating_k`` above
+    ambient. ``irsim.optics.HousingTemperature`` (M9.3) is what reads these.
     """
 
     f_number: float = Field(gt=0)
@@ -179,6 +182,11 @@ class OpticsSpec(_Frozen):
     def _consistency(self) -> OpticsSpec:
         if self.housing_temp_mode == "fixed" and self.housing_temp_k is None:
             raise ValueError("housing_temp_mode 'fixed' requires housing_temp_k")
+        if self.housing_temp_mode == "coupled" and self.housing_tau_s is None:
+            # A lumped node with no time constant is not a model of anything: it cannot be
+            # integrated, and silently defaulting the lag would put a number nobody authored
+            # into the drift the whole M9 chain is built on. Same rule as the FPA node.
+            raise ValueError("housing_temp_mode 'coupled' requires housing_tau_s (M9.3)")
         if self.vignetting_cos4 and self.distortion.model not in RECTILINEAR_MODELS:
             raise ValueError(
                 f"vignetting_cos4 is a rectilinear-lens result and cannot be combined with the "
