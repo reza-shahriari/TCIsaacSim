@@ -5,6 +5,7 @@ drop under a clear sky vs overcast, bare aluminium colder than paint, and the Sc
 from __future__ import annotations
 
 import copy
+import math
 import pathlib
 
 import numpy as np
@@ -73,14 +74,39 @@ def _gbuffer(t_k: float) -> dict[str, np.ndarray]:
 
 
 def test_isothermal_enclosure_reads_the_surface_temperature(tophat_lwir_lut: BandLUT) -> None:
-    """T_s = T_sky = T_ground (overcast at T_air, ground at T_air): T_app = T_s within 1 mK for
-    eps in {0.05, 0.5, 0.9, 1} and V_s in {0, 0.25, 0.5, 1} -- the reflected term closes."""
-    t_s = 293.15
-    sky = _sky(tophat_lwir_lut, t_s, cloud=1.0)
+    """T_s = T_sky = T_ground: T_app = T_s within 1 mK for eps in {0.05, 0.5, 0.9, 1} and V_s in
+    {0, 0.25, 0.5, 1} -- the reflected term closes.
+
+    The enclosure temperature is *derived from the sky model* rather than assumed to be T_air. A
+    fully overcast sky is tilt-independent (the blend is the cloud term alone), which is what makes
+    a single enclosure temperature constructible at all; its value is whatever the cloud model says
+    it is, so this identity survives MS.3 changing the cloud base. The ground is pinned to the same
+    temperature with ground.mode 'fixed' -- under ground.mode 'air' the ground would sit at T_air
+    and the enclosure would not be isothermal.
+    """
+    t_air = 293.15
+    overcast = _sky(tophat_lwir_lut, t_air, cloud=1.0)
+    l_sky = float(overcast.effective_radiance(0.0, 0.0))
+    for tilt_deg in (0.0, 45.0, 90.0, 180.0):
+        assert float(overcast.effective_radiance(0.0, math.radians(tilt_deg))) == pytest.approx(
+            l_sky, rel=1e-12
+        ), "a fully overcast sky must be tilt-independent for the enclosure to be constructible"
+    t_enclosure = float(tophat_lwir_lut.apparent_temperature(np.asarray(l_sky))[()])
+
+    raw = yaml.safe_load((REPO / "configs" / "environments" / "clear_dry.yaml").read_text())
+    raw["environment"]["ground"] = {"mode": "fixed", "fixed_temperature_k": t_enclosure}
+    from irsim.config.environment import EnvironmentConfig
+
+    sky = SkyModel(
+        overcast.atmosphere,
+        EnvironmentConfig.model_validate(raw).environment,
+        "lwir",
+        tophat_lwir_lut,
+    )
     cfg = _config(tophat_lwir_lut, sky, MaterialTable.from_mapping(EPS))
-    out = run_frame(_gbuffer(t_s), cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k))
+    out = run_frame(_gbuffer(t_enclosure), cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k))
     assert out.apparent_t is not None
-    err_mk = np.abs(out.apparent_t.astype(np.float64) - t_s) * 1e3
+    err_mk = np.abs(out.apparent_t.astype(np.float64) - t_enclosure) * 1e3
     assert err_mk.max() < 1.0, err_mk.max()
 
 
@@ -108,9 +134,15 @@ def test_sky_view_factor_formula_and_monte_carlo() -> None:
 
 
 def test_cold_roof_drop_under_a_clear_sky(tophat_lwir_lut: BandLUT) -> None:
-    """A horizontal eps = 0.9 panel at T_air: its apparent-temperature drop under the clear sky
-    relative to overcast equals (1 - eps)(L_B(T_air) - L_sky,eff(beta = 0)) / dL_B/dT within 0.05 K
-    and is negative; bare aluminium (eps 0.09) reads > 10 K colder than paint."""
+    """A horizontal eps = 0.9 panel at T_air reads colder under a clear sky than under cloud, by
+    the amount the reflected term predicts.
+
+    Both references are computed from each sky's *own* effective radiance -- the overcast panel is
+    not assumed to read exactly T_air, because the cloud deck radiates at its base temperature, not
+    at the surface air temperature (MS.3). What this test owns is the reflected term, so it asserts
+    the pipeline reproduces L = L_B(T_air) - (1 - eps)(L_B(T_air) - L_sky,eff) for each sky, the
+    drop between them, and the phenomenology: overcast flattens the image, a mirror exaggerates it.
+    """
     t_air = 288.15
     clear = _sky(tophat_lwir_lut, t_air, cloud=0.0)
     overcast = _sky(tophat_lwir_lut, t_air, cloud=1.0)
@@ -125,23 +157,30 @@ def test_cold_roof_drop_under_a_clear_sky(tophat_lwir_lut: BandLUT) -> None:
         out = run_frame(g, cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k))
         assert out.apparent_t is not None
         res[name] = out.apparent_t.astype(np.float64)
-    drop_paint = float(res["clear"][0, 0] - res["overcast"][0, 0])
     lb_air = float(tophat_lwir_lut.lookup(np.float64(t_air))[()])
     dlb = float(tophat_lwir_lut.lookup(np.float64(t_air), "dlb_dt")[()])
-    l_sky_eff = float(clear.effective_radiance(0.0, 0.0))
-    # exact: the radiometric branch inverts L = L_B(T_air) - (1 - eps)(L_B(T_air) - L_sky,eff)
-    exact = (
-        float(
-            tophat_lwir_lut.apparent_temperature(
-                np.asarray(lb_air - (1 - 0.9) * (lb_air - l_sky_eff))
-            )[()]
-        )
-        - t_air
-    )
-    linear = -(1 - 0.9) * (lb_air - l_sky_eff) / dlb
+    l_eff = {
+        n: float(s.effective_radiance(0.0, 0.0))
+        for n, s in (("clear", clear), ("overcast", overcast))
+    }
+
+    def predicted(name: str) -> float:
+        """T_app of an eps = 0.9 panel at T_air seeing only this sky (V_s = 1)."""
+        lb = lb_air - (1 - 0.9) * (lb_air - l_eff[name])
+        return float(tophat_lwir_lut.apparent_temperature(np.asarray(lb))[()])
+
+    # the pipeline reproduces the reflected term for each sky, not merely their difference
+    for name in ("clear", "overcast"):
+        assert float(res[name][0, 0]) == pytest.approx(predicted(name), abs=1e-3), name
+
+    drop_paint = float(res["clear"][0, 0] - res["overcast"][0, 0])
+    exact = predicted("clear") - predicted("overcast")
+    linear = -(1 - 0.9) * (l_eff["overcast"] - l_eff["clear"]) / dlb
     assert drop_paint < 0.0 and abs(drop_paint - exact) < 0.05, (drop_paint, exact)
     assert abs(drop_paint - linear) < 0.2, "the linearised form carries a ~0.1 K second-order term"
-    assert float(res["overcast"][0, 0]) == pytest.approx(t_air, abs=1e-3)
+    # overcast flattens the image: the panel sits closer to its own temperature than under clear sky
+    assert abs(float(res["overcast"][0, 0]) - t_air) < abs(float(res["clear"][0, 0]) - t_air)
+    assert l_eff["overcast"] > l_eff["clear"], "cloud is warmer than the clear column"
     assert float(res["clear"][0, 0] - res["clear"][0, 8]) > 10.0, "aluminium mirrors the cold sky"
 
 

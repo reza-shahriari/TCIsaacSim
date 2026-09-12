@@ -223,6 +223,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   adversarial review (72 findings applied); the twelve subsystem maps under `docs/maps/`.
 
 ### Changed
+- The reflected-environment tests no longer assume a fully overcast sky reads exactly `T_air`. The
+  isothermal-enclosure test derives its enclosure temperature from the sky model (and pins the
+  ground to it with `ground.mode: fixed`), and the cold-roof test computes a reference from each
+  sky's own `effective_radiance`, so both assert the reflected term itself rather than a particular
+  cloud-base convention. They pass under the pre-MS.3 and post-MS.3 cloud semantics alike.
 - `docs/physics-model.md` spec fixes raised before coding (M0.10): §5.3(a) sky temperature now
   `cos^q(θ_zen)` (coldest at zenith, S1); §6.1 absorbed solar written `α_sol Q_sol` (S2); §12.2
   spectral-response path `spectra/responses/boson_vox.csv` relative to `data/` (T4).
