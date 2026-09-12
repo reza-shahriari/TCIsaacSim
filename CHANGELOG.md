@@ -6,6 +6,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Float32-preserving dataset writers (roadmap M10.10a): `irsim.io.write_frame` puts one frame's
+  four §12.2 outputs on disk with a JSON sidecar. radiance and apparent temperature go to float32
+  `.npy` or float32 EXR; DN16 to a uint16 PNG (an ADC code is an integer and loses nothing);
+  display8 to an RGBA8 PNG. A plane in physical units never reaches an integer or half-float
+  container, which is CLAUDE.md #2 at the disk boundary.
+- The arithmetic is now a test rather than an assertion in prose: a 16-bit PNG over the 233-473 K
+  radiometric range quantises to 3.66 mK, and half-float at 300 K to 250 mK -- **exactly** five
+  times a 50 mK NETD, the figure CLAUDE.md #2 quotes. Both would produce a frame that opens and
+  looks right with the sensitivity already gone, so `write_frame` refuses a float16 plane and
+  `write_exr` refuses `half=True` even when it is asked for.
+- `irsim.io.exr`: a minimal single-part, scanline, uncompressed **float32** OpenEXR writer and a
+  matching narrow reader, in stdlib `struct` and `zlib`. EXR exists because no image tool reads
+  `.npy` and the practical alternative people reach for is a 16-bit PNG. No dependency is added
+  (CLAUDE.md #1 forbids an imaging stack in the core), and the header is checked against the
+  format specification -- magic, version, FLOAT pixel type, little-endian samples -- rather than
+  only round-tripped through our own reader, which would pass with the byte order wrong in both
+  directions. Multi-channel files come back in alphabetical channel order, as EXR stores them;
+  pinned by a test so it is documented rather than surprising.
+- `irsim.io.png` grows 16-bit grayscale. The DN16 round trip is decoded from the raw IHDR/IDAT
+  chunks in the test rather than through our own encoder twice.
+- The sidecar carries the config and band hashes (ADR 0008), the ISP hash, the frame index, the
+  scene time and the UTC it corresponds to on the weather axis, and for every file its dtype,
+  shape and **unit**. A directory of arrays nobody can trace to a configuration is a pile of
+  images, not a dataset. Frame names are zero-padded so a sequence sorts lexicographically, and an
+  output turned off in `sensor.outputs` leaves no file rather than a plane of zeros -- zeros are
+  indistinguishable from a real dark frame.
 - `IrCamera` (roadmap M10.9a-ii, ADR 0015 addendum): the object that turns a USD stage into an
   infrared frame. It authors the camera prim from the sensor YAML, creates the render product at
   `supersample x native`, attaches the M10.1 annotators, assembles the G-buffer from the geometry
