@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp is reachable without booting Kit (ADR 0014 addendum). `irsim_isaac.env.ensure_warp_on_path`
+  locates the `omni.warp.core` extension in the Isaac build's `extscache` (or `$IRSIM_WARP_PATH`) and
+  puts it on `sys.path`; it never shadows an already-resolving Warp. ADR 0014 had recorded Warp as
+  "importable only inside a running Kit", which was a `sys.path` artefact, not a runtime requirement.
+  The M10.4 equivalence harness now runs on `cpu` and `cuda:0` in 1.4 s from a bare interpreter
+  instead of behind a ~35 s Kit boot, and `gpu`-marked integration tests are selected on Warp being
+  available rather than on Isaac Sim.
 - `irsim.validation.aerial_scene` + the `gbuffer_aerial` fixture and `tests/unit/test_tier3_sky.py`
   (MS.8): a synthetic sky-background G-buffer -- exact per-pixel ray elevation for a pitched pinhole,
   horizon, optional 1/f^β cloud coverage, targets rasterised above one native pixel and handed to

@@ -15,10 +15,13 @@ one ground radiance per frame) and uploaded; the emissivity table and the band L
 **once** per (table, device) and cached in :class:`DeviceTables`, so the LUT device pointer does
 not change between frames (the M10.4 check that the table is not rebuilt).
 
-Warp is the ``omni.warp.core`` Kit extension and is importable only inside a running Kit
-application (ADR 0014), so the import is guarded: the module imports on any machine, the kernels
-exist only when Warp does, and every entry point raises a clear error otherwise. No
-``from __future__ import annotations`` here: Warp reads the kernel's real type annotations.
+Warp is the ``omni.warp.core`` Kit extension, so the import is guarded: the module imports on any
+machine, the kernels exist only when Warp does, and every entry point raises a clear error
+otherwise. Kit is not needed to get at it — `irsim_isaac.env.ensure_warp_on_path` puts the
+extension on ``sys.path`` and both the ``cpu`` and ``cuda:0`` devices then work from a bare Isaac
+Sim interpreter (ADR 0014 addendum), which is what makes the equivalence harness a seconds-long
+check rather than a Kit boot. No ``from __future__ import annotations`` here: Warp reads the
+kernel's real type annotations.
 
 ADR 0061 (Warp first; SPG only for stages proven stateless). docs/physics-model.md §13.5, §13.6.
 """
@@ -38,6 +41,7 @@ from irsim.pipeline.core import PipelineConfig, PipelineState, Planes, require_f
 from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.radiance import band_radiance_stage
 from irsim.radiometry.lut import KERNEL_CLAMP_MARGIN, BandLUT, Quantity
+from irsim_isaac.env import ensure_warp_on_path
 
 __all__ = [
     "DEFAULT_DEVICE",
@@ -57,6 +61,13 @@ DEFAULT_DEVICE = "cuda:0"
 
 
 def _import_warp() -> Any:
+    """Import Warp if it is available, adding the Kit extension cache to ``sys.path`` first.
+
+    Warp is the ``omni.warp.core`` extension; Kit is normally what puts it on the path, but the
+    extension is a plain package and `ensure_warp_on_path` finds it, so this module's kernels
+    also run from a bare Isaac Sim interpreter (ADR 0014 addendum).
+    """
+    ensure_warp_on_path()
     try:
         import warp
     except ImportError:

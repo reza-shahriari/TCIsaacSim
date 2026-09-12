@@ -23,7 +23,7 @@ reports under the git-ignored `outputs/isaac_probe/`) and the design that follow
 | `omni.rtx.spg` | 0.4.0, present and enabled by default; docs and Lua stubs live in the extension folder (`docs/Overview.md`, `.luarc/cuda.lua`) |
 | `isaacsim.sensors.experimental.rtx` | 1.9.0: `RtxCamera`, `CameraSensor`, `TiledCameraSensor`, `SPGNode`, `author_spg` |
 | deprecated `isaacsim.sensors.camera` / `.rtx` | present in `extsDeprecated/`, enabled, not imported by `irsim_isaac` (guarded by `test_environment.py`) |
-| Warp | 1.16.0 from the `omni.warp.core` Kit extension; **importable only inside a running Kit** (`has_warp()` is False from plain `python.sh`); one CUDA device (RTX A6000 48 GB, driver 580.173.02) |
+| Warp | 1.16.0 from the `omni.warp.core` Kit extension; one CUDA device (RTX A6000 48 GB, driver 580.173.02). Recorded here as "importable only inside a running Kit"; **corrected by the 2026-09-12 addendum below** — the extension is a plain package and `has_warp()` is False only until `sys.path` includes it |
 | Replicator | `omni.replicator.core` 1.13.36, `omni.syntheticdata` 0.6.17 |
 | Kit boot | 14–35 s headless; `SimulationApp.close()` ends in `os._exit`, so the pytest session fixture closes the app from an `atexit` handler after pytest has reported |
 
@@ -265,3 +265,58 @@ wrong substances. Nothing raised.
   segmentation semantics changed.
 - A build makes `instance_segmentation` per-prim regardless of labelling; the fallback order can
   then be simplified.
+
+## Addendum 2026-09-12 — Warp does not need Kit; the equivalence harness is a seconds-long check
+
+The build table above records Warp as "importable only inside a running Kit (`has_warp()` is False
+from plain `python.sh`)". The observation was right and the conclusion drawn from it was wrong.
+`has_warp()` was False because nothing had put the extension on `sys.path`, not because Warp needs
+a Kit runtime. The extension is an ordinary Python package:
+
+```
+$ISAAC_PATH/extscache/omni.warp.core-1.16.0+lx64/warp/__init__.py
+```
+
+Appending that directory to `sys.path` from a bare `python.sh` gives Warp 1.16.0 with **both**
+devices — `cpu` (x86_64) and `cuda:0` (RTX A6000, sm_86, CUDA 12.9 / driver 13.0) — and kernels
+compile and launch normally. Measured by running the whole M10.4 equivalence file this way:
+
+```
+$ $PYTHON -m pytest tests/integration/test_kernels_vs_reference.py -m gpu -q
+10 passed in 1.37s
+```
+
+against the ~35 s Kit boot the same file previously sat behind, for a kernel that agrees with its
+CPU oracle to 1.2e-7 relative on `cuda:0` and exactly on `cpu`.
+
+This matters out of proportion to its size. Every Warp stage (M10.4–M10.8) is defined by agreement
+with the NumPy oracle (ADR 0018), and a verification that costs a 35 s engine boot is one that gets
+run at the end of a step instead of during it. It also means a machine with a CUDA device and the
+Isaac *files* — no working Kit, no display — can run the GPU half of the test suite.
+
+### Decisions that follow
+
+- **`irsim_isaac.env.ensure_warp_on_path()`** locates the extension (`$ISAAC_PATH` or the
+  `isaacsim` package's location, overridable with `$IRSIM_WARP_PATH`) and appends it to
+  `sys.path`. It imports nothing, so it is safe on a machine with no Isaac Sim, and it is a no-op
+  when `warp` already resolves — the "a pip copy would shadow the Kit one" concern in the main
+  decision is unchanged, the cache directory is only ever a fallback. `has_warp()` calls it, so
+  the probe answers for the Warp this package would actually import.
+- **`warp_stages._import_warp()` calls it before `import warp`**, so the Warp path works from any
+  Isaac Sim interpreter without the caller arranging anything.
+- **`gpu`-marked integration tests are selected on Warp, not on Isaac Sim.** They run a kernel and
+  read the result; no Kit, no stage, no render product is involved. Tests that do need the engine
+  keep the `has_isaac()` skip, and `simulation_app` still skips cleanly if one of them asks for a
+  Kit that is not there.
+- **No `warp-lang` dependency is added.** The main decision's reasoning holds: the extension is the
+  Warp that the production path runs on, and a pip copy could differ from it.
+
+### Revisit when
+
+- `test_this_isaac_build_really_does_carry_an_importable_warp` fails — the extension cache moved or
+  the layout changed, and `warp_extension_path()` needs the new one.
+- A build ships two `omni.warp.core-*` entries: the glob picks the lexicographically last, which
+  orders `1.9.0` after `1.16.0`. Version-aware sorting is cheap to add and is only worth adding
+  then.
+- SPG gains cross-frame state (the main "revisit when"), which would move stages out of Warp and
+  make this harness less central.

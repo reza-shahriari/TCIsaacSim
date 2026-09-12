@@ -5,11 +5,14 @@ Every test collected from this directory is marked `isaac` automatically (so the
 on a machine without Isaac Sim, is skipped with an explicit reason.
 
 The `simulation_app` fixture boots one headless Kit application for the whole session (~35 s on
-an RTX A6000, ADR 0014). Engine modules (`omni.*`, `pxr`, `warp`) are importable only after that
-boot, so tests must import them inside the test body, never at module level, and must request the
-fixture. NVIDIA Warp is provided by the `omni.warp.core` extension and is not on `sys.path` outside
-Kit — `irsim_isaac.env.has_warp()` is False before the fixture runs — so `gpu`-marked tests are
-skipped at collection only when Isaac Sim itself is absent.
+an RTX A6000, ADR 0014). Engine modules (`omni.*`, `pxr`) are importable only after that boot, so
+tests must import them inside the test body, never at module level, and must request the fixture.
+
+NVIDIA Warp is the exception. It is provided by the `omni.warp.core` extension, but the extension
+is a plain Python package and `irsim_isaac.env.ensure_warp_on_path` adds it to `sys.path`, so
+`import warp` and both its `cpu` and `cuda:0` devices work with no Kit running (ADR 0014
+addendum). A `gpu`-marked test therefore needs Warp and a CUDA device, not Isaac Sim, and is
+selected on that basis; everything else here needs Isaac Sim and is skipped without it.
 
 Shutdown: `SimulationApp.close()` ends in `os._exit`, which would kill pytest before it prints its
 summary and would replace its exit status with 0. The fixture therefore does not close the app in
@@ -31,21 +34,25 @@ from typing import Any
 
 import pytest
 
-from irsim_isaac.env import has_isaac, has_warp
+from irsim_isaac.env import ensure_warp_on_path, has_isaac, has_warp
 
 _session_exit = {"status": 0}
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     del config
+    ensure_warp_on_path()
     no_isaac = pytest.mark.skip(reason="Isaac Sim not available (irsim_isaac.env.has_isaac())")
     no_warp = pytest.mark.skip(reason="NVIDIA Warp not available (irsim_isaac.env.has_warp())")
+    warp_ok, isaac_ok = has_warp(), has_isaac()
     for item in items:
-        item.add_marker(pytest.mark.isaac)
-        if not has_isaac():
-            item.add_marker(no_isaac)
-            if item.get_closest_marker("gpu") is not None and not has_warp():
+        item.add_marker(pytest.mark.isaac)  # keeps the default `-m 'not isaac'` deselect
+        # A `gpu` test runs a Warp kernel and needs no Kit; everything else needs Isaac Sim.
+        if item.get_closest_marker("gpu") is not None:
+            if not warp_ok:
                 item.add_marker(no_warp)
+        elif not isaac_ok:
+            item.add_marker(no_isaac)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

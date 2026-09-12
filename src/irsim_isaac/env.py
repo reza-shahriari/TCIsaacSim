@@ -8,14 +8,37 @@ Detection is by `importlib.util.find_spec`, which locates a module without execu
 `isaacsim` resolves outside a running Kit application is exactly the kind of Isaac Sim 6.0 detail
 the public docs leave open; roadmap M2.1 verifies it. Set `IRSIM_FORCE_NO_ISAAC=1` (or
 `IRSIM_FORCE_NO_WARP=1`) to make the probes answer False, which is how the skip path is tested.
+
+Warp needs one extra step. It ships as the `omni.warp.core` Kit extension, and Kit is what puts
+that extension on `sys.path`; ADR 0014 recorded it as "importable only inside a running Kit". It
+is in fact an ordinary Python package sitting in the build's extension cache, and
+:func:`ensure_warp_on_path` finds it and adds it, so `import warp` — and both its `cpu` and
+`cuda:0` devices — work from plain `python.sh` with no Kit boot (ADR 0014 addendum, 2026-09-12).
+That is what makes the CPU-vs-GPU equivalence harness runnable in seconds instead of behind a
+35 s Kit startup. A pip-installed Warp, if one is ever present, always wins: the cache directory
+is appended only when `warp` does not already resolve.
 """
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
+import sys
+from pathlib import Path
 
-__all__ = ["has_isaac", "has_warp", "require_isaac", "require_warp"]
+__all__ = [
+    "ensure_warp_on_path",
+    "has_isaac",
+    "has_warp",
+    "isaac_root",
+    "require_isaac",
+    "require_warp",
+    "warp_extension_path",
+]
+
+#: The extension cache entry that holds the Warp package (`omni.warp.core-<version>+<platform>`).
+WARP_EXTENSION_GLOB = "extscache/omni.warp.core-*"
 
 
 def _spec_present(name: str) -> bool:
@@ -32,10 +55,74 @@ def has_isaac() -> bool:
     return _spec_present("isaacsim")
 
 
+def isaac_root() -> Path | None:
+    """The Isaac Sim build root: `$ISAAC_PATH` if set (python.sh exports it), else the directory
+    three levels above the `isaacsim` package (`<root>/python_packages/isaacsim/__init__.py`)."""
+    env = os.environ.get("ISAAC_PATH")
+    if env:
+        root = Path(env)
+        return root if root.is_dir() else None
+    try:
+        spec = importlib.util.find_spec("isaacsim")
+    except (ImportError, ValueError):
+        return None
+    if spec is None or spec.origin is None:
+        return None
+    root = Path(spec.origin).resolve().parents[2]
+    return root if root.is_dir() else None
+
+
+def warp_extension_path() -> Path | None:
+    """Directory to put on `sys.path` so that `import warp` resolves, or None if there is none.
+
+    `$IRSIM_WARP_PATH` overrides the search for installs laid out differently. Otherwise the
+    build's extension cache is globbed; if it holds several versions the lexicographically last
+    is taken, which orders 1.16.0 after 1.9.0 incorrectly but matters only on a build that ships
+    two Warps, and the chosen one is verified to contain the package before it is returned.
+    """
+    override = os.environ.get("IRSIM_WARP_PATH")
+    if override:
+        candidate = Path(override)
+        return candidate if (candidate / "warp" / "__init__.py").is_file() else None
+    root = isaac_root()
+    if root is None:
+        return None
+    found = [
+        p for p in sorted(root.glob(WARP_EXTENSION_GLOB)) if (p / "warp" / "__init__.py").is_file()
+    ]
+    return found[-1] if found else None
+
+
+def ensure_warp_on_path() -> Path | None:
+    """Make `import warp` resolve outside Kit; returns the directory added, else None.
+
+    Idempotent, and a no-op when Warp already resolves (so a pip or Kit copy is never shadowed).
+    Only `sys.path` is touched: nothing is imported, so this stays safe on a machine with no
+    Isaac Sim and no GPU.
+    """
+    if os.environ.get("IRSIM_FORCE_NO_WARP") == "1" or _spec_present("warp"):
+        return None
+    ext = warp_extension_path()
+    if ext is None:
+        return None
+    entry = str(ext)
+    if entry not in sys.path:
+        sys.path.append(entry)
+    importlib.invalidate_caches()
+    return ext
+
+
 def has_warp() -> bool:
-    """True when NVIDIA Warp is importable (does not check for a CUDA device)."""
+    """True when NVIDIA Warp is importable (does not check for a CUDA device).
+
+    Calls :func:`ensure_warp_on_path` when Warp does not resolve yet, so the answer reflects the
+    Warp this package would actually import rather than whether Kit happens to be running.
+    """
     if os.environ.get("IRSIM_FORCE_NO_WARP") == "1":
         return False
+    if _spec_present("warp"):
+        return True
+    ensure_warp_on_path()
     return _spec_present("warp")
 
 
@@ -50,4 +137,8 @@ def require_isaac() -> None:
 
 def require_warp() -> None:
     if not has_warp():
-        raise RuntimeError("This code path needs NVIDIA Warp (`pip install -e '.[isaac]'`).")
+        raise RuntimeError(
+            "This code path needs NVIDIA Warp. It ships as the `omni.warp.core` Kit extension: "
+            "run through the Isaac Sim interpreter, or point $IRSIM_WARP_PATH at a directory "
+            "containing the `warp` package (docs/decisions/0014 addendum)."
+        )

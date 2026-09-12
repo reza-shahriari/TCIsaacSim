@@ -7,10 +7,14 @@ GPU kernel against its CPU reference: ≤ 1e-4 relative, and ≤ 5 mK when the r
 expressed through dL_B/dT at the pixel's temperature (one tenth of the tightest NETD modelled).
 The CPU reference is the oracle (ADR 0018); a disagreement is a kernel bug until proven otherwise.
 
-Warp is importable only inside Kit (ADR 0014), so the tests take the session's `simulation_app`
-even though nothing is rendered. `cuda:0` is the production device; Warp's `cpu` device runs the
+Nothing here renders, and nothing here needs Kit: `irsim_isaac.env.ensure_warp_on_path` puts the
+`omni.warp.core` extension on `sys.path`, so the whole file runs from a bare Isaac Sim interpreter
+in seconds (ADR 0014 addendum). `cuda:0` is the production device; Warp's `cpu` device runs the
 same kernel source through the C++ backend and is included as a second, compiler-independent
 check of the arithmetic.
+
+    make test-all                      # with everything else
+    $PYTHON -m pytest tests/integration/test_kernels_vs_reference.py -m gpu
 """
 
 from __future__ import annotations
@@ -30,11 +34,15 @@ pytestmark = pytest.mark.gpu
 
 
 @pytest.fixture(scope="module")
-def warp(simulation_app: Any) -> Any:
-    del simulation_app
+def warp() -> Any:
+    from irsim_isaac.env import ensure_warp_on_path
+
+    ensure_warp_on_path()
     import warp as wp
 
     wp.init()
+    if not any(d.is_cuda for d in wp.get_devices()):
+        pytest.skip("no CUDA device for the cuda:0 half of the harness")
     return wp
 
 
