@@ -54,3 +54,42 @@ will use its own Poisson (or a Gaussian approximation above ~1000 e⁻), compare
 
 A counter-based Poisson (e.g. inversion from the hashed uniform for small means, Gaussian above a
 threshold) is needed for bit-exact photon-band comparison, or the stream list needs a new entry.
+
+## Addendum (M10.7a, 2026-09-12): the device noise stage
+
+Stage 5 is the first stage that cannot be held to bit-equality with the CPU oracle, which is what
+this ADR anticipated. Warp's generator is not NumPy's, so the two paths draw different numbers from
+the same seed by construction. Four decisions made the statistical comparison mean something.
+
+**Counters follow `frame · H · W + pixel`, with a per-stream offset.** `wp.rand_init` is seeded
+from `frame_index · 1000003 + sensor_seed`, plus a small distinct constant per component (7 for T,
+13 for TV, 29 for TH, none for TVH), and indexed by the pixel, row, column or zero as that
+component requires. Without the per-stream offsets the frame term and the row term would be drawn
+from the same state and correlate, which is the kind of fault that shows up only in a 3-D
+decomposition.
+
+**The device fixed pattern is seeded from the CPU's own realisation, not redrawn.** On first use
+the V, H and VH buffers are uploaded from `NoiseStage.unit_fixed`. Had the device drawn its own,
+"statistically equivalent" would have compared two *different cameras* — a much weaker statement
+than it sounds, and one that would pass even if the device pattern had the wrong spatial structure.
+With the same realisation on both sides, what is being measured is the two generators.
+
+**The NUC residual's ξ fields are uploaded too, so that stage stays bit-comparable** (to 2e-6
+relative, i.e. float32 rounding). The residual is reset by an *FFC event*, not by a frame, so
+redrawing it on device would mean a second copy of the epoch counter to keep in step across a
+shutter. Uploading is both cheaper and safer, and it means the one part of the chain with an exact
+CPU answer keeps one.
+
+**The stage boundary differs between the paths, and the composition does not.** On the CPU the
+per-pixel TVH term belongs to the *detector* (stage 4) and `NoiseStage` adds only the six
+correlated terms; the Warp detector stage is the ideal transfer alone, so the device stage 5
+supplies all seven. Comparing `NoiseStage.apply` directly against the device kernel therefore
+compares a six-term image with a seven-term one — which is a real trap rather than a theoretical
+one: it produces a PSD ratio of about ten and looks exactly like a broken kernel. The oracle is the
+detector and the stage *together*, which is what each path actually produces for a frame.
+
+Stage 5 is deliberately **not** registered in `EQUIVALENCE_STAGES`. That harness asserts bit-level
+agreement, and a stage that cannot achieve it would have to loosen the harness for everyone else.
+Its equivalence lives in `tests/integration/test_warp_noise_stage.py`, measured with
+`irsim.validation`'s own `decompose_3d`, `spatial_psd` and `compare_psd` — the same statistics the
+CPU path is validated with, rather than a second set invented for the comparison.

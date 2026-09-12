@@ -6,6 +6,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stage 5 (roadmap M10.7a, ADR 0022 addendum): the seven §10.2 noise components, M9.4's OU
+  drift of the device-resident fixed fields, and M9.6's NUC residual, as Warp kernels. This is the
+  first stage that **cannot** be held to bit-equality with the CPU oracle -- Warp's generator is not
+  NumPy's -- so it is held to statistical equivalence instead, and is deliberately not registered in
+  `EQUIVALENCE_STAGES`, whose whole point is bit-level agreement.
+- Two things make that comparison mean something. The device fixed pattern is **seeded from the
+  CPU's own realisation** rather than redrawn, so what is measured is the two generators and not
+  two different cameras -- a redrawn pattern would have passed even with the wrong spatial
+  structure. And the NUC residual's ξ fields are uploaded too, keeping the one part of the chain
+  with an exact CPU answer bit-comparable to 2e-6; the residual is reset by an FFC *event*, not by
+  a frame, so redrawing it on device would mean a second epoch counter to keep in step across a
+  shutter.
+- The **stage boundary differs between the two paths and the composition does not**: on the CPU the
+  per-pixel TVH term belongs to the detector (stage 4) and `NoiseStage` adds only the six correlated
+  ones, while the Warp detector stage is the ideal transfer alone, so the device stage 5 supplies
+  all seven. Comparing the stages alone therefore compares a six-term image with a seven-term one,
+  which produces a PSD ratio of about ten and looks exactly like a broken kernel. The oracle is the
+  detector and the stage together.
+- Measured on an RTX A6000 and on Warp `cpu`, over 200 frames: NETD within 5 % of the CPU path and
+  10 % of the configured σ_TVH; every 3-D component within 15 % of its configured sigma or within
+  three times its own `estimate_floors` floor; NETD(373)/NETD(300) = 0.576, the derivative ratio, so
+  non-negotiable #3 holds on the device as it does on the host; `compare_psd` ≤ 1.5. Exact where it
+  can be: the same frame id is bit-identical, τ = ∞ freezes the pattern bit-identically and launches
+  nothing, and the residual at ΔT_FPA = 0 is exactly the identity.
+- The original M10.7 row bundled the noise stage, the drift, defects, replacement, the residual and
+  the FFC. It is **split**: M10.7a is the noise half and carries every exit criterion the row
+  listed; M10.7b is the new row for the device-side defect map, the iterated replacement stencil and
+  the FFC hold, which are a different kind of work -- an iterated stencil and a piece of control
+  flow, not a seeded draw.
 - The M9 sensor chain wired into `run_frame` (roadmap M9.8, ADR 0058): `irsim.pipeline.SensorChain`
   owns the housing and FPA nodes, the breathing fixed pattern, the defect map and its state, the
   NUC residual and the FFC controller, and advances them together so nothing runs on a stale clock.

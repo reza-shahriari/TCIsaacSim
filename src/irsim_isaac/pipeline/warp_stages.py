@@ -36,6 +36,7 @@ ADR 0061 (Warp first; SPG only for stages proven stateless). docs/physics-model.
 # mypy: disable-error-code="valid-type,no-untyped-def,untyped-decorator"
 # (Warp kernel signatures are runtime-evaluated type constructors, e.g. wp.array2d(dtype=...))
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,6 +53,8 @@ from irsim.detector.params import BolometerParams
 from irsim.detector.photon import PhotonDetector
 from irsim.detector.quantise import dn_max_for_bits
 from irsim.materials.table import MaterialTable
+from irsim.noise.stage import NoiseStage
+from irsim.noise.three_d import FixedPattern
 from irsim.optics.aperture import aperture_factor
 from irsim.optics.self_emission import self_emission_power
 from irsim.optics.stage import optics_field
@@ -72,6 +75,7 @@ __all__ = [
     "DeviceTables",
     "EQUIVALENCE_OUTPUT",
     "EQUIVALENCE_STAGES",
+    "NoiseTerms",
     "OpticsTerms",
     "WarpAtmosphereStage",
     "WarpBandRadianceStage",
@@ -92,6 +96,11 @@ __all__ = [
     "launch_band_radiance",
     "launch_detector",
     "launch_optics",
+    "launch_noise",
+    "launch_nuc_residual",
+    "launch_ou_drift",
+    "noise_stage_warp",
+    "noise_terms",
     "optics_stage_warp",
     "optics_terms",
     "quantise_warp",
@@ -331,6 +340,108 @@ if wp is not None:
         i, j = wp.tid()
         code = wp.int32(wp.floor(signal_dn[i, j]))
         dn[i, j] = wp.uint16(wp.clamp(code, 0, dn_max))
+
+    @wp.kernel
+    def _noise_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        v_fixed: wp.array(dtype=wp.float32),
+        h_fixed: wp.array(dtype=wp.float32),
+        vh_fixed: wp.array2d(dtype=wp.float32),
+        sigma_tvh: wp.float32,
+        sigma_t: wp.float32,
+        sigma_tv: wp.float32,
+        sigma_th: wp.float32,
+        frame_index: wp.int32,
+        seed: wp.int32,
+        cols: wp.int32,
+        out: wp.array2d(dtype=wp.float32),
+    ):
+        """Stage 5 on device: the seven §10.2 components added in DN space (non-negotiable #3).
+
+        The fixed terms arrive as device arrays already scaled to sigma_TVH = 1, exactly as the
+        CPU stage stores them, and are multiplied by this frame's sigma_TVH here -- so the *same*
+        breathing pattern (M9.4) drives both paths and only the per-frame draws differ.
+
+        Counters follow the roadmap's rule, ``frame * H * W + pixel``, with a separate offset per
+        stream so that the row, column and frame terms cannot correlate with the per-pixel one.
+        Warp's generator is not NumPy's, so this path is held to *statistical* equivalence with
+        the CPU oracle rather than bit-equality (ADR 0022).
+        """
+        i, j = wp.tid()
+        pixel = i * cols + j
+        base = frame_index * 1000003 + seed
+
+        # TVH: one independent normal per pixel per frame.
+        state_tvh = wp.rand_init(base, pixel)
+        n = signal_dn[i, j] + sigma_tvh * wp.randn(state_tvh)
+
+        # T: one value per frame, so every pixel must draw the same one.
+        state_t = wp.rand_init(base + 7, 0)
+        n = n + sigma_t * wp.randn(state_t)
+        # TV: one per row, constant along the row. TH: one per column.
+        state_tv = wp.rand_init(base + 13, i)
+        n = n + sigma_tv * wp.randn(state_tv)
+        state_th = wp.rand_init(base + 29, j)
+        n = n + sigma_th * wp.randn(state_th)
+
+        # The fixed terms: per-row, per-column, per-pixel, scaled here.
+        n = n + sigma_tvh * (v_fixed[i] + h_fixed[j] + vh_fixed[i, j])
+        out[i, j] = n
+
+    @wp.kernel
+    def _ou_step_kernel_1d(
+        x: wp.array(dtype=wp.float32),
+        sigma: wp.float32,
+        decay: wp.float32,
+        innovation: wp.float32,
+        epoch: wp.int32,
+        seed: wp.int32,
+        lane: wp.int32,
+    ):
+        """One exact OU step on a 1-D fixed term, in place (§10.3, ADR 0054).
+
+        Same closed form as ``irsim.noise.ou_step``: decay and innovation are the exact solution
+        over the interval, so the stationary variance is preserved at any step size on either
+        path. ``sigma`` is in sigma_TVH = 1 units, like the buffer it updates.
+        """
+        i = wp.tid()
+        state = wp.rand_init(epoch * 1000003 + seed + lane, i)
+        x[i] = x[i] * decay + sigma * innovation * wp.randn(state)
+
+    @wp.kernel
+    def _ou_step_kernel_2d(
+        x: wp.array2d(dtype=wp.float32),
+        sigma: wp.float32,
+        decay: wp.float32,
+        innovation: wp.float32,
+        epoch: wp.int32,
+        seed: wp.int32,
+        lane: wp.int32,
+        cols: wp.int32,
+    ):
+        i, j = wp.tid()
+        state = wp.rand_init(epoch * 1000003 + seed + lane, i * cols + j)
+        x[i, j] = x[i, j] * decay + sigma * innovation * wp.randn(state)
+
+    @wp.kernel
+    def _nuc_residual_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        gain_xi: wp.array2d(dtype=wp.float32),
+        offset_xi: wp.array2d(dtype=wp.float32),
+        gain_scale: wp.float32,
+        offset_scale: wp.float32,
+        out: wp.array2d(dtype=wp.float32),
+    ):
+        """g_ij x + o_ij, with both scales already carrying ΔT_FPA (M9.6, §2, §11.2).
+
+        The scales are computed on the host from the same ``NucSpec`` and the same ∂DN/∂T the CPU
+        path used, so the only thing that can differ between the two paths is the xi fields --
+        and those are uploaded, not redrawn. At ΔT = 0 both scales are zero and this is exactly
+        the identity, on either device.
+        """
+        i, j = wp.tid()
+        g = wp.float32(1.0) + gain_scale * gain_xi[i, j]
+        out[i, j] = signal_dn[i, j] * g + offset_scale * offset_xi[i, j]
 
 
 # ---- device-resident tables ------------------------------------------------------------------
@@ -915,6 +1026,10 @@ class WarpPipelineState:
         self.device = device
         self._iir: Any = None
         self._iir_shape: tuple[int, int] | None = None
+        self._fixed: tuple[Any, Any, Any] | None = None
+        self._fixed_shape: tuple[int, int] | None = None
+        self._xi: tuple[Any, Any] | None = None
+        self._xi_shape: tuple[int, int] | None = None
 
     def iir_state(self, shape: tuple[int, int]) -> tuple[Any, bool]:
         """The IIR buffer for ``shape`` and whether this frame must adopt its input.
@@ -934,10 +1049,75 @@ class WarpPipelineState:
     def iir_ptr(self) -> int | None:
         return None if self._iir is None else int(self._iir.ptr)
 
+    def fixed_pattern(
+        self, shape: tuple[int, int], seed_from: FixedPattern
+    ) -> tuple[Any, Any, Any]:
+        """The device-resident V, H and VH fields, in sigma_TVH = 1 units (M9.4, M10.7a).
+
+        Seeded on first use from the CPU stage's own unit pattern, so both paths start from the
+        *same* realisation and only their per-frame draws differ. Statistical equivalence is then
+        a measurement of the two generators, not of two unrelated cameras.
+        """
+        warp = _require()
+        if self._fixed is None or self._fixed_shape != shape:
+            rows, cols = shape
+            if seed_from.shape != shape:
+                raise ValueError(f"CPU fixed pattern {seed_from.shape} != device plane {shape}")
+            self._fixed = (
+                warp.array(
+                    np.ascontiguousarray(seed_from.v, dtype=np.float32),
+                    dtype=warp.float32,
+                    device=self.device,
+                ),
+                warp.array(
+                    np.ascontiguousarray(seed_from.h, dtype=np.float32),
+                    dtype=warp.float32,
+                    device=self.device,
+                ),
+                warp.array(
+                    np.ascontiguousarray(seed_from.vh, dtype=np.float32),
+                    dtype=warp.float32,
+                    device=self.device,
+                ),
+            )
+            self._fixed_shape = shape
+            del rows, cols
+        return self._fixed
+
+    def residual_fields(self, gain_xi: Any, offset_xi: Any) -> tuple[Any, Any]:
+        """The NUC residual's two xi fields on device, uploaded from the host model (M9.6).
+
+        Uploaded rather than redrawn: the residual is reset by an FFC event, not by a frame, so
+        redrawing it on device would mean reimplementing the epoch counter in a second place and
+        having two things to keep in step across a shutter.
+        """
+        warp = _require()
+        shape = (int(gain_xi.shape[0]), int(gain_xi.shape[1]))
+        if self._xi is None or self._xi_shape != shape:
+            self._xi = (
+                warp.zeros(shape, dtype=warp.float32, device=self.device),
+                warp.zeros(shape, dtype=warp.float32, device=self.device),
+            )
+            self._xi_shape = shape
+        self._xi[0].assign(np.ascontiguousarray(gain_xi, dtype=np.float32))
+        self._xi[1].assign(np.ascontiguousarray(offset_xi, dtype=np.float32))
+        return self._xi
+
+    @property
+    def fixed_ptrs(self) -> tuple[int, int, int] | None:
+        """Pointers to the three fixed buffers, so a test can show they do not move."""
+        if self._fixed is None:
+            return None
+        return tuple(int(b.ptr) for b in self._fixed)  # type: ignore[return-value]
+
     def reset(self) -> None:
         """Cold start: drop every device buffer, so the next frame adopts its input again."""
         self._iir = None
         self._iir_shape = None
+        self._fixed = None
+        self._fixed_shape = None
+        self._xi = None
+        self._xi_shape = None
 
 
 def warp_pipeline_state(state: PipelineState, device: str = DEFAULT_DEVICE) -> WarpPipelineState:
@@ -1141,3 +1321,194 @@ EQUIVALENCE_OUTPUT: dict[str, str] = {
     "optics": "flux",
     "detector": "signal_dn",
 }
+
+
+# -- stage 5: the 3-D noise, the OU drift and the NUC residual on device (M10.7a) ------------
+
+
+@dataclass(frozen=True)
+class NoiseTerms:
+    """Stage 5's per-camera scalars, read off the same `NoiseStage` the CPU path uses.
+
+    Sigmas are in DN and are derived from the frame's own σ_TVH, exactly as
+    ``irsim.noise.NoiseStage.apply`` derives them, so the two paths cannot drift apart through a
+    second copy of the ratio vector. The fixed terms are not here: they are *buffers*, live on
+    the device across frames, and belong to :class:`WarpPipelineState`.
+    """
+
+    sigma_tvh: float
+    sigma_t: float
+    sigma_tv: float
+    sigma_th: float
+    sigma_v: float
+    sigma_h: float
+    sigma_vh: float
+
+    @classmethod
+    def from_stage(cls, stage: NoiseStage, sigma_tvh: float) -> "NoiseTerms":
+        # Quoted: this module has no `from __future__ import annotations` (Warp reads the
+        # real annotation objects off its kernels), so a self-reference must be a string.
+        sig = stage.sigmas(sigma_tvh)
+        return cls(
+            sigma_tvh=float(sigma_tvh),
+            sigma_t=float(sig.t),
+            sigma_tv=float(sig.tv),
+            sigma_th=float(sig.th),
+            sigma_v=float(sig.v),
+            sigma_h=float(sig.h),
+            sigma_vh=float(sig.vh),
+        )
+
+
+def noise_terms(config: PipelineConfig, sigma_tvh: float) -> "NoiseTerms":
+    """Stage 5's scalars for this frame's σ_TVH; the ratio vector stays the config's."""
+    if not np.isfinite(sigma_tvh) or sigma_tvh < 0.0:
+        raise ValueError(f"sigma_tvh must be finite and non-negative, got {sigma_tvh}")
+    return NoiseTerms.from_stage(config.noise, float(sigma_tvh))
+
+
+def launch_noise(
+    signal_dn: Any,
+    fixed: tuple[Any, Any, Any],
+    terms: "NoiseTerms",
+    frame_index: int,
+    sensor_seed: int,
+    out: Any,
+    device: str,
+) -> Any:
+    """Add the seven §10.2 components to a device signal plane."""
+    warp = _require()
+    rows, cols = signal_dn.shape
+    warp.launch(
+        _noise_kernel,
+        dim=(rows, cols),
+        inputs=[
+            signal_dn,
+            fixed[0],
+            fixed[1],
+            fixed[2],
+            warp.float32(terms.sigma_tvh),
+            warp.float32(terms.sigma_t),
+            warp.float32(terms.sigma_tv),
+            warp.float32(terms.sigma_th),
+            warp.int32(int(frame_index)),
+            warp.int32(int(sensor_seed)),
+            warp.int32(int(cols)),
+            out,
+        ],
+        device=device,
+    )
+    return out
+
+
+def launch_ou_drift(
+    fixed: tuple[Any, Any, Any],
+    sigmas: tuple[float, float, float],
+    dt_s: float,
+    tau_s: float,
+    epoch: int,
+    sensor_seed: int,
+    device: str,
+) -> None:
+    """Advance the device-resident V, H and VH fields by one exact OU step, in place (M9.4).
+
+    ``tau_s`` of infinity freezes them and launches nothing, so a frozen pattern costs nothing and
+    stays bit-identical -- the same control case the CPU path has.
+    """
+    warp = _require()
+    if not math.isfinite(tau_s):
+        return
+    if not (dt_s > 0.0):
+        return
+    decay = math.exp(-float(dt_s) / float(tau_s))
+    innovation = math.sqrt(max(0.0, 1.0 - decay * decay))
+    v, h, vh = fixed
+    for lane, (buf, sigma) in enumerate(((v, sigmas[0]), (h, sigmas[1]))):
+        if sigma <= 0.0:
+            continue
+        warp.launch(
+            _ou_step_kernel_1d,
+            dim=buf.shape[0],
+            inputs=[
+                buf,
+                warp.float32(sigma),
+                warp.float32(decay),
+                warp.float32(innovation),
+                warp.int32(int(epoch)),
+                warp.int32(int(sensor_seed)),
+                warp.int32(lane * 101),
+            ],
+            device=device,
+        )
+    if sigmas[2] > 0.0:
+        rows, cols = vh.shape
+        warp.launch(
+            _ou_step_kernel_2d,
+            dim=(rows, cols),
+            inputs=[
+                vh,
+                warp.float32(sigmas[2]),
+                warp.float32(decay),
+                warp.float32(innovation),
+                warp.int32(int(epoch)),
+                warp.int32(int(sensor_seed)),
+                warp.int32(303),
+                warp.int32(int(cols)),
+            ],
+            device=device,
+        )
+
+
+def launch_nuc_residual(
+    signal_dn: Any,
+    xi: tuple[Any, Any],
+    gain_ppm_per_k: float,
+    offset_mk_per_k: float,
+    dn_per_k: float,
+    delta_t_fpa_k: float,
+    out: Any,
+    device: str,
+) -> Any:
+    """Apply M9.6's residual on device; the scales are computed here, exactly as on the host."""
+    warp = _require()
+    rows, cols = signal_dn.shape
+    gain_scale = float(gain_ppm_per_k) * 1e-6 * float(delta_t_fpa_k)
+    offset_scale = float(offset_mk_per_k) * 1e-3 * float(delta_t_fpa_k) * float(dn_per_k)
+    warp.launch(
+        _nuc_residual_kernel,
+        dim=(rows, cols),
+        inputs=[
+            signal_dn,
+            xi[0],
+            xi[1],
+            warp.float32(gain_scale),
+            warp.float32(offset_scale),
+            out,
+        ],
+        device=device,
+    )
+    return out
+
+
+def noise_stage_warp(
+    planes: Planes, config: PipelineConfig, state: PipelineState, device: str = DEFAULT_DEVICE
+) -> Planes:
+    """Stage 5 on the plane dict: ``signal_dn`` in, ``signal_dn`` out (the Warp twin of M4.4).
+
+    The fixed pattern comes from the device buffers of :class:`WarpPipelineState`, seeded on first
+    use from the CPU stage's own unit pattern so the two paths start from the *same* realisation
+    and only their per-frame draws differ. That is what makes "statistical equivalence" a
+    measurement of the generator rather than of two unrelated cameras.
+    """
+    warp = _require()
+    signal = require_fp32_or_better(np.asarray(planes["signal_dn"]), "signal_dn")
+    shape = (int(signal.shape[0]), int(signal.shape[1]))
+    sigma_tvh = float(np.asarray(planes["sigma_dn"], dtype=np.float64).mean())
+    terms = noise_terms(config, sigma_tvh)
+
+    device_state = warp_pipeline_state(state, device)
+    fixed = device_state.fixed_pattern(shape, config.noise.unit_fixed)
+    src = _as_device(warp, signal.astype(np.float32), warp.float32, device)
+    out = warp.zeros(shape, dtype=warp.float32, device=device)
+    launch_noise(src, fixed, terms, state.frame_index, config.sensor_seed, out, device)
+    return {"signal_dn": np.asarray(out.numpy(), dtype=np.float32)}
