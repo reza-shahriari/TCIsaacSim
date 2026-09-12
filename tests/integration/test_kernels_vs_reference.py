@@ -34,7 +34,7 @@ DEVICES = ("cuda:0", "cpu")
 STAGE_FIXTURES = tuple(
     [("band_radiance", f) for f in FIXTURES]
     + [("atmosphere", f) for f in FIXTURES]
-    + [("optics", "gbuffer_step_edge")]
+    + [("optics", "gbuffer_step_edge"), ("detector", "gbuffer_step_edge")]
 )
 REL_TOL = 1e-4
 MK_TOL = 5.0
@@ -129,13 +129,54 @@ def config_edge(tophat_lwir_lut: Any) -> Any:
     )
 
 
-STAGE_CONFIG = {"band_radiance": "config", "atmosphere": "config_layered", "optics": "config_edge"}
+@pytest.fixture(scope="module")
+def config_photon(tophat_mwir_lut: Any) -> Any:
+    """A cooled MWIR photon FPA: the other half of stage 4, with no membrane and no state."""
+    import copy
+
+    import yaml
+
+    from irsim.config.sensor import SensorConfig
+    from irsim.materials import MaterialTable
+    from irsim.pipeline import PipelineConfig
+
+    raw = copy.deepcopy(
+        yaml.safe_load((REPO / "configs/sensors/flir_boson_640_lwir.yaml").read_text())
+    )
+    raw["sensor"]["band"].update(lambda_min_um=3.0, lambda_max_um=5.0, regime="mixed")
+    raw["sensor"]["fpa"] = {
+        "type": "photon",
+        "width": 32,
+        "height": 32,
+        "pitch_um": 15.0,
+        "fill_factor": 1.0,
+        "frame_rate_hz": 30,
+        "bit_depth": 14,
+        "quantum_efficiency": 0.8,
+        "well_capacity_e": 1.0e6,
+        "integration_time_ms": 5.0,
+        "dark_current_model": "arrhenius",
+    }
+    return PipelineConfig.from_sensor(
+        SensorConfig.model_validate(raw),
+        MaterialTable.from_mapping({1: 0.95, 2: 0.6}),
+        lut=tophat_mwir_lut,
+    )
+
+
+STAGE_CONFIG = {
+    "band_radiance": "config",
+    "atmosphere": "config_layered",
+    "optics": "config_edge",
+    "detector": "config_edge",
+}
 
 
 def _input_planes(stage: str, planes: dict[str, np.ndarray], config: Any) -> dict[str, np.ndarray]:
     """The planes a stage consumes: everything before it, run on the CPU oracle."""
     from irsim.pipeline import PipelineState
     from irsim.pipeline.atmosphere import atmosphere_stage
+    from irsim.pipeline.optics import optics_stage
     from irsim.pipeline.radiance import band_radiance_stage
 
     out = dict(planes)
@@ -145,6 +186,9 @@ def _input_planes(stage: str, planes: dict[str, np.ndarray], config: Any) -> dic
     if stage == "atmosphere":
         return out
     out.update(atmosphere_stage(out, config, PipelineState()))
+    if stage == "optics":
+        return out
+    out.update(optics_stage(out, config, PipelineState()))
     return out
 
 
@@ -154,14 +198,20 @@ def _error_mk(cpu: np.ndarray, gpu: np.ndarray, t: np.ndarray, lut: Any) -> np.n
 
 
 def _scene_equivalent(plane: str, values: np.ndarray, config: Any, state: Any) -> np.ndarray:
-    """Whatever a stage produces, expressed as scene band radiance, so one mK budget covers all
-    three. Stage 3's output is pixel power, and `invert_optics` is the oracle's own way back."""
-    if plane != "flux":
+    """Whatever a stage produces, expressed as scene band radiance, so one mK budget covers every
+    stage. The oracle's own inverses are used: `BolometerTransfer.power_from_signal_w` back to
+    pixel power and `invert_optics` back to the radiance the pixel saw."""
+    if plane == "radiance":
         return values
     from irsim.optics.stage import invert_optics
     from irsim.pipeline.optics import housing_band_radiance
 
-    return invert_optics(values, config.sensor.sensor, housing_band_radiance(config, state))
+    phi = values
+    if plane == "signal_dn":
+        phi = config.detector.transfer.power_from_signal_w(values)
+    return invert_optics(
+        np.asarray(phi, np.float32), config.sensor.sensor, housing_band_radiance(config, state)
+    )
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -409,3 +459,142 @@ def test_a_warmer_housing_raises_apparent_temperature_exactly_as_the_cpu_does(
     # at the detector. A sign error or a missing (1 - tau_opt) would still pass the CPU-vs-GPU
     # comparison above and would fail here.
     assert float(np.median(gpu_shift)) * 1e3 == pytest.approx(87.0, abs=2.0)
+
+
+# ---- M10.6: stage 4 (detector) and the cross-frame state --------------------------------------
+
+
+def _step_flux(config: Any, t_cold: float, t_hot: float) -> tuple[np.ndarray, np.ndarray]:
+    """Pixel power for two uniform scenes, through the oracle's own stage 3."""
+    from irsim.optics.stage import apply_optics
+
+    spec = config.sensor.sensor
+    k, (h, w) = config.supersample, spec.fpa_shape
+    lb_housing = float(config.lut.lookup(300.0, config.quantity)[()])
+
+    def flux(t_k: float) -> np.ndarray:
+        level = float(config.lut.lookup(np.float32(t_k), config.quantity)[()])
+        plane = np.full((h * k, w * k), level, np.float32)
+        return apply_optics(plane, spec, lb_housing, supersample=k, psf=None)
+
+    return flux(t_cold), flux(t_hot)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_twenty_frame_step_tracks_the_cpu_iir(warp: Any, config_edge: Any, device: str) -> None:
+    """The membrane lag is the one stage with memory, so an agreement measured on a single frame
+    proves nothing: the CPU adopts its input on frame 1 and so does the GPU. Drive a flux step
+    through twenty frames, where a wrong alpha, a stale state or a state reset each show up as a
+    growing divergence rather than a constant offset."""
+    from irsim.pipeline import PipelineState
+    from irsim.pipeline.detector import detector_stage
+    from irsim_isaac.pipeline.warp_stages import detector_stage_warp
+
+    cold, hot = _step_flux(config_edge, 295.0, 320.0)
+    cpu_state, gpu_state = PipelineState(), PipelineState()
+    worst = 0.0
+    for n in range(20):
+        planes = {"flux": cold if n < 5 else hot}
+        ref = detector_stage(planes, config_edge, cpu_state)["signal_dn"]
+        got = detector_stage_warp(planes, config_edge, gpu_state, device)["signal_dn"]
+        worst = max(worst, float(np.max(np.abs(got - ref) / np.abs(ref))))
+    assert worst <= 1e-5, f"{worst:.2e} relative over 20 frames"
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_the_first_frame_of_a_step_covers_alpha_of_it(
+    warp: Any, config_edge: Any, device: str
+) -> None:
+    """1 - e^{-dt/tau} = 0.811 at 60 Hz and tau_th = 10 ms. §9.2's "smears over roughly 0.6
+    frames" is tau/dt, not the extent of the smear (spec issue S8) -- one frame already covers
+    81 % of a step, and this pins the number the kernel actually applies."""
+    from irsim.detector.lowpass import alpha_for
+    from irsim.pipeline import PipelineState
+    from irsim_isaac.pipeline.warp_stages import detector_stage_warp
+
+    fpa = config_edge.fpa
+    alpha = alpha_for(fpa.frame_dt_s, fpa.thermal_time_constant_s)
+    assert alpha == pytest.approx(0.811, abs=0.002)
+
+    cold, hot = _step_flux(config_edge, 295.0, 320.0)
+    state = PipelineState()
+    settled = detector_stage_warp({"flux": cold}, config_edge, state, device)["signal_dn"]
+    first = detector_stage_warp({"flux": hot}, config_edge, state, device)["signal_dn"]
+    target = detector_stage_warp({"flux": hot}, config_edge, PipelineState(), device)["signal_dn"]
+    fraction = float(np.mean((first - settled) / (target - settled)))
+    assert fraction == pytest.approx(alpha, abs=0.002)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_the_iir_state_is_allocated_once_and_never_leaves_the_device(
+    warp: Any, config_edge: Any, device: str
+) -> None:
+    """Re-allocating the state per frame would be a silent correctness bug (a fresh buffer adopts
+    its input, so the lag would vanish and every frame would look ideal) as well as a performance
+    one, and round-tripping it to the host would defeat the point of keeping the chain on device."""
+    from irsim.pipeline import PipelineState
+    from irsim_isaac.pipeline.warp_stages import (
+        DEVICE_STATE_KEY,
+        detector_stage_warp,
+        warp_pipeline_state,
+    )
+
+    cold, hot = _step_flux(config_edge, 295.0, 320.0)
+    state = PipelineState()
+    pointers = set()
+    for n in range(10):
+        detector_stage_warp({"flux": cold if n < 3 else hot}, config_edge, state, device)
+        pointers.add(warp_pipeline_state(state, device).iir_ptr)
+    assert len(pointers) == 1 and None not in pointers, pointers
+
+    device_state = state.buffers[DEVICE_STATE_KEY]
+    assert device_state.device == device, "the pipeline state owns it (ADR 0052)"
+    device_state.reset()
+    assert device_state.iir_ptr is None, "reset() must give a genuine cold start"
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_the_photon_path_has_no_memory_and_allocates_no_state(
+    warp: Any, config_photon: Any, device: str
+) -> None:
+    """Cooled photon detectors are memoryless on these timescales (ADR 0052) -- the Tier 3
+    phenomenology that LWIR smears and cooled MWIR does not. Two identical frames must give a
+    bit-identical answer and no IIR buffer may exist at all."""
+    from irsim.pipeline import PipelineState
+    from irsim_isaac.pipeline.warp_stages import detector_stage_warp, warp_pipeline_state
+
+    spec = config_photon.sensor.sensor
+    h, w = spec.fpa_shape
+    phi = np.full((h, w), 1.0e8, np.float32)
+    state = PipelineState()
+    first = detector_stage_warp({"flux": phi}, config_photon, state, device)["signal_dn"]
+    second = detector_stage_warp({"flux": phi}, config_photon, state, device)["signal_dn"]
+    assert np.array_equal(first, second)
+    assert warp_pipeline_state(state, device).iir_ptr is None
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_photon_dn_saturates_and_floors_exactly_like_the_cpu(
+    warp: Any, config_photon: Any, device: str
+) -> None:
+    """DN = clip(floor(S), 0, 2^bits - 1). Floor rather than round is what makes the quantisation
+    error uniform on [0, 1) LSB (ADR 0019), and saturation must clip, never wrap -- a wrapped
+    well would turn the brightest part of the scene into the darkest."""
+    from irsim.detector.quantise import quantise
+    from irsim.pipeline import PipelineState
+    from irsim.pipeline.detector import detector_stage
+    from irsim_isaac.pipeline.warp_stages import detector_stage_warp, quantise_warp
+
+    spec = config_photon.sensor.sensor
+    fpa = config_photon.fpa
+    h, w = spec.fpa_shape
+    saturating = fpa.well_capacity_e / (fpa.quantum_efficiency * fpa.integration_time_s)
+    phi = np.linspace(0.0, 2.0 * saturating, h * w, dtype=np.float32).reshape(h, w)
+
+    ref = detector_stage({"flux": phi}, config_photon, PipelineState())["signal_dn"]
+    got = detector_stage_warp({"flux": phi}, config_photon, PipelineState(), device)["signal_dn"]
+    dn_ref = quantise(ref, fpa.bit_depth)
+    dn_got = quantise_warp(got, fpa.bit_depth, device=device)
+    assert np.array_equal(dn_ref, dn_got), "DN must match code for code across the whole sweep"
+    assert dn_got.max() == fpa.dn_max and (dn_got == fpa.dn_max).sum() > h * w // 4
+    assert dn_got.min() == 0 and dn_got.dtype == np.uint16

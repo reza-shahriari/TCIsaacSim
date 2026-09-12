@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stage 4 (roadmap M10.6): the detector transfer and the microbolometer's membrane lag on the
+  device. The IIR updates a persistent `wp.array` in place and writes the frame to a separate
+  output, so the state is never round-tripped to the host; `WarpPipelineState` owns the device
+  buffers and lives in `PipelineState.buffers`, the same single-owner rule ADR 0052 set for the CPU
+  side so that M10.7's drift, defect and NUC buffers are cleared by the same cold start. The path is
+  chosen from `fpa.type`: a cooled photon FPA is memoryless and allocates no state at all. Measured
+  on an RTX A6000, `cuda:0` and Warp `cpu`: a 20-frame flux step tracks the oracle to 1.74e-7
+  against a 1e-5 budget, the first frame of a step covers 0.8111 of it (= alpha, and the number
+  §9.2's "roughly 0.6 frames" is not -- spec issue S8), one state pointer across ten frames, and
+  photon DN matches the CPU floor() code for code across a 0 -> 2x saturation sweep.
+- `irsim.pipeline.detector.detector_stage`: stage 4 on the plane dict -- the ideal transfer followed
+  by the membrane lag for a bolometer only, with the per-pixel state in `PipelineState.buffers`.
+  This is the composition ADR 0052 fixes and the oracle the Warp twin is compared against; M9.8
+  wires it into `run_frame` along with the rest of the M9 chain.
+- `quantise_warp`: the ADC on the device. Floor and clip, never round and never wrap.
 - Semi-transparent second ray (M7.15, ADR 0046): `irsim.materials.surface_radiance`
   (ε L_B + ρ L_env + τ L_behind, per-pixel closure to 1e-6) and `MaterialTable.properties_for`
   (τ from the packed column, ρ derived, sky pixels blackbody-equivalent); stage 1 and `run_frame`

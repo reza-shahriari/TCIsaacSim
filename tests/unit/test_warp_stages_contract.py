@@ -226,3 +226,108 @@ def test_equivalence_registry_covers_every_landed_stage() -> None:
     assert ws.EQUIVALENCE_STAGES["optics"] == (optics_stage, ws.optics_stage_warp)
     assert ws.EQUIVALENCE_OUTPUT["optics"] == "flux", "stage 3 leaves pixel power, not radiance"
     assert ws.WarpAtmosphereStage.name == "atmosphere" and ws.WarpOpticsStage.name == "optics"
+
+
+# ---- M10.6: stage 4, the half that needs no GPU -----------------------------------------------
+
+
+def _photon_config(lut: BandLUT) -> PipelineConfig:
+    """The Boson file with a cooled MWIR photon FPA swapped in -- the other stage-4 path."""
+    import copy
+
+    import yaml
+
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    cfg = copy.deepcopy(
+        yaml.safe_load((repo / "configs/sensors/flir_boson_640_lwir.yaml").read_text())
+    )
+    cfg["sensor"]["band"].update(lambda_min_um=3.0, lambda_max_um=5.0, regime="mixed")
+    cfg["sensor"]["fpa"] = {
+        "type": "photon",
+        "width": 8,
+        "height": 8,
+        "pitch_um": 15.0,
+        "fill_factor": 1.0,
+        "frame_rate_hz": 30,
+        "bit_depth": 14,
+        "quantum_efficiency": 0.8,
+        "well_capacity_e": 1.0e6,
+        "integration_time_ms": 5.0,
+        "dark_current_model": "arrhenius",
+    }
+    from irsim.config.sensor import SensorConfig
+
+    return PipelineConfig.from_sensor(
+        SensorConfig.model_validate(cfg), MaterialTable.from_mapping({1: 0.95}), lut=lut
+    )
+
+
+def test_bolometer_terms_are_the_oracle_transfer_and_alpha(tophat_lwir_lut: BandLUT) -> None:
+    from irsim.detector.lowpass import alpha_for
+
+    config = _config(tophat_lwir_lut)
+    terms = ws.detector_terms(config)
+    transfer = config.detector.transfer
+    assert terms.kind == "bolometer"
+    assert terms.gain_dn_per_w == pytest.approx(transfer.gain_dn_per_w, rel=1e-15)
+    assert terms.offset_w == pytest.approx(transfer.offset_w, rel=1e-15)
+    expected = alpha_for(config.fpa.frame_dt_s, config.fpa.thermal_time_constant_s)
+    assert terms.alpha == pytest.approx(expected, rel=1e-15)
+    # the §9.2 number the kernel actually applies -- not the "0.6 frames" of spec issue S8
+    assert terms.alpha == pytest.approx(0.811, abs=0.002)
+    assert terms.dn_max == config.fpa.dn_max
+
+
+def test_photon_terms_fold_the_transfer_into_three_scalars(tophat_mwir_lut: BandLUT) -> None:
+    config = _photon_config(tophat_mwir_lut)
+    terms = ws.detector_terms(config)
+    fpa = config.fpa
+    budget = config.detector.budget
+    assert terms.kind == "photon"
+    assert terms.qe_t_int == pytest.approx(fpa.quantum_efficiency * fpa.integration_time_s)
+    assert terms.offset_e == pytest.approx(budget.dark_electrons + budget.background_electrons)
+    assert terms.dn_per_electron == pytest.approx(2**fpa.bit_depth / fpa.well_capacity_e)
+    assert terms.alpha == 0.0, "a photon FPA has no membrane to lag"
+
+
+def test_detector_terms_refuse_an_impossible_set() -> None:
+    with pytest.raises(ValueError, match="unknown FPA type"):
+        ws.DetectorTerms(kind="ccd", dn_max=1023)
+    with pytest.raises(ValueError, match="blend weight"):
+        ws.DetectorTerms(kind="bolometer", dn_max=1023, alpha=0.0)
+    with pytest.raises(ValueError, match="blend weight"):
+        ws.DetectorTerms(kind="bolometer", dn_max=1023, alpha=1.5)
+
+
+def test_validate_flux_mirrors_the_detector_guards() -> None:
+    good = np.full((2, 2), 1e-8, np.float32)
+    assert ws.validate_flux(good, "bolometer").dtype == np.float32
+    with pytest.raises(ValueError, match="negative"):
+        ws.validate_flux(np.full((2, 2), -1e-9, np.float32), "bolometer")
+    with pytest.raises(TypeError):
+        ws.validate_flux(good.astype(np.float16), "bolometer")
+    # a photon rate handed to a bolometer is the form mix-up §9.2 warns about
+    with pytest.raises(ValueError, match="photon rate"):
+        ws.validate_flux(np.full((2, 2), 1e12, np.float32), "bolometer")
+    ws.validate_flux(np.full((2, 2), 1e12, np.float32), "photon")  # fine in photons/s
+
+
+def test_the_device_state_is_owned_by_the_pipeline_state(tophat_lwir_lut: BandLUT) -> None:
+    """ADR 0052 again, on the device side: one owner so a cold start clears everything at once."""
+    state = PipelineState()
+    first = ws.warp_pipeline_state(state, "cuda:0")
+    assert state.buffers[ws.DEVICE_STATE_KEY] is first
+    assert ws.warp_pipeline_state(state, "cuda:0") is first, "one per state x device"
+    other = ws.warp_pipeline_state(state, "cpu")
+    assert other is not first and other.device == "cpu"
+    assert first.iir_ptr is None, "nothing allocated until a frame runs"
+    first.reset()
+    assert first.iir_ptr is None
+
+
+def test_stage_four_is_registered_against_its_oracle() -> None:
+    from irsim.pipeline.detector import detector_stage
+
+    assert ws.EQUIVALENCE_STAGES["detector"] == (detector_stage, ws.detector_stage_warp)
+    assert ws.EQUIVALENCE_OUTPUT["detector"] == "signal_dn"
+    assert ws.WarpDetectorStage.name == "detector"

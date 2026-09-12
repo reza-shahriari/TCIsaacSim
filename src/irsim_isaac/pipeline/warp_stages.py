@@ -1,8 +1,9 @@
-"""Warp stages on the device, op for op the CPU reference. Stage 1 (M10.4), stages 2-3 (M10.5).
+"""Warp stages on the device, op for op the CPU reference. Stage 1 (M10.4), 2-3 (M10.5), 4 (M10.6).
 
     stage 1   L  = ε₀[material] · L_B(T) + (1 − ε₀) · L_env,   ε₀ = 1 under the sky mask
     stage 2   L' = τ(d) L + (1 − τ(d)) L_B(T_air),             τ = Σ_k w_k exp(−γ_k d)
     stage 3   Φ  = box_k(PSF ∗ L') · Ω_eff τ_opt cos⁴θ A_d + Φ_self,   Ω_eff = π/(4F² + 1)
+    stage 4   S_n = S_{n−1} + (S_ideal(Φ) − S_{n−1}) α,                α = 1 − e^{−Δt/τ_th}
 
 `irsim.pipeline` is the oracle (ADR 0018); this module is the GPU path
 that is *compared against it*, never a second definition of the physics. The kernel repeats
@@ -45,12 +46,18 @@ from irsim.atmosphere.beer_lambert import transmittance
 from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.config.gbuffer import UNMAPPED_MATERIAL_ID
 from irsim.config.sensor import SensorSpec
+from irsim.detector.bolometer import PHOTON_SCALE_GUARD, MicrobolometerDetector
+from irsim.detector.lowpass import alpha_for
+from irsim.detector.params import BolometerParams
+from irsim.detector.photon import PhotonDetector
+from irsim.detector.quantise import dn_max_for_bits
 from irsim.materials.table import MaterialTable
 from irsim.optics.aperture import aperture_factor
 from irsim.optics.self_emission import self_emission_power
 from irsim.optics.stage import optics_field
 from irsim.pipeline.atmosphere import atmosphere_stage
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes, require_fp32_or_better
+from irsim.pipeline.detector import detector_stage
 from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.optics import housing_band_radiance, optics_stage
 from irsim.pipeline.radiance import band_radiance_stage
@@ -60,29 +67,39 @@ from irsim_isaac.env import ensure_warp_on_path
 __all__ = [
     "DEFAULT_DEVICE",
     "AtmosphereTerms",
+    "DEVICE_STATE_KEY",
+    "DetectorTerms",
     "DeviceTables",
     "EQUIVALENCE_OUTPUT",
     "EQUIVALENCE_STAGES",
     "OpticsTerms",
     "WarpAtmosphereStage",
     "WarpBandRadianceStage",
+    "WarpDetectorStage",
     "WarpOpticsStage",
+    "WarpPipelineState",
     "apply_atmosphere_warp",
     "apply_optics_warp",
     "atmosphere_stage_warp",
     "atmosphere_terms",
     "band_radiance_stage_warp",
     "band_radiance_warp",
+    "detector_stage_warp",
+    "detector_terms",
     "device_tables",
     "has_warp_module",
     "launch_atmosphere",
     "launch_band_radiance",
+    "launch_detector",
     "launch_optics",
     "optics_stage_warp",
     "optics_terms",
+    "quantise_warp",
     "tables_key",
     "validate_distance",
+    "validate_flux",
     "validate_material_ids",
+    "warp_pipeline_state",
 ]
 
 DEFAULT_DEVICE = "cuda:0"
@@ -242,6 +259,78 @@ if wp is not None:
                 acc += radiance_ss[i * supersample + a, j * supersample + b]
         mean = acc / (wp.float32(supersample) * wp.float32(supersample))
         flux[i, j] = mean * factor * cos4[i, j] * area_m2 + phi_self
+
+    @wp.kernel
+    def _bolometer_signal_kernel(
+        flux_w: wp.array2d(dtype=wp.float32),
+        gain_dn_per_w: wp.float32,
+        offset_w: wp.float32,
+        signal_dn: wp.array2d(dtype=wp.float32),
+    ):
+        """S_ideal = gain · (Φ − offset), the ADR 0019 linear static transfer (§9.2).
+
+        Written as (Φ − offset) · gain, not Φ·gain − offset·gain: Φ and the offset are both of
+        order 1e-8 W and their difference spans the ADC, so the second form would subtract two
+        large numbers to get a small one. In this form the float32 spacing at 1e-8 W is ~0.003 DN.
+        """
+        i, j = wp.tid()
+        signal_dn[i, j] = (flux_w[i, j] - offset_w) * gain_dn_per_w
+
+    @wp.kernel
+    def _photon_signal_kernel(
+        flux_q: wp.array2d(dtype=wp.float32),
+        qe_t_int: wp.float32,
+        offset_e: wp.float32,
+        dn_per_electron: wp.float32,
+        signal_dn: wp.array2d(dtype=wp.float32),
+    ):
+        """N_e = η t_int Φ_q + N_dark + N_bg, then S = N_e / N_well · 2^bits (§9.1).
+
+        No lag: a cooled photon detector is memoryless on these timescales (ADR 0052), which is
+        the Tier 3 check that LWIR smears and cooled MWIR does not.
+        """
+        i, j = wp.tid()
+        signal_dn[i, j] = (flux_q[i, j] * qe_t_int + offset_e) * dn_per_electron
+
+    @wp.kernel
+    def _bolometer_lag_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        alpha: wp.float32,
+        adopt: wp.int32,
+        state: wp.array2d(dtype=wp.float32),
+        out: wp.array2d(dtype=wp.float32),
+    ):
+        """S_n = S_{n−1} + (S_ideal − S_{n−1}) α, in place on the persistent state (§9.2).
+
+        ``adopt`` is the first frame: the membrane starts settled, not at zero, so a sequence does
+        not open with a frame-long ramp no real core shows. ``state`` is the device buffer
+        :class:`WarpPipelineState` owns; it is updated in place and never leaves the device, and
+        ``out`` carries the frame onward so the next stage has something to read that the next
+        frame will not overwrite.
+        """
+        i, j = wp.tid()
+        s = signal_dn[i, j]
+        if adopt != 0:
+            state[i, j] = s
+        else:
+            state[i, j] = state[i, j] + (s - state[i, j]) * alpha
+        out[i, j] = state[i, j]
+
+    @wp.kernel
+    def _quantise_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        dn_max: wp.int32,
+        dn: wp.array2d(dtype=wp.uint16),
+    ):
+        """DN = clip(floor(S), 0, 2^bits − 1) (§2 𝒬, §9.1).
+
+        Floor, not round: an ideal ADC compares against thresholds, which is what makes the
+        quantisation error uniform on [0, 1) LSB with 0.29 LSB rms — the figure the Tier 2 SITF
+        bench is written against (ADR 0019). Saturation clips and never wraps.
+        """
+        i, j = wp.tid()
+        code = wp.int32(wp.floor(signal_dn[i, j]))
+        dn[i, j] = wp.uint16(wp.clamp(code, 0, dn_max))
 
 
 # ---- device-resident tables ------------------------------------------------------------------
@@ -804,6 +893,237 @@ class WarpOpticsStage:
         return optics_stage_warp(planes, config, state, self.device)
 
 
+# ---- stage 4: detector, and the cross-frame state that goes with it ---------------------------
+
+#: Where the device-side companion of a `PipelineState` lives in its ``buffers`` (ADR 0052).
+DEVICE_STATE_KEY = "warp_device_state"
+
+
+class WarpPipelineState:
+    """The device-resident cross-frame buffers of one camera on one device (ADR 0052).
+
+    Today that is the bolometer's membrane IIR; M10.7's fixed-pattern drift, bad-pixel map and
+    NUC residual join it. The point of a single owner is the reset path: a format change, a cold
+    start or a new camera must clear *all* of it together, and a buffer that lives wherever it
+    was first needed gets forgotten by exactly one of those.
+
+    The IIR buffer is allocated once and updated in place; ``iir_ptr`` exists so a test can show
+    the pointer does not move between frames and the state is never round-tripped to the host.
+    """
+
+    def __init__(self, device: str = DEFAULT_DEVICE) -> None:
+        self.device = device
+        self._iir: Any = None
+        self._iir_shape: tuple[int, int] | None = None
+
+    def iir_state(self, shape: tuple[int, int]) -> tuple[Any, bool]:
+        """The IIR buffer for ``shape`` and whether this frame must adopt its input.
+
+        A shape change reallocates and re-adopts rather than raising, because the only way to get
+        here with a new shape is a deliberate reconfiguration; the CPU filter raises instead, and
+        the difference is deliberate -- see the note in :func:`detector_stage_warp`.
+        """
+        warp = _require()
+        if self._iir is None or self._iir_shape != shape:
+            self._iir = warp.zeros(shape, dtype=warp.float32, device=self.device)
+            self._iir_shape = shape
+            return self._iir, True
+        return self._iir, False
+
+    @property
+    def iir_ptr(self) -> int | None:
+        return None if self._iir is None else int(self._iir.ptr)
+
+    def reset(self) -> None:
+        """Cold start: drop every device buffer, so the next frame adopts its input again."""
+        self._iir = None
+        self._iir_shape = None
+
+
+def warp_pipeline_state(state: PipelineState, device: str = DEFAULT_DEVICE) -> WarpPipelineState:
+    """The device companion of ``state``, created on first use and kept in its ``buffers``."""
+    existing = state.buffers.get(DEVICE_STATE_KEY)
+    if isinstance(existing, WarpPipelineState) and existing.device == device:
+        return existing
+    fresh = WarpPipelineState(device)
+    state.buffers[DEVICE_STATE_KEY] = fresh
+    return fresh
+
+
+@dataclass(frozen=True)
+class DetectorTerms:
+    """Stage 4's per-camera scalars, read off the detector the CPU path uses (M10.6).
+
+    One dataclass for both FPA types because the kernel launch differs only in which scalars it
+    carries; ``kind`` selects the path, from ``fpa.type``, never from a heuristic on the data.
+    ``alpha`` is `irsim.detector.lowpass.alpha_for` at the configured frame interval -- the blend
+    weight 1 − e^{−Δt/τ_th}, which is 0.811 at 60 Hz and τ_th = 10 ms, not the "0.6 frames" of
+    §9.2 (spec issue S8).
+    """
+
+    kind: str
+    dn_max: int
+    gain_dn_per_w: float = 0.0
+    offset_w: float = 0.0
+    alpha: float = 0.0
+    qe_t_int: float = 0.0
+    offset_e: float = 0.0
+    dn_per_electron: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("bolometer", "photon"):
+            raise ValueError(f"unknown FPA type {self.kind!r}")
+        if self.kind == "bolometer" and not 0.0 < self.alpha <= 1.0:
+            raise ValueError(f"IIR blend weight must lie in (0, 1], got {self.alpha}")
+
+
+def detector_terms(config: PipelineConfig) -> DetectorTerms:
+    """Read stage 4's scalars off the configured detector; the transfer stays the oracle's."""
+    fpa = config.fpa
+    if isinstance(fpa, BolometerParams):
+        detector = config.detector
+        if not isinstance(detector, MicrobolometerDetector):
+            raise TypeError("a bolometer FPA needs a MicrobolometerDetector")
+        return DetectorTerms(
+            kind="bolometer",
+            dn_max=fpa.dn_max,
+            gain_dn_per_w=detector.transfer.gain_dn_per_w,
+            offset_w=detector.transfer.offset_w,
+            alpha=alpha_for(fpa.frame_dt_s, fpa.thermal_time_constant_s),
+        )
+    detector_q = config.detector
+    if not isinstance(detector_q, PhotonDetector):
+        raise TypeError("a photon FPA needs a PhotonDetector")
+    budget = detector_q.budget
+    return DetectorTerms(
+        kind="photon",
+        dn_max=fpa.dn_max,
+        qe_t_int=fpa.quantum_efficiency * fpa.integration_time_s,
+        offset_e=budget.dark_electrons + budget.background_electrons,
+        dn_per_electron=2**fpa.bit_depth / fpa.well_capacity_e,
+    )
+
+
+def validate_flux(flux: NDArray[np.floating], kind: str) -> NDArray[np.float32]:
+    """Refuse what the CPU detector refuses, before anything is uploaded (§9.1, §9.2)."""
+    phi = require_fp32_or_better(np.asarray(flux), "flux")
+    if np.any(phi < 0.0):
+        raise ValueError("pixel power cannot be negative")
+    if kind == "bolometer" and np.any(phi > PHOTON_SCALE_GUARD):
+        raise ValueError(
+            f"pixel power {float(phi.max()):.3e} exceeds {PHOTON_SCALE_GUARD} W: this looks like "
+            "a photon rate, not watts -- the bolometer takes energy-form band radiance (§9.2)"
+        )
+    return phi.astype(np.float32)
+
+
+def launch_detector(
+    flux: Any,
+    terms: DetectorTerms,
+    device_state: WarpPipelineState,
+    signal_dn: Any,
+    lagged: Any | None = None,
+) -> Any:
+    """Launch stage 4 on device arrays; returns the plane the next stage should read.
+
+    ``signal_dn`` receives the ideal transfer and, for a bolometer, ``lagged`` receives the
+    membrane's output while the persistent state is updated in place. The state never leaves the
+    device: the IIR reads and writes it on the GPU and only ``lagged`` is ever downloaded.
+    """
+    warp = _require()
+    shape = tuple(flux.shape)
+    device = device_state.device
+    if terms.kind == "bolometer":
+        warp.launch(
+            _bolometer_signal_kernel,
+            dim=shape,
+            inputs=[flux, np.float32(terms.gain_dn_per_w), np.float32(terms.offset_w)],
+            outputs=[signal_dn],
+            device=device,
+        )
+        state, adopt = device_state.iir_state((int(shape[0]), int(shape[1])))
+        out = signal_dn if lagged is None else lagged
+        warp.launch(
+            _bolometer_lag_kernel,
+            dim=shape,
+            inputs=[signal_dn, np.float32(terms.alpha), np.int32(1 if adopt else 0), state],
+            outputs=[out],
+            device=device,
+        )
+        return out
+    warp.launch(
+        _photon_signal_kernel,
+        dim=shape,
+        inputs=[
+            flux,
+            np.float32(terms.qe_t_int),
+            np.float32(terms.offset_e),
+            np.float32(terms.dn_per_electron),
+        ],
+        outputs=[signal_dn],
+        device=device,
+    )
+    return signal_dn
+
+
+def detector_stage_warp(
+    planes: Planes, config: PipelineConfig, state: PipelineState, device: str = DEFAULT_DEVICE
+) -> Planes:
+    """Stage-4 entry point on the plane dict, the GPU twin of `detector_stage`.
+
+    One deliberate difference from the oracle: a frame whose shape does not match the IIR state
+    reallocates and re-adopts here, where `BolometerLowPass` raises. On the CPU a shape change
+    mid-sequence is a caller bug worth stopping on; on the device the buffer is owned by
+    :class:`WarpPipelineState` and a reconfiguration legitimately replaces it. Feed a sequence of
+    one shape and the two paths are identical, which is what the equivalence harness checks.
+    """
+    warp = _require()
+    terms = detector_terms(config)
+    phi = validate_flux(np.asarray(planes["flux"]), terms.kind)
+    device_state = warp_pipeline_state(state, device)
+    signal = warp.zeros(phi.shape, dtype=warp.float32, device=device)
+    lagged = (
+        warp.zeros(phi.shape, dtype=warp.float32, device=device)
+        if terms.kind == "bolometer"
+        else None
+    )
+    out = launch_detector(
+        _as_device(warp, phi, warp.float32, device), terms, device_state, signal, lagged
+    )
+    return {"signal_dn": np.asarray(out.numpy(), dtype=np.float32)}
+
+
+def quantise_warp(
+    signal_dn: NDArray[np.floating], bit_depth: int, *, device: str = DEFAULT_DEVICE
+) -> NDArray[np.uint16]:
+    """DN = clip(floor(S), 0, 2^bits − 1) on the device, the twin of `irsim.detector.quantise`."""
+    warp = _require()
+    s = require_fp32_or_better(np.asarray(signal_dn), "signal_dn").astype(np.float32)
+    if not np.all(np.isfinite(s)):
+        raise ValueError("signal contains NaN or inf")
+    dn = warp.zeros(s.shape, dtype=warp.uint16, device=device)
+    warp.launch(
+        _quantise_kernel,
+        dim=s.shape,
+        inputs=[_as_device(warp, s, warp.float32, device), np.int32(dn_max_for_bits(bit_depth))],
+        outputs=[dn],
+        device=device,
+    )
+    return np.asarray(dn.numpy(), dtype=np.uint16)
+
+
+class WarpDetectorStage:
+    """`irsim.pipeline.core.Stage` implementation running stage 4 on ``device``."""
+
+    name = "detector"
+
+    def __init__(self, device: str = DEFAULT_DEVICE) -> None:
+        self.device = device
+
+    def __call__(self, planes: Planes, config: PipelineConfig, state: PipelineState) -> Planes:
+        return detector_stage_warp(planes, config, state, self.device)
+
+
 #: (CPU oracle, GPU twin) per stage name — the equivalence harness parametrises over this, and
 #: every later Warp stage registers here so it is compared the same way. The plane each stage
 #: is compared on is `EQUIVALENCE_OUTPUT`, because stage 3 leaves ``flux``, not ``radiance``.
@@ -811,6 +1131,7 @@ EQUIVALENCE_STAGES: dict[str, tuple[Any, Any]] = {
     "band_radiance": (band_radiance_stage, band_radiance_stage_warp),
     "atmosphere": (atmosphere_stage, atmosphere_stage_warp),
     "optics": (optics_stage, optics_stage_warp),
+    "detector": (detector_stage, detector_stage_warp),
 }
 
 #: Which plane each registered stage produces.
@@ -818,4 +1139,5 @@ EQUIVALENCE_OUTPUT: dict[str, str] = {
     "band_radiance": "radiance",
     "atmosphere": "radiance",
     "optics": "flux",
+    "detector": "signal_dn",
 }

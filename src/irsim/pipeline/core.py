@@ -206,7 +206,10 @@ class PipelineState:
     t_s: float = (
         0.0  # frame time on the scene weather's axis (Scene.t0_s + t_rel); stage 2 reads it
     )
-    buffers: dict[str, NDArray[Any]] = field(default_factory=dict)
+    #: Cross-frame buffers, one owner and one reset path each (ADR 0052). NumPy arrays on the
+    #: reference path; the Warp path (M10.6) keeps its device-resident equivalents here too, so
+    #: the values are not all ndarrays and moving a stage to the GPU stays a transport change.
+    buffers: dict[str, Any] = field(default_factory=dict)
 
     def advance(self) -> None:
         self.frame_index += 1
