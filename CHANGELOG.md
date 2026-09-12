@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stage 1 (roadmap M10.4, ADR 0061): `irsim_isaac.pipeline.warp_stages` runs band radiance on the
+  device as an op-for-op twin of `irsim.pipeline.radiance` (float32 LUT index/clamp/interp, ε = 1 under the
+  sky mask, host guards for every CPU refusal), with the LUT and ε₀ table uploaded once and cached by
+  content. `tests/integration/test_kernels_vs_reference.py` is the CPU-vs-GPU equivalence harness every
+  later stage registers in (`EQUIVALENCE_STAGES`): stage × fixture × {cuda:0, Warp cpu} at ≤ 1e-4 / 5 mK;
+  measured ≤ 2 ulp on CUDA and bit-identical on the Warp CPU device. The `isaac` extra is now empty: Warp
+  comes from the `omni.warp.core` Kit extension and a pip copy would shadow it.
 - Material-ID transport for the Isaac path (M10.2): `irsim_isaac.pipeline.material_ids` (instance
   id → prim path → M7.17 material id by exact integer lookup, UNMAPPED mask, magenta display
   overlay) and `irsim_isaac.pipeline.materials_usd` (stage walk for bindings, `class` semantics and

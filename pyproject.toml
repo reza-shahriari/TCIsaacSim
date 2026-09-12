@@ -23,11 +23,11 @@ dev = [
     "types-PyYAML>=6.0",  # mypy --strict on `import yaml` (irsim.config loader)
     "matplotlib>=3.8",
 ]
-# Engine-side extras. The Warp floor is provisional until roadmap M2.1 verifies the GPU stack
-# inside the Isaac Sim interpreter; nothing in the default gate needs it.
-isaac = [
-    "warp-lang>=1.5",
-]
+# Engine-side extra: deliberately empty (ADR 0061). Isaac Sim ships NVIDIA Warp as the
+# `omni.warp.core` Kit extension (1.16.0 on the pinned build, ADR 0014); a pip `warp-lang` would
+# shadow it and make the equivalence harness pass against the wrong runtime. Warp code runs
+# only inside a Kit application (the `simulation_app` fixture); nothing in the default gate needs it.
+isaac = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
