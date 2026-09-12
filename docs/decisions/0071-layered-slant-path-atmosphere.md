@@ -1,6 +1,6 @@
 # ADR 0071 — Layered slant-path atmosphere: an exponential-sum band model, sky = column emission
 
-**Status:** Accepted (MS.1; the point-target section is added by MS.6)
+**Status:** Accepted (MS.1 + MS.6)
 **Date:** 2026-09-11
 
 ## Context
@@ -70,6 +70,34 @@ Note also that the roadmap's convergence statement ("a 300 K target at d → 20 
 L_sky") holds only for an opaque column: a target beyond the atmosphere is still seen through the
 window, so L'(d) → τ(∞) L_t + L_sky(θ); the test asserts that limit and the monotone decrease of
 the excess over the sky.
+
+## Point-target injection below one native pixel (MS.6)
+
+A target of area A_t at range R fills φ = A_t f² / (R² A_pix) of a native pixel. Rasterising it on
+the k× supersampled G-buffer gives, for a square target swept through 16×16 sub-pixel phases at
+k = 4 (`tests/unit/test_point_target.py`, measured 2026-09-12):
+
+| size (native px) | samples across | mean error | rms error | min | max |
+|---|---|---|---|---|---|
+| 0.5 | 2.0 | +27 % | 44 % | 0 % | +125 % |
+| 1.0 | 4.0 | +13 % | 21 % | 0 % | +56 % |
+| 1.2 | 4.8 | −2 % | 13 % | −31 % | +9 % |
+| 2.0 | 8.0 | +6 % | 10 % | 0 % | +27 % |
+| 4.0 | 16.0 | +3 % | 5 % | 0 % | +13 % |
+
+The phase mean is nearly unbiased from ~1.2 px up, but the *per-phase* flux of a sub-pixel or
+one-pixel target is wrong by tens of percent -- a drone's signal would flicker with its sub-pixel
+position. Decision: below **φ = 1** (one native pixel) the target is injected analytically in the
+fill-fraction form, ΔL = φ Σ_k w_k τ_k(R, θ) [L_t − L_beyond,k(R, θ)], with the excess power
+Ω_eff(F) τ_opt A_d ΔL (the aperture factor imported from `irsim.optics.aperture`; F/1 vs F/2 gives
+3.4, not 4.0). L_beyond,k = (L_sky,k − L_path,k(R))/τ_k(R) is the column emission beyond the
+target per spectral class, so the path between camera and target is counted once and a target at
+the effective beyond-radiance has zero excess at every range. The excess is splatted bilinearly at
+the sub-pixel position on the k× grid before stage 3, so the PSF and the same box downsample the
+resolved side uses spread it; the splat conserves flux to 1e-6 at every phase and the phase-mean
+of the rasterised side matches the injected flux within 1 % at the handoff. Above 1 px the
+rasteriser is used as is; the table says a k of 4 leaves ±10 % per-phase flicker on 2 px targets,
+so scenes that care about 1–3 px targets should render at k = 8 (M10.x).
 
 ## Consequences
 

@@ -9,9 +9,12 @@ docs/physics-model.md §13.4, §13.6, §16.4
 
 from irsim.pipeline.core import PipelineConfig, PipelineState, Stage
 from irsim.pipeline.frame import Outputs, run_frame
+from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance_stage
 
 __all__ = [
+    "PointTarget",
+    "inject_point_targets",
     "PipelineConfig",
     "PipelineState",
     "Stage",

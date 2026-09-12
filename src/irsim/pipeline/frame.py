@@ -20,6 +20,7 @@ docs/physics-model.md §13.4, §12.2 outputs, §16.4 step 3
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,6 +35,7 @@ from irsim.optics.stage import apply_optics, invert_optics
 from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer, apply_layered_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.environment import environment_radiance
+from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance
 
 __all__ = ["Outputs", "run_frame"]
@@ -74,7 +76,12 @@ def _scene_radiance_from_signal(
     return invert_optics(phi_q, config.sensor.sensor, lb_housing_cal)
 
 
-def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> Outputs:
+def run_frame(
+    planes: Planes,
+    config: PipelineConfig,
+    state: PipelineState,
+    point_targets: Sequence[PointTarget] = (),
+) -> Outputs:
     """One frame through stages 1-6 (stage 2 is the identity without an Atmosphere).
     Advances ``state.frame_index``."""
     sensor = config.sensor.sensor
@@ -125,6 +132,19 @@ def run_frame(planes: Planes, config: PipelineConfig, state: PipelineState) -> O
             l_air,
             sky_mask=planes.get("sky_mask"),
             tau_override=config.tau_override,
+        )
+    # stage 2b: analytic point targets below one native pixel (MS.6), before the PSF and box
+    if point_targets:
+        radiance_ss = inject_point_targets(
+            radiance_ss,
+            point_targets,
+            sensor,
+            config.atmosphere,
+            sensor.band.band_id,
+            state.t_s,
+            lut,
+            q,
+            k,
         )
     # stage 3
     lb_housing_now = float(lut.lookup(state.housing_temp_k, q)[()])

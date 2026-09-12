@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.pipeline.point_target` (MS.6): `PointTarget`, `fill_fraction`, `excess_radiance` (per-class
+  τ_k(R)[L_t − L_beyond,k] with the layered atmosphere; grey and no-atmosphere forms), `excess_power` via
+  the single aperture factor, bilinear `splat`, `run_frame(..., point_targets=)`;
+  `LayeredAtmosphere.class_transmittances / sky_beyond(_per_class)` and `ExponentialSum.path_radiance_per_class`.
+  ADR 0071 records the measured rasteriser flux error vs size behind the 1 px handoff.
 - Stage 1 reflected environment term (M7.13): `band_radiance(..., l_env=)`, `irsim.pipeline.environment`
   (`sky_view_factor = occlusion·(1+n·up)/2`, `environment_radiance` from the SkyModel tilt LUT and the
   ground mode), `PipelineConfig.sky`; scene schema v2 adds `environment_preset` and the Scene builds the

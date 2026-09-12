@@ -228,7 +228,7 @@ class ExponentialSum:
         """d→0 slope Σ w_k (γ_k,0 + γ_aer): what a very short horizontal path sees."""
         return float(np.dot(self.weights, self.gamma_0 + self.gamma_aerosol))
 
-    def path_radiance(
+    def path_radiance_per_class(
         self,
         distance_m: float,
         elevation_rad: float,
@@ -236,8 +236,8 @@ class ExponentialSum:
         n_steps: int = 4000,
         u_max: float = 40.0,
         s_max_m: float = 300e3,
-    ) -> float:
-        """Σ_k w_k ∫₀^d γ_k(h) τ_k(s) L_B(T(h)) ds  (d = ∞ → the column emission).
+    ) -> NDArray[np.float64]:
+        """Per class ∫₀^d γ_k(h) τ_k(s) L_B(T(h)) ds (unweighted), shape (n_terms,).
 
         Each class is integrated in its own optical-depth coordinate u = od_k(s):
         ∫ L_B(T(h(s(u)))) e^{−u} du on a uniform u grid with s(u) from the analytic, monotone
@@ -247,19 +247,19 @@ class ExponentialSum:
         """
         st = math.sin(elevation_rad)
         lb0 = float(lb_of_height(np.zeros(1))[0])
+        out = np.zeros(self.n_terms)
         if st <= 0.0:
             if math.isinf(distance_m):
-                return lb0 * float(self.weights[self.gamma_0 + self.gamma_aerosol > 0.0].sum())
+                out[self.gamma_0 + self.gamma_aerosol > 0.0] = lb0
+                return out
             tau_k = np.exp(-self.optical_depths(distance_m, 0.0))
-            return float(np.dot(self.weights, 1.0 - tau_k) * lb0)
+            return np.asarray((1.0 - tau_k) * lb0, dtype=np.float64)
         upper = s_max_m if math.isinf(distance_m) else min(float(distance_m), s_max_m)
         if upper <= 0.0:
-            return 0.0
-        # dense monotone s grid (log-spaced from 1 mm) to invert od_k(s)
+            return out
         s_dense = np.concatenate([[0.0], np.logspace(-3, math.log10(upper), 20000)])
         od_dense = self.optical_depths(s_dense, elevation_rad)  # (K, n)
         n = n_steps if n_steps % 2 == 0 else n_steps + 1
-        total = 0.0
         for k in range(self.n_terms):
             od_end = float(od_dense[k, -1])
             if od_end <= 0.0:
@@ -268,9 +268,23 @@ class ExponentialSum:
             u = np.linspace(0.0, u_top, n + 1)
             s_of_u = np.interp(u, od_dense[k], s_dense)
             lb = lb_of_height(s_of_u * st)
-            integral = float(simpson(lb * np.exp(-u), float(u[1] - u[0])))
-            total += float(self.weights[k]) * integral
-        return total
+            out[k] = float(simpson(lb * np.exp(-u), float(u[1] - u[0])))
+        return out
+
+    def path_radiance(
+        self,
+        distance_m: float,
+        elevation_rad: float,
+        lb_of_height: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+        n_steps: int = 4000,
+        u_max: float = 40.0,
+        s_max_m: float = 300e3,
+    ) -> float:
+        """Σ_k w_k ∫₀^d γ_k(h) τ_k(s) L_B(T(h)) ds  (d = ∞ → the column emission)."""
+        per_class = self.path_radiance_per_class(
+            distance_m, elevation_rad, lb_of_height, n_steps, u_max, s_max_m
+        )
+        return float(np.dot(self.weights, per_class))
 
 
 def fit_exponential_sum(
@@ -476,6 +490,49 @@ class LayeredAtmosphere:
     ) -> float:
         es = self.exponential_sum(band, t_s)
         return es.path_radiance(distance_m, elevation_rad, self._lb_of_height(band, t_s, quantity))
+
+    def class_transmittances(
+        self, band: str, t_s: float, distance_m: float, elevation_rad: float = 0.0
+    ) -> NDArray[np.float64]:
+        """τ_k(d, θ) per spectral class (the band τ is Σ w_k τ_k)."""
+        es = self.exponential_sum(band, t_s)
+        return np.asarray(
+            np.exp(-es.optical_depths(float(distance_m), elevation_rad)), dtype=np.float64
+        )
+
+    def sky_beyond_per_class(
+        self,
+        band: str,
+        t_s: float,
+        distance_m: float,
+        elevation_rad: float,
+        quantity: Quantity = "lb",
+    ) -> NDArray[np.float64]:
+        """Per class, the column emission beyond range R along the ray as seen *from R*:
+        L_beyond,k = (L_sky,k − L_path,k(R)) / τ_k(R). A target at R occults exactly this."""
+        es = self.exponential_sum(band, t_s)
+        lb = self._lb_of_height(band, t_s, quantity)
+        sky_k = es.path_radiance_per_class(math.inf, elevation_rad, lb)
+        path_k = es.path_radiance_per_class(float(distance_m), elevation_rad, lb)
+        tau_k = self.class_transmittances(band, t_s, distance_m, elevation_rad)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            beyond = np.where(tau_k > 1e-300, (sky_k - path_k) / tau_k, 0.0)
+        return np.asarray(np.maximum(beyond, 0.0), dtype=np.float64)
+
+    def sky_beyond(
+        self,
+        band: str,
+        t_s: float,
+        distance_m: float,
+        elevation_rad: float,
+        quantity: Quantity = "lb",
+    ) -> float:
+        """The τ_k-weighted effective radiance beyond R (a target at it has zero excess)."""
+        es = self.exponential_sum(band, t_s)
+        tau_k = self.class_transmittances(band, t_s, distance_m, elevation_rad)
+        beyond = self.sky_beyond_per_class(band, t_s, distance_m, elevation_rad, quantity)
+        wt = es.weights * tau_k
+        return float(np.dot(wt, beyond) / wt.sum()) if wt.sum() > 0.0 else 0.0
 
     def sky_radiance(
         self, band: str, t_s: float, elevation_rad: float, quantity: Quantity = "lb"
