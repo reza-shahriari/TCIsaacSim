@@ -1,0 +1,22 @@
+# Rubber / filled-elastomer propeller and blade tip -- also landing skids and vibration mounts.
+# Optics are the section 16.2 "Rubber (tyre)" row: a near-perfect emitter in the thermal IR and a
+# strong short-wave absorber (carbon black), so a propeller is a high-emissivity, low-inertia
+# surface that follows air temperature quickly and shows up against a cold sky.
+# Schema: irsim.config.materials. Values: literature (section 16.2) + ESTIMATED where marked.
+schema_version: 1
+material:
+  name: propeller_rubber
+  source: literature
+  reference: "docs/physics-model.md section 16.2 (Rubber (tyre) row); NIR/SWIR ESTIMATED for carbon-black-filled rubber"
+  description: "Propeller blade / skid / vibration mount; high epsilon in every band, low thermal inertia"
+  thermal:
+    density_kg_m3: 1100
+    specific_heat_j_kgk: 2000
+    conductivity_w_mk: 0.16
+    thickness_m: 0.0030
+    solar_absorptivity: 0.94
+  optical:
+    emissivity_per_band: {nir: 0.94, swir: 0.92, mwir: 0.94, lwir: 0.95}
+    roughness_per_band: {nir: 0.40, swir: 0.35, mwir: 0.22, lwir: 0.15}   # ESTIMATED, moulded finish
+    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}

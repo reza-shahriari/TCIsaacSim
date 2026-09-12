@@ -1,0 +1,24 @@
+# Painted aircraft-aluminium skin -- fixed-wing fuselage and wing panels. Optically this is the
+# topcoat (epsilon 0.90-0.92 in LWIR, like any polyurethane paint) sitting on a 205 W/m/K substrate,
+# which is the point of the material: it is radiatively a paint but thermally a heat spreader, so it
+# tracks air temperature far more tightly than the composite shell does. Contrast with
+# bare_aluminium (epsilon 0.09), which is the same metal with the paint removed and behaves as a
+# mirror -- the two together are the pair that catches an emissivity/temperature confusion.
+# Schema: irsim.config.materials. Values: literature (section 16.2 rows) + ESTIMATED where marked.
+schema_version: 1
+material:
+  name: aircraft_aluminium_painted
+  source: literature
+  reference: "docs/physics-model.md section 16.2 (paint row for optics, bare aluminium row for thermal); NIR/SWIR ESTIMATED"
+  description: "Painted fixed-wing skin; radiatively a topcoat, thermally aluminium"
+  thermal:
+    density_kg_m3: 2700
+    specific_heat_j_kgk: 900
+    conductivity_w_mk: 205
+    thickness_m: 0.0016
+    solar_absorptivity: 0.30   # white/grey livery, ESTIMATED
+  optical:
+    emissivity_per_band: {nir: 0.25, swir: 0.35, mwir: 0.88, lwir: 0.90}
+    roughness_per_band: {nir: 0.25, swir: 0.20, mwir: 0.12, lwir: 0.08}   # ESTIMATED, smooth topcoat
+    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}

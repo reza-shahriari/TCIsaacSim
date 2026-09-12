@@ -3,6 +3,14 @@
 docs/physics-model.md §15
 """
 
+from irsim.validation.aerial import (
+    AerialTarget,
+    apparent_target_radiance,
+    background_radiance,
+    target_contrast,
+    target_leaving_radiance,
+    zero_contrast_elevation,
+)
 from irsim.validation.bench import SitfResult, measured_netd_k, sitf
 from irsim.validation.mtf import SlantEdgeResult, slant_edge_mtf
 from irsim.validation.noise import (
@@ -16,6 +24,12 @@ from irsim.validation.noise import (
 )
 
 __all__ = [
+    "AerialTarget",
+    "apparent_target_radiance",
+    "background_radiance",
+    "target_contrast",
+    "target_leaving_radiance",
+    "zero_contrast_elevation",
     "SitfResult",
     "SlantEdgeResult",
     "slant_edge_mtf",

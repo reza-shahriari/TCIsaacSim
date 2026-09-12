@@ -1,0 +1,23 @@
+# Bare / clear-coated carbon-fibre laminate -- arms, booms and frame plates of a racing or
+# industrial multirotor, and control surfaces on larger airframes. Near-black in every band: the
+# epoxy matrix dominates the thermal IR (epsilon close to a dielectric) and the fibre makes it a
+# strong short-wave absorber, hence solar_absorptivity 0.90 -- carbon arms run hot in sunlight,
+# which is the phenomenology this material exists to produce.
+# Schema: irsim.config.materials. Values: literature + ESTIMATED where marked.
+schema_version: 1
+material:
+  name: carbon_fibre
+  source: literature
+  reference: "Epoxy-matrix laminate; emissivity of the epoxy surface layer. Thermal from CFRP laminate data; through-thickness conductivity"
+  description: "CFRP arm / boom / frame plate; near-black in NIR-SWIR, dielectric-like in MWIR-LWIR"
+  thermal:
+    density_kg_m3: 1600
+    specific_heat_j_kgk: 1050
+    conductivity_w_mk: 0.80    # through-thickness (in-plane is ~10x higher and is not what a slab solver uses)
+    thickness_m: 0.0015
+    solar_absorptivity: 0.90
+  optical:
+    emissivity_per_band: {nir: 0.90, swir: 0.88, mwir: 0.88, lwir: 0.90}
+    roughness_per_band: {nir: 0.20, swir: 0.18, mwir: 0.10, lwir: 0.08}   # ESTIMATED, weave under clear coat
+    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}

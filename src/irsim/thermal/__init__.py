@@ -3,6 +3,19 @@
 docs/physics-model.md §6
 """
 
+from irsim.thermal.aerial import (
+    AERIAL_HEAT_SOURCES,
+    BATTERY,
+    ESC,
+    MOTOR,
+    HeatSource,
+    airframe_solver,
+    heat_source_solver,
+    node_temperature,
+    prescribed_from_schedule,
+    refine_nodes,
+    throttle_profile,
+)
 from irsim.thermal.convection import (
     DEFAULT_CONVECTION,
     ConvectionParams,
@@ -37,6 +50,17 @@ from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, 
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
 
 __all__ = [
+    "AERIAL_HEAT_SOURCES",
+    "BATTERY",
+    "ESC",
+    "MOTOR",
+    "HeatSource",
+    "airframe_solver",
+    "heat_source_solver",
+    "node_temperature",
+    "prescribed_from_schedule",
+    "refine_nodes",
+    "throttle_profile",
     "SOLVER_TYPES",
     "NewtonCoolingSolver",
     "PrescribedSolver",

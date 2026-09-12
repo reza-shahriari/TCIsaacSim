@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Four-material aerial library and target thermal signature (MS.7, ADR 0072): `configs/materials/`
+  gains `painted_composite`, `carbon_fibre`, `aircraft_aluminium_painted` and `propeller_rubber`
+  (`source: literature`, scalar `emissivity_per_band`, opaque, ρ derived -- CLAUDE.md #4 closure
+  verified in all four bands before and after the M7.18 float32 packing).
+  `irsim.thermal.aerial`: `HeatSource` with ΔT = ΔT_max u^n and the MOTOR/ESC/BATTERY presets
+  (45/30/15 K at full throttle, n = 2 ohmic, magnitudes ESTIMATED), `heat_source_solver` and
+  `airframe_solver` returning M6.6 `PrescribedSolver`s over the scene's shared `WeatherSeries`,
+  and `refine_nodes` bisecting the schedule grid until linear interpolation holds the analytic law
+  to 1 mK. `irsim.validation.aerial`: `AerialTarget`, `target_contrast` and
+  `zero_contrast_elevation` -- for T_air = 300 K, ε = 0.9, V_s = 1, R = 1 km under
+  `us_standard_clear` the contrast is +64 K at zenith and crosses zero at 1.26° (1.97° at ε = 0.8,
+  0.78° at ε = 0.95, and **never at ε = 1**, which is what shows the inversion is the reflected
+  cold sky rather than a path-radiance artefact).
 - `irsim.pipeline.point_target` (MS.6): `PointTarget`, `fill_fraction`, `excess_radiance` (per-class
   τ_k(R)[L_t − L_beyond,k] with the layered atmosphere; grey and no-atmosphere forms), `excess_power` via
   the single aperture factor, bilinear `splat`, `run_frame(..., point_targets=)`;
