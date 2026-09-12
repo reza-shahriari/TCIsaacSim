@@ -55,6 +55,7 @@ __all__ = [
     "CLUSTER_RADIUS_PX",
     "generate_map",
     "apply_defects",
+    "active_defect_mask",
 ]
 
 # ADR 0055: offspring land within two pixels of their parent. Big enough to make 2x2 and small
@@ -256,6 +257,18 @@ def advance_state(
         was_bad = state.bad.reshape(-1)[index]
         bad.reshape(-1)[index] = np.where(was_bad, u >= p_leave_bad, u < p_enter_bad)
     return DefectState(bad=bad)
+
+
+def active_defect_mask(bad_map: BadPixelMap, state: DefectState) -> NDArray[np.bool_]:
+    """The pixels that are actually defective *this frame* — the mask M9.5b replaces.
+
+    Dead and hot pixels are always in it; a blinking or flickering one only while its state is
+    bad. This is the ideal mask, i.e. what a camera would replace if its map were perfect. A real
+    core's factory map is static, and what it fails to contain is exactly why intermittent defects
+    reach the image; that distinction belongs with the FFC controller in M9.7.
+    """
+    static = bad_map.mask_of(DefectKind.DEAD) | bad_map.mask_of(DefectKind.HOT)
+    return np.asarray(static | (bad_map.stateful_mask & state.bad))
 
 
 def apply_defects(

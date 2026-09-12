@@ -103,3 +103,39 @@ ME.3 measures a real bad-pixel population and either the cluster-size distributi
 occupancy and dwell fall outside what this process can produce; or a camera is modelled whose
 factory map is applied before the data leaves the core, in which case the *residual* (undetected,
 mostly flickering) population is what should be simulated rather than the full one.
+
+## Addendum (M9.5b): the replacement stencil
+
+The replacement is the **mean of the valid 4-neighbours, iterated until clusters fill**
+(`irsim.isp.replace_bad_pixels`). Three properties made it the choice over copy-one-neighbour and
+over an 8-neighbour mean, and all three are asserted:
+
+- **Exact on a linear field, for an isolated defect.** (left + right)/2 is the centre value, and so
+  is (up + down)/2, so replacement introduces no radiometric bias on smooth scene content — which
+  is most of a thermal image. *Inside a cluster it is not exact*: a pixel in a 2×2 sees only its
+  two outer neighbours, never an opposing pair, so the mean is pulled toward the outside of the
+  cluster. That bias is real, is kept, and is part of why a cluster is visible where a single
+  defect is not — the concrete reason the cluster process above is not cosmetic.
+- **σ²/4 on white noise.** Copy-one-neighbour leaves σ² and an 8-neighbour mean gives σ²/8. The
+  σ²/4 signature is something ME.3's ISP-behaviour extractor can look for in real footage, so
+  choosing the stencil fixes a testable prediction rather than an arbitrary smoothing.
+- **A suppressed local Laplacian**, well under half that of untouched pixels. This *is* §10.4's
+  "detectable smoothed footprint" — the artefact a perception stack actually sees, and the thing a
+  simulator that injects defects without replacing them, or that injects none at all, both fail to
+  present.
+
+**Passes are synchronous.** Each pass fills every masked pixel with at least one valid neighbour,
+reading only values that were valid when the pass began — never values written during it. A 3×3's
+centre therefore needs two passes and an isolated defect one. Without this, a 2×2 would fill
+differently row-major than column-major and goldens would not reproduce; the test transposes the
+problem and requires the answer to transpose with it.
+
+**A partial fill is an error, not an output.** If a masked region is still unfilled after
+`MAX_PASSES`, or has no valid neighbour on any side, the call raises. An unreplaced defect silently
+carrying a stuck floor or ceiling value into the NUC is worse than a loud failure, and at
+`CLUSTER_RADIUS_PX = 2` no region that large should exist.
+
+The mask is **per frame**: dead and hot always, blinking and flickering only while bad
+(`active_defect_mask`). This is the *ideal* mask — what a camera would replace if its map were
+perfect. A real core's factory map is static, and what it fails to contain is exactly why
+intermittent defects reach the image; that distinction belongs with the FFC controller in M9.7.

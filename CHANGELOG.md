@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Bad-pixel replacement (roadmap M9.5b, ADR 0055 addendum): `irsim.isp.replace_bad_pixels` is the
+  mean of the valid 4-neighbours, iterated until clusters fill. §10.4 asks for the defect *and* the
+  replacement because "the replacement artefact is what a detector actually sees", and the stencil
+  was chosen for three testable properties rather than convenience: it is exact on a linear field
+  for an isolated defect (< 1 mK, so smooth scene content takes no radiometric bias); it divides
+  white-noise variance by four, where copy-one-neighbour leaves σ² and an 8-neighbour mean gives
+  σ²/8 -- both measured alongside it so the assertion is shown to exclude them; and it suppresses
+  the local Laplacian to under half the untouched value, which *is* §10.4's detectable smoothed
+  footprint. Inside a cluster it is deliberately **not** exact: a pixel in a 2×2 never sees an
+  opposing pair of neighbours, so the mean is pulled outward -- real, kept, and the concrete reason
+  M9.5a's clustering is not cosmetic. Passes are synchronous (a pass reads only what was valid when
+  it began), so a 3×3 centre needs two passes, an isolated defect one, and transposing the problem
+  transposes the answer -- without which a 2×2 would fill differently row-major than column-major
+  and goldens would not reproduce. A partial fill raises: an unreplaced stuck value entering the
+  NUC silently is worse than a loud failure. `irsim.noise.active_defect_mask` builds the per-frame
+  mask, so an intermittent pixel is replaced only while it is actually bad.
 - Bad-pixel map and defect injection (roadmap M9.5a, ADR 0055): `irsim.noise.generate_map` draws
   one sensor's defects by a Neyman--Scott cluster process -- parents uniform, `1 + Poisson(λ)`
   offspring uniform in a 2 px disc -- because §10.4's "clustered slightly, not uniform" is the part
