@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Aerial thermal bridge (M10.18, ADR 0060): `irsim_isaac.pipeline.aerial_bridge` couples the M6.6
+  target solvers to the renderer through a float32 table indexed by instance id -- 317.25 K reads
+  back within 10 mK and a 50 mK pair stays resolved, where the rejected fp16 emissive path would
+  collapse it. Thermal tick 1 Hz with per-frame interpolation (error bound computed, ~3 uK for
+  tau = 900 s); background pixels take MS.2's `T_sky(theta)` per ray, and `T_ground` below the
+  horizon where the sky model is undefined and extrapolating it would invert silhouette contrast.
 - Warp stage 1 (roadmap M10.4, ADR 0061): `irsim_isaac.pipeline.warp_stages` runs band radiance on the
   device as an op-for-op twin of `irsim.pipeline.radiance` (float32 LUT index/clamp/interp, ε = 1 under the
   sky mask, host guards for every CPU refusal), with the LUT and ε₀ table uploaded once and cached by
