@@ -187,7 +187,7 @@ def _base_nodes(weather: WeatherSeries, times_s: object) -> FloatArray:
     if t.size < 2:
         raise ValueError("need at least two distinct breakpoint times")
     inside = weather.time_s[(weather.time_s > t[0]) & (weather.time_s < t[-1])]
-    return np.unique(np.concatenate([t, inside]))
+    return np.asarray(np.unique(np.concatenate([t, inside])), dtype=np.float64)
 
 
 def heat_source_solver(

@@ -26,6 +26,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from irsim.radiometry.constants import T_ENCODE_REF_K, T_ENCODE_SPAN_K
 from irsim.radiometry.encoding import decode_temperature, encode_temperature
@@ -198,7 +199,7 @@ def probe_environment() -> dict[str, Any]:
 # ----------------------------------------------------------------------------------------------
 
 
-def ramp_temperatures(n_ramp: int = 57) -> np.ndarray:
+def ramp_temperatures(n_ramp: int = 57) -> NDArray[Any]:
     """The authored temperature set: a 200–1000 K ramp plus the §13.3 spot checks.
 
     300.000 / 300.050 / 300.100 K resolve a 50 mK NETD; 600 K is c = 0.5 exactly (linearity check);
@@ -236,7 +237,7 @@ class RampScene:
         return math.sqrt(x * x + y * y + self.distance_m * self.distance_m)
 
 
-def _pair_encode(c: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _pair_encode(c: NDArray[Any]) -> tuple[NDArray[Any], NDArray[Any]]:
     """Probe-local coarse/fine split for testing an fp16 channel pair (§13.3 fallback).
 
     coarse = float16(c) (exactly representable), fine = 0.5 + 1024·(c − coarse). Any fp16 channel
@@ -248,7 +249,7 @@ def _pair_encode(c: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return coarse, fine
 
 
-def _pair_decode(coarse: np.ndarray, fine: np.ndarray) -> np.ndarray:
+def _pair_decode(coarse: NDArray[Any], fine: NDArray[Any]) -> NDArray[Any]:
     return coarse + (fine - 0.5) / 1024.0
 
 
@@ -344,7 +345,7 @@ def _author_omnipbr_commands(
 
 
 def build_ramp_scene(
-    temperatures_k: np.ndarray | None = None,
+    temperatures_k: NDArray[Any] | None = None,
     *,
     grid: int = 9,
     distance_m: float = 2.0,
@@ -459,7 +460,7 @@ def build_ramp_scene(
 # ----------------------------------------------------------------------------------------------
 
 
-def _as_array(data: Any) -> np.ndarray | None:
+def _as_array(data: Any) -> NDArray[Any] | None:
     if data is None:
         return None
     if isinstance(data, dict):
@@ -473,8 +474,8 @@ def _as_array(data: Any) -> np.ndarray | None:
 
 
 def _sample_points(
-    arr: np.ndarray, scene: RampScene, centres: list[tuple[float, float]], window: int = 5
-) -> np.ndarray:
+    arr: NDArray[Any], scene: RampScene, centres: list[tuple[float, float]], window: int = 5
+) -> NDArray[Any]:
     """Median over a small window at each projected centre; shape (n, channels)."""
     h, w = arr.shape[0], arr.shape[1]
     ch = 1 if arr.ndim == 2 else arr.shape[2]
@@ -489,7 +490,7 @@ def _sample_points(
     return out
 
 
-def _decode_analysis(vals: np.ndarray, scene: RampScene) -> dict[str, Any]:
+def _decode_analysis(vals: NDArray[Any], scene: RampScene) -> dict[str, Any]:
     """Temperature-transport metrics for an AOV whose channel 0 should carry c = encode(T)."""
     temps = np.asarray(scene.quad_temperatures)
     in_range = temps <= 1000.0
@@ -532,7 +533,7 @@ def _decode_analysis(vals: np.ndarray, scene: RampScene) -> dict[str, Any]:
     return result
 
 
-def _distance_analysis(vals: np.ndarray, scene: RampScene) -> dict[str, Any]:
+def _distance_analysis(vals: NDArray[Any], scene: RampScene) -> dict[str, Any]:
     d = vals[:, 0]
     ok = np.isfinite(d)
     if not ok.any():
@@ -548,7 +549,7 @@ def _distance_analysis(vals: np.ndarray, scene: RampScene) -> dict[str, Any]:
     }
 
 
-def _albedo_analysis(vals: np.ndarray, scene: RampScene, dtype: str) -> dict[str, Any]:
+def _albedo_analysis(vals: NDArray[Any], scene: RampScene, dtype: str) -> dict[str, Any]:
     ids = np.asarray(scene.diffuse_ids, dtype=np.float64)
     r = vals[:, 0]
     ok = np.isfinite(r)

@@ -86,7 +86,9 @@ def apply_psf(image_ss: object, kernel: FloatArray) -> NDArray[np.floating]:
     # the linear one inside the crop because the padding is at least the kernel radius)
     kern = np.zeros((h, w), dtype=np.float64)
     kern[: k.shape[0], : k.shape[1]] = k
-    kern = np.roll(kern, (-ry, -rx), axis=(0, 1))
+    # np.roll is shape-preserving, but numpy 2.x types it as widening the shape parameter
+    # from (int, int) to (int, ...), so the 2-D type is restated rather than lost.
+    kern = np.asarray(np.roll(kern, (-ry, -rx), axis=(0, 1)), dtype=np.float64).reshape(h, w)
     fk = np.fft.rfft2(kern)
     out = np.fft.irfft2(np.fft.rfft2(padded) * fk, s=(h, w))
     out = out[ry : ry + x.shape[0], rx : rx + x.shape[1]]

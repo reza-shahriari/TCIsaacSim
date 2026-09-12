@@ -150,12 +150,14 @@ def build_aerial_gbuffer(
             f"no sky in frame: boresight {boresight_elevation_deg}° with a "
             f"{sensor.hfov_deg:.1f}° horizontal field never rises above the horizon"
         )
-    shape = elevation.shape
+    shape = (int(elevation.shape[0]), int(elevation.shape[1]))  # 2-D by construction
 
     # -- sky (cloud structure optional) -------------------------------------------------
-    cloud_mask = np.zeros(shape, dtype=bool)
+    cloud_mask: NDArray[np.bool_] = np.zeros(shape, dtype=bool)
     if cloud_seed is not None:
-        cloud_mask = sky.cloud_field(t_s, shape, cloud_seed).coverage & sky_mask
+        cloud_mask = np.asarray(
+            sky.cloud_field(t_s, shape, cloud_seed).coverage & sky_mask, dtype=bool
+        )
     el_for_sky = np.clip(elevation, 0.0, math.pi / 2)
     t_sky = np.asarray(sky.apparent_temperature_field(t_s, el_for_sky, cloud_mask))
 

@@ -29,6 +29,7 @@ import time
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 __all__ = ["run_spg_experiments", "save"]
 
@@ -317,7 +318,7 @@ def _write(path: str, text: str) -> str:
     return path
 
 
-def _as_np(data: Any) -> np.ndarray | None:
+def _as_np(data: Any) -> NDArray[Any] | None:
     if data is None:
         return None
     if isinstance(data, dict):
@@ -330,7 +331,7 @@ def _as_np(data: Any) -> np.ndarray | None:
         return None
 
 
-def _plane(arr: np.ndarray) -> np.ndarray:
+def _plane(arr: NDArray[Any]) -> NDArray[Any]:
     """First channel of an (H, W[, C]) array as float32."""
     a = arr.astype(np.float32)
     return a.reshape(a.shape[0], a.shape[1], -1)[..., 0]

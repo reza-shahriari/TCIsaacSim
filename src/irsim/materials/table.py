@@ -139,7 +139,11 @@ class MaterialTable:
         a = np.full(n, ANGULAR_A_PLACEHOLDER, dtype=np.float32)
         p_ = np.full(n, ANGULAR_P_PLACEHOLDER, dtype=np.float32)
         rough = np.full(n, np.nan, dtype=np.float32)
-        thermal = {key: np.full(n, np.nan, dtype=np.float32) for key in THERMAL_COLUMNS}
+        # ``np.full(n, ...)`` is typed with a 1-element shape tuple under numpy 2.x while the
+        # field is declared shape-agnostic; the annotation restates what the code already does.
+        thermal: dict[str, NDArray[np.float32]] = {
+            key: np.full(n, np.nan, dtype=np.float32) for key in THERMAL_COLUMNS
+        }
         for i, name in enumerate(names, start=1):
             m = library[name]
             props = m.band_properties(band, response, form)
@@ -301,8 +305,11 @@ class MaterialTable:
             )
         if np.any(ids < 0) or np.any(ids >= self.emissivity.size):
             raise ValueError(f"material id outside the table (0..{self.emissivity.size - 1})")
-        eps = self.emissivity[ids]
-        if np.any(np.isnan(eps)):
-            bad = sorted(set(np.unique(ids[np.isnan(eps)]).tolist()))
+        # A distinct name from the sky-mask branch above: the two have different inferred shape
+        # types under numpy 2.x, and reusing one name makes the function's type depend on which
+        # branch mypy saw first.
+        looked_up = np.asarray(self.emissivity[ids], dtype=np.float32)
+        if np.any(np.isnan(looked_up)):
+            bad = sorted(set(np.unique(ids[np.isnan(looked_up)]).tolist()))
             raise ValueError(f"material ids {bad} have no emissivity in this table")
-        return np.asarray(eps, dtype=np.float32)
+        return looked_up

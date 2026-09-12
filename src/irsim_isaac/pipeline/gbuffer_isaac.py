@@ -345,9 +345,10 @@ def geometry_planes(
 
     motion = None
     if aovs.motion is not None:
-        motion = motion_px_per_frame(
-            aovs.motion, convention=motion_convention, shape=distance.shape
-        )
+        # `.shape` is `tuple[int, ...]`; the plane is 2-D by construction and the callee wants
+        # that stated, so it is narrowed here rather than widened there.
+        plane_shape = (int(distance.shape[0]), int(distance.shape[1]))
+        motion = motion_px_per_frame(aovs.motion, convention=motion_convention, shape=plane_shape)
         motion = np.where(sky[..., None], np.float32(0.0), motion).astype(np.float32)
 
     return GeometryPlanes(

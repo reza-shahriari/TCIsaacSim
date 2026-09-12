@@ -572,7 +572,9 @@ class LayeredAtmosphere:
         if math.sin(elevation_rad) <= 0.0:
             lb_air = self.air_radiance(band, t_s, quantity)
             tau_k = np.exp(-es.optical_depths(d, 0.0))
-            path = np.tensordot(es.weights, 1.0 - tau_k, axes=1) * lb_air
+            path = np.asarray(
+                np.tensordot(es.weights, 1.0 - tau_k, axes=1) * lb_air, dtype=np.float64
+            )
         else:
             if d.shape != ():
                 raise ValueError(

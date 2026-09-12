@@ -593,6 +593,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ruff ignores `N802` alongside `N803`/`N806` (physics notation such as `d_spectral_radiance_dT`).
 
 ### Fixed
+- `make ci` -- the plain-CPython gate that mirrors GitHub Actions -- now typechecks clean. It was
+  red for 19 mypy errors that `make check` on the Isaac Sim interpreter does not see, because the
+  two resolve different numpy versions (2.2.6 against 2.3.1) and numpy 2.x made `ndarray` generic
+  over **shape** as well as dtype. Twelve were bare `np.ndarray` annotations in the probes, now
+  `NDArray[Any]` -- the deliberate choice there, since probe code handles whatever an annotator
+  returns and pinning a dtype would assert what the probe exists to measure. The rest were
+  shape-parameter widening (`np.roll`, `np.tensordot`, fancy indexing) restated at the point it
+  happens, and two `.shape` values narrowed to the 2-tuple their callee declares.
 - `import irsim.thermal` failed outright on a clean interpreter: `irsim.thermal.weather` imported
   `irsim.atmosphere.humidity` at module scope, which runs `irsim/atmosphere/__init__` and lands back
   in the partially-initialised `weather` module. The whole suite passed only because pytest collects
