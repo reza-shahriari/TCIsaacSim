@@ -1,6 +1,6 @@
 {
   "atol": 1.0,
-  "config_hash": "65ecfc8519bdd31cb6aab26db2e4c7d206f6b5bcfbd986a049bb39aa03a85a6e",
+  "config_hash": "a06b774fee6e86829972d159dab7575deb173b47cd7e75ba1cc314cba872e020",
   "dtype": "uint8",
   "name": "boson_hot_patch_display8",
   "numpy_version": "2.3.1",

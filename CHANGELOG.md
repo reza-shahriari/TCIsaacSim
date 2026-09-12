@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Bad-pixel map and defect injection (roadmap M9.5a, ADR 0055): `irsim.noise.generate_map` draws
+  one sensor's defects by a Neyman--Scott cluster process -- parents uniform, `1 + Poisson(λ)`
+  offspring uniform in a 2 px disc -- because §10.4's "clustered slightly, not uniform" is the part
+  that matters downstream: a 4-neighbour stencil handles an isolated defect almost perfectly while
+  a 2x2 cluster defeats it, so a uniformly scattered map produces no clusters at these densities
+  and understates the artefact a perception stack actually sees. Measured at 1024² and 0.0015: 1479
+  defects against the 1573 expected (within the 10 % bar; the shortfall is colliding offspring
+  merging, left uncompensated because inflating the parent count would distort the cluster-size
+  distribution, which is the part that matters), and a mean nearest-neighbour distance 0.26× the
+  uniform-Poisson expectation -- with a genuinely uniform map run through the same estimator as a
+  control, reading 1.0. The four §10.4 classes split as: dead and hot pinned to the DN floor and
+  ceiling bit-identically forever; **flickering** still responding to the scene but offset, which
+  is why it survives a map built from one calibration frame; **blinking** stuck only while its
+  state is bad. Both stateful classes run on one two-state Markov chain parameterised by its
+  stationary occupancy and mean dwell, so both dwell times are geometric by construction --
+  verified by a Monte-Carlo-calibrated KS test (the analytic one is invalid for integer dwells and
+  reports p ≈ 1e-174 on a perfect sample), with a memoryless pixel rejected by the same estimator.
+  Injection is on the raw DN plane, matching §11.1's `raw DN → bad-pixel replace`.
 - Mean-reverting drift of the fixed-pattern components (roadmap M9.4, ADR 0054):
   `irsim.noise.FpnDrift` makes §10.3's "pattern breathing" real. The V, H and VH terms follow an
   Ornstein--Uhlenbeck process advanced by its exact update
@@ -396,6 +414,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sidecars regenerated for the new `config_hash` -- all twelve arrays bit-identical (ADR 0004).
 
 ### Changed
+- Sensor schema v7: `noise.bad_pixel_rts_occupancy`, `bad_pixel_rts_dwell_frames` and
+  `bad_pixel_rts_amplitude_dn` for the §10.4 flickering and blinking classes (M9.5a, ADR 0055).
+  All three default, so existing configs are unchanged; all three are ESTIMATED, with ME.3's
+  bad-pixel extractor the thing that should eventually set them.
 - Sensor schema v6: `housing_temp_mode: coupled` now **requires** `housing_tau_s`, mirroring the
   rule ADR 0053 set for `fpa_temp_mode: coupled`. A lumped node with no time constant cannot be
   integrated, and defaulting the lag would put a number nobody authored into the drift the whole

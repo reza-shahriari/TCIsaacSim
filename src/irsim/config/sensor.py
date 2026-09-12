@@ -53,7 +53,9 @@ __all__ = [
 # 5: fpa_temp_mode and the raw gain/offset(T_FPA) polynomials with their T_cal (M9.2, ADR 0053).
 # 6: housing_temp_mode 'coupled' now requires housing_tau_s -- a tightening, not a new field,
 # because M9.3 gave the coupled housing an integrator and it needs a time constant to be one.
-SCHEMA_VERSION = 6
+# 7: noise.bad_pixel_rts_{occupancy,dwell_frames,amplitude_dn} for the §10.4 flickering and
+# blinking classes (M9.5a, ADR 0055). All three default, so existing configs are unchanged.
+SCHEMA_VERSION = 7
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -357,6 +359,13 @@ class NoiseSpec(_Frozen):
     bad_pixel_cluster_lambda: float = Field(ge=0)
     netd_ref_f_number: float | None = Field(default=None, gt=0)
     bad_pixel_type_mix: BadPixelTypeMix = Field(default_factory=BadPixelTypeMix)
+    # §10.4 random telegraph parameters for the flickering and blinking classes (M9.5a, ADR 0055).
+    # The two-state chain is pinned by its stationary occupancy and its mean dwell in the bad
+    # state; both dwell times are then geometric, which is what makes RTS RTS rather than a noisy
+    # pixel. Occupancy is strictly below 1 because a pixel that never recovers is a dead one.
+    bad_pixel_rts_occupancy: float = Field(default=0.3, gt=0, lt=1)
+    bad_pixel_rts_dwell_frames: float = Field(default=8.0, gt=1)
+    bad_pixel_rts_amplitude_dn: float = Field(default=400.0, ge=0)
 
     def sigma_ratios(self) -> tuple[float, ...]:
         return self.ratios_3d.as_vector()
