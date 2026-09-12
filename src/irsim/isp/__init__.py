@@ -4,6 +4,7 @@ from irsim.isp.agc import agc_linear, agc_plateau
 from irsim.isp.bad_pixel import MAX_PASSES, replace_bad_pixels
 from irsim.isp.dde import dde
 from irsim.isp.display import DisplayOutputs, agc_none, isp_config_hash, run_display_branch
+from irsim.isp.ffc import FfcController, FfcEvent, Resettable
 from irsim.isp.nuc import TwoPointNuc
 from irsim.isp.palette import PALETTES, palette_table, quantise_display, to_display8
 from irsim.isp.radiometric import (
@@ -14,6 +15,9 @@ from irsim.isp.radiometric import (
 )
 
 __all__ = [
+    "FfcController",
+    "FfcEvent",
+    "Resettable",
     "dn_per_kelvin",
     "replace_bad_pixels",
     "MAX_PASSES",

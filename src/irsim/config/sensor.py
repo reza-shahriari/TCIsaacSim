@@ -55,7 +55,9 @@ __all__ = [
 # because M9.3 gave the coupled housing an integrator and it needs a time constant to be one.
 # 7: noise.bad_pixel_rts_{occupancy,dwell_frames,amplitude_dn} for the §10.4 flickering and
 # blinking classes (M9.5a, ADR 0055). All three default, so existing configs are unchanged.
-SCHEMA_VERSION = 7
+# 8: nuc.shutterless_tau_s, the scene-based-correction time constant that bounds a shutterless
+# core's residual (M9.7, ADR 0057). Defaults, and is unused outside `mode: shutterless`.
+SCHEMA_VERSION = 8
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -382,6 +384,11 @@ class NucSpec(_Frozen):
     ffc_freeze_ms: float = Field(ge=0)
     residual_gain_ppm_per_k: float = Field(ge=0)
     residual_offset_mk_per_k: float = Field(ge=0)
+    # Scene-based-correction time constant for `mode: shutterless` (M9.7, ADR 0057). A shutterless
+    # core estimates the pattern from scene motion [R32, R33], so its residual settles where the
+    # estimator's convergence balances the drift rather than growing without bound: a first-order
+    # lag of this time constant. Unused in the other two modes.
+    shutterless_tau_s: float = Field(default=120.0, gt=0)
 
 
 class IspSpec(_Frozen):

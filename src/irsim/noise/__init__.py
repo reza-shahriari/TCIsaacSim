@@ -13,7 +13,13 @@ from irsim.noise.defects import (
     apply_defects,
     generate_map,
 )
-from irsim.noise.drift import DRIFTING_COMPONENTS, FpnDrift, drift_rng, ou_step
+from irsim.noise.drift import (
+    DRIFTING_COMPONENTS,
+    DriftingPattern,
+    FpnDrift,
+    drift_rng,
+    ou_step,
+)
 from irsim.noise.nuc_residual import RESIDUAL_REFERENCE_K, NucResidual
 from irsim.noise.seeding import (
     NoiseStream,
@@ -41,6 +47,7 @@ __all__ = [
     "RESIDUAL_REFERENCE_K",
     "DRIFTING_COMPONENTS",
     "FpnDrift",
+    "DriftingPattern",
     "drift_rng",
     "ou_step",
     "NoiseStream",

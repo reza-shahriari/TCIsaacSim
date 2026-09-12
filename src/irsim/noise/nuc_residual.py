@@ -101,6 +101,15 @@ class NucResidual:
         self.ffc_index += 1
         self._redraw()
 
+    def reset(self, frame_index: int) -> None:
+        """The :class:`~irsim.isp.ffc.Resettable` hook M9.7's controller calls on a shutter event.
+
+        ``frame_index`` is accepted and ignored: the residual's epochs are counted by FFC, not by
+        frame, so that a sequence replayed at a different frame rate gets the same patterns.
+        """
+        del frame_index
+        self.ffc_reset()
+
     @property
     def gain_field(self) -> Float32Array:
         """ξ_g, the unit-variance per-pixel gain draw of the current FFC epoch."""

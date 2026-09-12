@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- FFC controller (roadmap M9.7, ADR 0057): `irsim.isp.FfcController` is §11.2's shutter event --
+  the part the spec singles out as "worth more than another decimal place of radiometry". It owns
+  the schedule, the freeze, and the ΔT_FPA that M9.6's residual is evaluated at, which is what
+  actually distinguishes the three §12.2 modes: raw offset from the last calibration for
+  `shuttered`, a scene-based-correction first-order lag for `shutterless`, and identically zero for
+  `ideal`. Objects the shutter recalibrates attach through a one-method `Resettable` protocol, so
+  the controller neither imports nor knows about them.
+- The freeze **holds the last good frame** rather than blanking. A closed shutter has the FPA
+  looking at the blade, and a camera emitting those frames would show the scene vanish and
+  reappear -- conspicuous, and not what real cores do. Holding makes the image *stale* instead:
+  for 0.7 s anything tracking through it sees motion stop dead and then jump, which is the artefact
+  a perception stack has to survive. At 60 Hz / 180 s / 700 ms the shutter closes on frame 10800
+  and exactly 42 bit-identical frames are emitted while the input keeps changing; the rounding rule
+  is round, not ceil, so 9 Hz gives 6 frames rather than 7 -- ceil would systematically lengthen
+  every freeze at low frame rates, which is where the artefact is most visible.
+- `shutterless` is bounded rather than unbounded: `dΔT_eff/dt = dΔT/dt − ΔT_eff/τ` with
+  τ = `nuc.shutterless_tau_s`, so under a constant drift the residual approaches `r·τ` instead of
+  tracking ΔT_FPA without limit. At 0.05 K/s the 540 s residual is 1.15× its 180 s value where an
+  uncorrected core would be at 3×; the test asserts the saturation *value* as well as the bound, so
+  "bounded" cannot be satisfied by merely being slow.
+- `irsim.noise.DriftingPattern`: the FFC-resettable holder for M9.4's breathing pattern. `reset`
+  redraws rather than zeroing -- a flat-field correction re-measures and re-subtracts the pattern,
+  and what is left is a fresh realisation of the same distribution, uncorrelated with the old one.
 - NUC residual (roadmap M9.6, ADR 0056): `irsim.noise.NucResidual` is what survives the two-point
   correction -- `g_ij = 1 + ppm·1e-6·ΔT_FPA·ξ_g` and `o_ij = mK/K·1e-3·ΔT_FPA·(∂DN/∂T)·ξ_o` -- with
   both fields redrawn by `ffc_reset`. At ΔT_FPA = 0 the gain is exactly 1 and the offset exactly 0,
@@ -451,6 +474,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sidecars regenerated for the new `config_hash` -- all twelve arrays bit-identical (ADR 0004).
 
 ### Changed
+- Sensor schema v8: `nuc.shutterless_tau_s`, the scene-based-correction time constant that bounds a
+  shutterless core's residual (M9.7, ADR 0057). Defaults to 120 s (ESTIMATED -- no published
+  convergence time was available) and is unused outside `mode: shutterless`, so no existing config
+  changes behaviour.
 - Sensor schema v7: `noise.bad_pixel_rts_occupancy`, `bad_pixel_rts_dwell_frames` and
   `bad_pixel_rts_amplitude_dn` for the §10.4 flickering and blinking classes (M9.5a, ADR 0055).
   All three default, so existing configs are unchanged; all three are ESTIMATED, with ME.3's

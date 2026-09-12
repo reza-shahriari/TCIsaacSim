@@ -48,7 +48,7 @@ import numpy as np
 from irsim.noise.seeding import NoiseStream, sensor_rng
 from irsim.noise.three_d import FixedPattern, Sigmas7
 
-__all__ = ["FpnDrift", "DRIFTING_COMPONENTS", "ou_step", "drift_rng"]
+__all__ = ["FpnDrift", "DriftingPattern", "DRIFTING_COMPONENTS", "ou_step", "drift_rng"]
 
 # ADR 0054: every fixed term breathes; the global offset is physical (M3.3/M9.3), not stochastic.
 DRIFTING_COMPONENTS: tuple[str, ...] = ("v", "h", "vh")
@@ -150,3 +150,44 @@ class FpnDrift:
         if self.frozen:
             return 1.0
         return math.exp(-float(lag_s) / float(self.tau_s))
+
+
+@dataclass
+class DriftingPattern:
+    """A :class:`FixedPattern` that breathes, and that a shutter event recalibrates.
+
+    :class:`FpnDrift` is the *process* and is immutable; this is the state it acts on. It exists
+    because the two things reset differently and at different times: the process never changes,
+    while the pattern is replaced wholesale whenever the FFC controller closes the shutter
+    (M9.7). Keeping them in one object would make "reset the drift" ambiguous.
+
+    ``reset`` redraws the pattern from a new epoch rather than zeroing it. A flat-field correction
+    does not remove a camera's fixed-pattern noise, it re-measures and re-subtracts it, and what
+    is left afterwards is a fresh realisation of the same distribution -- uncorrelated with what
+    came before, and the same size.
+    """
+
+    drift: FpnDrift
+    pattern: FixedPattern
+    sensor_seed: int
+    epoch: int = 0
+
+    @classmethod
+    def start(cls, drift: FpnDrift, shape: tuple[int, int], sensor_seed: int) -> DriftingPattern:
+        return cls(
+            drift=drift,
+            pattern=FixedPattern.generate(shape, drift.sigmas, sensor_seed),
+            sensor_seed=sensor_seed,
+        )
+
+    def advance(self, dt_s: float, rng: np.random.Generator) -> FixedPattern:
+        self.pattern = self.drift.advance(self.pattern, dt_s, rng)
+        return self.pattern
+
+    def reset(self, frame_index: int) -> None:
+        """Re-measure and re-subtract: a new realisation, uncorrelated with the old one."""
+        del frame_index  # epochs are counted by FFC, not by frame (see NucResidual.reset)
+        self.epoch += 1
+        # A distinct seed per epoch, derived so that it cannot collide with another sensor's.
+        seed = (int(self.sensor_seed) * 1_000_003 + self.epoch) % (2**63 - 1)
+        self.pattern = FixedPattern.generate(self.pattern.shape, self.drift.sigmas, seed)
