@@ -234,6 +234,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ADR 0003: sky targets first, validated against public anti-UAV thermal data (no camera); adds the
   evaluation-harness (ME) and sky/clouds/MTF/point-target (MS) milestones; revised after a four-critic
   adversarial review (72 findings applied); the twelve subsystem maps under `docs/maps/`.
+- `irsim.detector.lowpass` (M9.1, ADR 0052): `BolometerLowPass` -- the §9.2 membrane thermal lag as a
+  stateful per-pixel float32 IIR, `S_n = S_{n-1} + (S_ideal - S_{n-1})(1 - e^{-dt/tau_th})`, applied to
+  the ideal signal *before* noise so the M4.6 NETD anchor survives; starts settled (the first frame
+  adopts its input) with `reset()` for a cold start. `alpha_for`, `responsivity_rolloff(f, tau)` (the
+  continuous `1/sqrt(1 + (2 pi f tau)^2)`, not the sampled IIR's transfer function) and
+  `trailing_decay_length_px` = `v tau_th/dt` -- the moving-edge tail length that spec issue S8's
+  "0.6 frames" phrasing conflates with `tau_th/dt`. Verified against the closed-form step response to
+  1e-6, against RK4 of the membrane ODE to 1e-4 over 100 varying frames, and by measuring the tail of
+  a rendered moving edge to within 2 %; the photon path is asserted memoryless (§15 T3).
 
 ### Changed
 - The reflected-environment tests no longer assume a fully overcast sky reads exactly `T_air`. The

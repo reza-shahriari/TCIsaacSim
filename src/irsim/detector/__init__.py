@@ -12,6 +12,12 @@ from irsim.detector.bolometer import (
     static_responsivity_v_per_w,
 )
 from irsim.detector.dark_current import dark_current_a, dark_electrons
+from irsim.detector.lowpass import (
+    BolometerLowPass,
+    alpha_for,
+    responsivity_rolloff,
+    trailing_decay_length_px,
+)
 from irsim.detector.netd import (
     NoiseBudget,
     bolometer_floors,
@@ -36,6 +42,10 @@ __all__ = [
     "PhotonParams",
     "fpa_params_from_config",
     "BolometerTransfer",
+    "BolometerLowPass",
+    "alpha_for",
+    "responsivity_rolloff",
+    "trailing_decay_length_px",
     "absorbed_power_w",
     "membrane_delta_t_k",
     "static_responsivity_v_per_w",
