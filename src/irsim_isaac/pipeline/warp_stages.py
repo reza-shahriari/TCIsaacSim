@@ -46,12 +46,14 @@ from numpy.typing import NDArray
 from irsim.atmosphere.beer_lambert import transmittance
 from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.config.gbuffer import UNMAPPED_MATERIAL_ID
-from irsim.config.sensor import SensorSpec
+from irsim.config.sensor import IspSpec, SensorSpec
 from irsim.detector.bolometer import PHOTON_SCALE_GUARD, MicrobolometerDetector
 from irsim.detector.lowpass import alpha_for
 from irsim.detector.params import BolometerParams
 from irsim.detector.photon import PhotonDetector
 from irsim.detector.quantise import dn_max_for_bits
+from irsim.isp.agc import CONSTANT_FRAME_LEVEL, percentile_from_histogram
+from irsim.isp.palette import palette_table
 from irsim.materials.table import MaterialTable
 from irsim.noise.stage import NoiseStage
 from irsim.noise.three_d import FixedPattern
@@ -99,6 +101,10 @@ __all__ = [
     "launch_noise",
     "launch_nuc_residual",
     "launch_ou_drift",
+    "agc_lut_warp",
+    "display_stage_warp",
+    "launch_display",
+    "launch_histogram",
     "noise_stage_warp",
     "noise_terms",
     "optics_stage_warp",
@@ -442,6 +448,94 @@ if wp is not None:
         i, j = wp.tid()
         g = wp.float32(1.0) + gain_scale * gain_xi[i, j]
         out[i, j] = signal_dn[i, j] * g + offset_scale * offset_xi[i, j]
+
+    @wp.kernel
+    def _histogram_kernel(
+        dn: wp.array2d(dtype=wp.uint16),
+        counts: wp.array(dtype=wp.int32),
+    ):
+        """Atomic histogram of the DN plane into 2^bit_depth bins (§11.3).
+
+        One atomic add per pixel. The alternative -- a per-block private histogram reduced
+        afterwards -- would be faster on a 16-bit plane, and is not worth the extra state until a
+        profile says the histogram is the bottleneck rather than the LUT application.
+        """
+        i, j = wp.tid()
+        wp.atomic_add(counts, wp.int32(dn[i, j]), wp.int32(1))
+
+    @wp.kernel
+    def _clip_counts_kernel(
+        counts: wp.array(dtype=wp.int32),
+        plateau_count: wp.float32,
+        clipped: wp.array(dtype=wp.float32),
+    ):
+        """min(count, P) per bin -- the plateau clip of ADR 0028, before the CDF."""
+        i = wp.tid()
+        c = wp.float32(counts[i])
+        clipped[i] = wp.min(c, plateau_count)
+
+    @wp.kernel
+    def _apply_lut_kernel(
+        dn: wp.array2d(dtype=wp.uint16),
+        lut: wp.array(dtype=wp.float32),
+        y: wp.array2d(dtype=wp.float32),
+    ):
+        """DN -> [0, 1] through the AGC's own lookup table.
+
+        Both §11.3 modes are monotone functions of DN alone, so each *is* a table -- which is what
+        makes them portable to a kernel, and why the port can be held to a display code.
+        """
+        i, j = wp.tid()
+        y[i, j] = lut[wp.int32(dn[i, j])]
+
+    @wp.kernel
+    def _dde_kernel(
+        y: wp.array2d(dtype=wp.float32),
+        gain: wp.float32,
+        rows: wp.int32,
+        cols: wp.int32,
+        out: wp.array2d(dtype=wp.float32),
+    ):
+        """Unsharp mask with a 3x3 box and edge clamping: y + gain (y - box3(y)), clipped (§11.4).
+
+        Edge clamping, not zero padding, matching ``irsim.isp.dde``'s "edge" boundary: zero padding
+        would darken the frame border by up to the gain, which reads as a vignette that the optics
+        model did not put there.
+        """
+        i, j = wp.tid()
+        total = wp.float32(0.0)
+        for di in range(-1, 2):
+            for dj in range(-1, 2):
+                ii = wp.clamp(i + di, 0, rows - 1)
+                jj = wp.clamp(j + dj, 0, cols - 1)
+                total = total + y[ii, jj]
+        box = total / wp.float32(9.0)
+        v = y[i, j] + gain * (y[i, j] - box)
+        out[i, j] = wp.clamp(v, wp.float32(0.0), wp.float32(1.0))
+
+    @wp.kernel
+    def _palette_kernel(
+        y: wp.array2d(dtype=wp.float32),
+        palette: wp.array2d(dtype=wp.uint8),
+        invert: wp.int32,
+        out: wp.array3d(dtype=wp.uint8),
+    ):
+        """[0, 1] -> RGBA8 through polarity and the palette table (§11.4, ADR 0030).
+
+        The 8-bit quantisation mirrors ``irsim.isp.quantise_display`` exactly -- round-half-away
+        then clamp, not floor -- because this is a *display* level rather than an ADC threshold,
+        and the two rules differ by half a code on every pixel.
+        """
+        i, j = wp.tid()
+        v = wp.clamp(y[i, j], wp.float32(0.0), wp.float32(1.0))
+        code = wp.int32(wp.floor(v * wp.float32(255.0) + wp.float32(0.5)))
+        code = wp.clamp(code, 0, 255)
+        if invert != 0:
+            code = 255 - code
+        out[i, j, 0] = palette[code, 0]
+        out[i, j, 1] = palette[code, 1]
+        out[i, j, 2] = palette[code, 2]
+        out[i, j, 3] = wp.uint8(255)
 
 
 # ---- device-resident tables ------------------------------------------------------------------
@@ -1512,3 +1606,147 @@ def noise_stage_warp(
     out = warp.zeros(shape, dtype=warp.float32, device=device)
     launch_noise(src, fixed, terms, state.frame_index, config.sensor_seed, out, device)
     return {"signal_dn": np.asarray(out.numpy(), dtype=np.float32)}
+
+
+# -- stage 6: the display branch on device (M10.8) -------------------------------------------
+
+
+def launch_histogram(dn: Any, bit_depth: int, device: str) -> Any:
+    """Atomic histogram of a device DN plane into 2^bit_depth int32 bins."""
+    warp = _require()
+    rows, cols = dn.shape
+    counts = warp.zeros(dn_max_for_bits(bit_depth) + 1, dtype=warp.int32, device=device)
+    warp.launch(_histogram_kernel, dim=(rows, cols), inputs=[dn, counts], device=device)
+    return counts
+
+
+def agc_lut_warp(
+    dn: Any, isp: IspSpec, bit_depth: int, device: str
+) -> tuple[Any, NDArray[np.float32]]:
+    """The AGC as a 2^bit_depth lookup table, built on device from a device histogram (§11.3).
+
+    Both §11.3 modes are *monotone functions of DN alone*, so each is exactly a table -- which is
+    what makes them portable to a kernel at all, and is why the device path can be held to ±1
+    display code rather than to a resemblance. The table is built once per frame and applied by
+    one lookup per pixel.
+
+    The histogram and the plateau clip run on device (atomics, then ``wp.utils.array_scan`` for the
+    exclusive CDF). The last few scalars -- the percentile positions, the occupied-bin span -- are
+    read back and finished on the host: they are O(1) reductions over a 65536-entry array, and a
+    device implementation of each would be more code than the whole kernel it feeds.
+    """
+    warp = _require()
+    import warp.utils as wputils
+
+    n_bins = dn_max_for_bits(bit_depth) + 1
+    counts = launch_histogram(dn, bit_depth, device)
+    host_counts = counts.numpy().astype(np.float64)
+    n_pixels = float(host_counts.sum())
+
+    if isp.agc == "none":
+        # The top 8 bits over 255, not a linear rescale: `agc: none` is a bit shift (ADR 0031),
+        # and the two differ by up to half a display code on every pixel.
+        shift = bit_depth - 8
+        table = (
+            (np.arange(n_bins, dtype=np.uint32) >> np.uint32(shift)) / np.float32(255.0)
+        ).astype(np.float32)
+    elif isp.agc == "linear":
+        lo, hi = isp.clip_percentiles
+        x_lo = percentile_from_histogram(host_counts, lo)
+        x_hi = percentile_from_histogram(host_counts, hi)
+        if x_hi <= x_lo or int(np.floor(x_hi)) == int(np.floor(x_lo)):
+            table = np.full(n_bins, CONSTANT_FRAME_LEVEL, dtype=np.float32)
+        else:
+            bins = np.arange(n_bins, dtype=np.float64)
+            table = np.clip((bins - x_lo) / (x_hi - x_lo), 0.0, 1.0).astype(np.float32)
+    elif isp.agc == "plateau_equalization":
+        clipped = warp.zeros(n_bins, dtype=warp.float32, device=device)
+        warp.launch(
+            _clip_counts_kernel,
+            dim=n_bins,
+            inputs=[counts, warp.float32(isp.plateau * n_pixels), clipped],
+            device=device,
+        )
+        inclusive = warp.zeros(n_bins, dtype=warp.float32, device=device)
+        wputils.array_scan(clipped, inclusive, inclusive=True)
+        cdf_incl = inclusive.numpy().astype(np.float64)
+        cdf_excl = np.concatenate(([0.0], cdf_incl[:-1]))
+        occupied = np.flatnonzero(host_counts)
+        if occupied.size == 0:
+            table = np.full(n_bins, CONSTANT_FRAME_LEVEL, dtype=np.float32)
+        else:
+            span_lo, span_hi = cdf_excl[occupied[0]], cdf_excl[occupied[-1]]
+            if span_hi <= span_lo:
+                table = np.full(n_bins, CONSTANT_FRAME_LEVEL, dtype=np.float32)
+            else:
+                table = np.clip((cdf_excl - span_lo) / (span_hi - span_lo), 0.0, 1.0).astype(
+                    np.float32
+                )
+    else:  # pragma: no cover - the schema restricts the literal
+        raise ValueError(f"unknown agc mode {isp.agc!r}")
+
+    if isp.gamma != 1.0:
+        table = np.power(table, np.float32(1.0 / isp.gamma), dtype=np.float32)
+    device_table = warp.array(np.ascontiguousarray(table), dtype=warp.float32, device=device)
+    return device_table, table
+
+
+def launch_display(dn: Any, isp: IspSpec, bit_depth: int, device: str) -> tuple[Any, Any]:
+    """DN16 on device → (y in [0, 1], RGBA8), in ADR 0031's fixed order."""
+    warp = _require()
+    rows, cols = dn.shape
+    table, _ = agc_lut_warp(dn, isp, bit_depth, device)
+    y = warp.zeros((rows, cols), dtype=warp.float32, device=device)
+    warp.launch(_apply_lut_kernel, dim=(rows, cols), inputs=[dn, table, y], device=device)
+
+    if isp.dde_gain > 0.0:
+        sharpened = warp.zeros((rows, cols), dtype=warp.float32, device=device)
+        warp.launch(
+            _dde_kernel,
+            dim=(rows, cols),
+            inputs=[
+                y,
+                warp.float32(isp.dde_gain),
+                warp.int32(rows),
+                warp.int32(cols),
+                sharpened,
+            ],
+            device=device,
+        )
+        y = sharpened
+
+    lut = np.ascontiguousarray(palette_table(isp.palette), dtype=np.uint8)
+    palette = warp.array2d(lut, dtype=warp.uint8, device=device)
+    rgba = warp.zeros((rows, cols, 4), dtype=warp.uint8, device=device)
+    warp.launch(
+        _palette_kernel,
+        dim=(rows, cols),
+        inputs=[y, palette, warp.int32(1 if isp.polarity == "black_hot" else 0), rgba],
+        device=device,
+    )
+    return y, rgba
+
+
+def display_stage_warp(
+    planes: Planes, config: PipelineConfig, state: PipelineState, device: str = DEFAULT_DEVICE
+) -> Planes:
+    """Stage 6 on the plane dict: ``dn16`` in, ``display8`` and ``y`` out (M10.8).
+
+    ``dn16`` is preserved untouched. The radiometric branch and the display branch fork *after*
+    the ADC (§11.1), so a change of AGC mode must not move a single DN code -- which is exactly
+    what the equivalence test checks, because an AGC that reached back into the linear output
+    would be invisible in the picture and fatal to the validation.
+    """
+    del state
+    warp = _require()
+    dn = np.asarray(planes["dn16"])
+    if dn.dtype != np.uint16:
+        raise TypeError(f"dn16 must be a uint16 plane, got {dn.dtype}")
+    bit_depth = config.sensor.sensor.fpa.bit_depth
+    src = warp.array2d(np.ascontiguousarray(dn), dtype=warp.uint16, device=device)
+    y, rgba = launch_display(src, config.sensor.sensor.isp, bit_depth, device)
+    return {
+        "dn16": dn,
+        "y": np.asarray(y.numpy(), dtype=np.float32),
+        "display8": np.asarray(rgba.numpy(), dtype=np.uint8),
+    }

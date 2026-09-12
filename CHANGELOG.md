@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stage 6 (roadmap M10.8): the display branch on device -- an atomic histogram, the ADR 0028
+  plateau clip with `wp.utils.array_scan` for the exclusive CDF, the AGC applied as a
+  2^bit_depth lookup table, an edge-clamped 3x3 DDE and the palette to RGBA8. Both §11.3 AGC modes
+  are monotone functions of DN alone, so each *is* exactly a table; that is what makes them
+  portable to a kernel at all, and why the port can be held to a display code rather than to a
+  resemblance. The O(1) reductions over the 65536-entry histogram -- the percentile positions, the
+  occupied-bin span -- are finished on the host, where each is a line rather than a kernel.
+- Measured on an RTX A6000 and Warp `cpu`: ≥ 99.9 % of pixels within ±1 display code of the CPU
+  branch for linear, plateau-equalisation and none, on a ramp, a hot-exhaust patch and a constant
+  frame; the float image before quantisation agrees to 2e-3. DN16 is bit-identical under every AGC
+  mode -- §11.1 forks the branches after the ADC, and an AGC that reached back into the linear
+  output would be invisible in the picture and fatal to the validation that consumes it. The
+  ADR 0028 exhaust collapse is reproduced: plateau equalisation retains more than three times the
+  background contrast linear AGC leaves.
+- `agc: none` is a **bit shift** (the top 8 bits over 255, ADR 0031), not a linear rescale of the
+  full-scale range. The device table had it as the latter and was half a display code out on every
+  pixel -- caught by comparing the AGC *tables* rather than the images, which localises a
+  disagreement to the AGC instead of leaving it somewhere in the DDE or the palette.
 - Warp stage 5 (roadmap M10.7a, ADR 0022 addendum): the seven §10.2 noise components, M9.4's OU
   drift of the device-resident fixed fields, and M9.6's NUC residual, as Warp kernels. This is the
   first stage that **cannot** be held to bit-equality with the CPU oracle -- Warp's generator is not
