@@ -43,3 +43,47 @@ core's cos⁴ must be disabled — enforced by the schema.
 
 A camera with strong distortion is modelled (fisheye automotive lenses in phase 2), or a measured
 vignetting map is available — then the map replaces cos⁴ rather than multiplying it.
+
+## Addendum (M10.9a, 2026-09-12): the forward model as the engine's oracle, and f-theta refused
+
+This ADR's decision stands unchanged — the renderer applies the lens, `irsim.optics.vignetting`
+keeps computing field angles from undistorted pinhole geometry, and nothing in the core warps a
+G-buffer. What M10.9a adds is the other direction: `irsim.optics.projection`, a **forward** model
+of the lens the engine is handed.
+
+The distinction matters and is easy to lose. Applying distortion in the core was rejected because
+it resamples ids and temperatures. Asking "where should a ray at this angle land under this
+`optics.distortion` block?" resamples nothing — it is a function from a direction to a pixel — and
+without it there is no way to tell whether the coefficients written into USD produced the lens that
+was configured. Writing coefficients into a schema and judging the result by looking at the picture
+is how a lens ends up a few percent wrong and stays that way; a barrel term is a smooth radial
+stretch, which is exactly the kind of error the eye accepts.
+
+Two conventions are pinned by the model rather than left implicit, because both are silent when
+wrong. USD camera space is +Y up, −Z forward; OpenCV — whose model the engine implements — is
++Y down, +Z forward, so the flip happens in exactly one function. And the principal point is at
+the format corner `(W/2, H/2)` with pixel centres at `i + 0.5`, matching
+`field_radius_map_mm`; the two modules are tied together by a test rather than by a comment.
+
+**Which schema each config model maps to** was measured on 6.1.0-rc.26, not assumed (the probe
+that measures it lands with the camera itself, M10.9a-ii):
+`brown_conrady` → `OmniLensDistortionOpenCvPinholeAPI`, whose twelve attributes are in OpenCV's own
+`[k1, k2, p1, p2, k3, k4, k5, k6, s1..s4]` order, so a five-term Brown–Conrady block maps
+**positionally** with no reordering; `kannala_brandt` → `OmniLensDistortionOpenCvFisheyeAPI`
+(`k1..k4` on θ).
+
+**`ftheta` is refused rather than approximated.** Its schema exposes `k0..k4` beside
+`nominalWidth`, `nominalHeight` and `opticalCenter`, and nothing this build exposes determines
+either whether the polynomial returns a radius in pixels of the nominal image or in normalised
+units, or whether `k0` is a constant term — under one reading a one-coefficient block is a lens,
+under the other it is a constant radius, which is not. Either guess renders a plausible fisheye
+that disagrees with the engine by tens of pixels at the field edge, which is precisely the failure
+this module exists to detect, so `project` and the USD writer both raise. No camera in
+`configs/sensors/` uses f-theta, so nothing is blocked. The experiment that settles it belongs to
+M10.9b's renderer audit: render a grid through an f-theta camera with one coefficient set and fit
+r(θ).
+
+## Revisit when (addendum)
+
+The f-theta convention is measured, or a camera config needs a lens family beyond the two verified
+here (`RadTanThinPrism` and `KannalaBrandtK3` schemas also exist on this build).

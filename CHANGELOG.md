@@ -6,6 +6,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Lens projection (roadmap M10.9a, ADR 0015 addendum): `irsim.optics.projection` answers "given
+  this `optics.distortion` block, where should a ray at this angle land?". ADR 0015 is unchanged --
+  the engine still applies the lens and the imaging path stays rectilinear -- but without a
+  **forward** model there is no way to tell whether the coefficients written onto a camera prim
+  produced the lens that was configured, and a barrel term is a smooth radial stretch, exactly the
+  error a human eye accepts in a picture.
+- Two conventions are pinned by tests rather than by comments, because both are silent when wrong:
+  USD camera space (+Y up, -Z forward) versus OpenCV (+Y down, +Z forward), flipped in exactly one
+  function; and the principal point at the format corner with pixel centres at `i + 0.5`, tied to
+  `irsim.optics.vignetting`'s independently written geometry -- half a pixel of disagreement is
+  3.8e-4 rad at the Boson's corner, invisible in an image and fatal to a reprojection check.
+- Measured on 6.1.0-rc.26, not assumed: `brown_conrady` maps to
+  `OmniLensDistortionOpenCvPinholeAPI`, whose twelve attributes are in OpenCV's own
+  `[k1, k2, p1, p2, k3, k4, k5, k6, s1..s4]` order, so a five-term block maps **positionally**;
+  `kannala_brandt` maps to `OmniLensDistortionOpenCvFisheyeAPI`.
+- **`ftheta` is refused, not approximated.** Nothing this build exposes determines whether its
+  polynomial returns pixels or normalised units, or whether `k0` is a constant term -- under one
+  reading a one-coefficient block is a lens, under the other a constant radius, which is not.
+  Either guess renders a plausible fisheye that disagrees with the engine by tens of pixels at the
+  field edge, so `project` raises and M10.9b's renderer audit measures it. No configured camera
+  uses f-theta.
+- Verified against arithmetic decided outside the module: hand-evaluated OpenCV radial and
+  tangential terms, the equidistant limit of the fisheye model (r = theta, which differs from the
+  rectilinear r = tan theta by 66 % at 60 deg, so a silent pinhole fallback cannot pass), the
+  cos^4 identity against `irsim.optics.vignetting`, and a distort/undistort round trip over the
+  whole Boson frame at < 1e-6 px against the row's 0.2 px in-sim budget.
 - Warp stage 6 (roadmap M10.8): the display branch on device -- an atomic histogram, the ADR 0028
   plateau clip with `wp.utils.array_scan` for the exclusive CDF, the AGC applied as a
   2^bit_depth lookup table, an edge-clamped 3x3 DDE and the palette to RGBA8. Both §11.3 AGC modes
