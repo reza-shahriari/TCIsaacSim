@@ -6,6 +6,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `IrCamera` (roadmap M10.9a-ii, ADR 0015 addendum): the object that turns a USD stage into an
+  infrared frame. It authors the camera prim from the sensor YAML, creates the render product at
+  `supersample x native`, attaches the M10.1 annotators, assembles the G-buffer from the geometry
+  AOVs plus the M10.2 material ids and the M10.18 temperature table, and runs
+  `irsim.pipeline.run_frame`. **This is first light from Isaac Sim through the whole camera
+  model.**
+- The constructor takes the `Scene` rather than the atmosphere preset and environment the roadmap
+  sketched. The scene already holds all three bound to its single `WeatherSeries`; taking them
+  separately would let one atmosphere run in the transmittance, another in the sky and a third in
+  the thermal solvers (CLAUDE.md #6), and the camera refuses a pipeline whose sky or atmosphere is
+  on a different weather object.
+- **It runs the CPU reference, not the Warp stages, and that is deliberate.** The M10.4--M10.8
+  twins cover stages 1--6 but not the M9 chain's post-ADC half -- device defects, the iterated
+  bad-pixel replacement and the FFC hold are M10.7b. Running the device path today would produce a
+  frame from a *different camera* and label it the same. `IrCamera.planes()` exposes the assembled
+  G-buffer so the Warp path can be driven from the same scene and compared; the all-device frame
+  lands with M10.7b.
+- **Every attribute of the distortion schema is written, never a subset.** Measured on
+  6.1.0-rc.26: the schemas default to `fx = 900`, `cx = 1024`, `imageSize = (2048, 1024)` and, on
+  the fisheye, a non-zero `k1`. An attribute left unwritten is not "no distortion", it is a lens
+  for somebody else's camera, and it renders without complaint. `imageSize` is a `GfVec2i`; a
+  Python tuple is coerced to `GfVec2d` and the set is rejected outright, so it is built explicitly.
+- In-sim verification (`tests/integration/test_ir_camera_isaac.py`, 12 tests): a grid of quads at
+  known world positions reprojects through the config model to **< 0.2 px** both undistorted and
+  under a barrel lens; the barrel coefficients move the outer quads 2.1 px while the optical axis
+  stays put; and reprojecting the barrel render through a *zero-coefficient* model fails by more
+  than 1.5 px, so neither half could pass on a build that discarded the schema.
+- Measuring to a fifth of a pixel off a binary id mask needed a correction. A rectangle's
+  included-pixel set snaps to whole pixels, so its centroid lands on a multiple of half a pixel
+  however large the rectangle is -- averaging over more pixels does not help. Every quad came back
+  a flat 1/3 px off, which looks exactly like a lens error and is not one. The grid is rendered 8x
+  supersampled and the centroids divided down, putting the quantisation at 1/16 of a native pixel.
+- Whole-frame verification on the five-prim material stage: float32 / float32 / uint16 / RGBA8 at
+  the native grid, no float16 plane anywhere, the high-emissivity prims reading back their
+  authored temperatures within 8 K, and -- the sharpest check that emissivity reaches the kernel --
+  the two `bare_aluminium` prims, 27.15 K apart at the surface, collapsing to under a quarter of
+  that in apparent temperature because at eps = 0.09 both show the same sky and ground. Note the
+  direction: a mirror does not read cold, it reads *its environment*, so the 268 K window reads
+  warmer than it is.
+- An UNMAPPED prim has no emissivity and `MaterialTable` refuses to invent one (ADR 0047). In
+  `debug_unmapped` mode those pixels are handed to stage 1 as blackbody-equivalent -- the eps = 1
+  ADR 0047 specifies, on the prim's own temperature -- and painted magenta at the native grid,
+  over-reporting rather than hiding a forgotten prim; without the debug mode the frame raises.
+- `scripts/probe_isaac_camera.py` and `irsim_isaac.camera_probe` record the distortion-schema
+  survey the mapping is built on, so the next build is re-measured rather than argued about.
 - Lens projection (roadmap M10.9a, ADR 0015 addendum): `irsim.optics.projection` answers "given
   this `optics.distortion` block, where should a ray at this angle land?". ADR 0015 is unchanged --
   the engine still applies the lens and the imaging path stays rectilinear -- but without a
