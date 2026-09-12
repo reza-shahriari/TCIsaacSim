@@ -31,6 +31,15 @@ mistakes are, so each one is named:
 * **Temperature never crosses a colour AOV.** It arrives through the M10.18 bridge's float32
   table, keyed by the exact integer instance id, with the background taking ``T_sky(θ)`` from each
   pixel's own ray elevation (ADR 0014, ADR 0060).
+* **The position AOV is in camera space, so the camera's rotation has to be undone.**
+  ``Camera3dPositionSD`` was recorded as world-space in ADR 0014, which was true of every scene
+  that measured it -- all of them had an unrotated camera at the origin, where the two frames are
+  the same thing. Tilt the camera up and they separate: measured on 6.1.0-rc.26, a camera rotated
+  8 degrees about X still reports the frame centre's ray as ``(0, 0, -1)``. Taken as world that
+  ray has zero elevation, which puts the horizon through the middle of the picture, paints the
+  upper half of the sky with the ground temperature, and tilts every ``normal_dot_view`` and
+  sky-view factor with it -- a smooth, plausible, completely wrong frame. So the default here is
+  ``position_frame="camera"`` with the prim's own local-to-world rotation (ADR 0014 addendum).
 
 **Which pipeline runs.** The frame goes through ``irsim.pipeline.run_frame`` -- the CPU reference
 (ADR 0018) -- including the M9 sensor chain when one is attached. The Warp twins (M10.4--M10.8)
@@ -245,7 +254,7 @@ class IrCamera:
         resolutions: Sequence[Resolution],
         camera_path: str = "/World/IrCamera",
         stage: Any = None,
-        position_frame: PositionFrame = "world",
+        position_frame: PositionFrame = "camera",
         up_axis: str | None = None,
         debug_unmapped: bool = True,
         strict_materials: bool = True,
@@ -284,6 +293,7 @@ class IrCamera:
         self._reader: AovReader | None = None
         self._render_product: Any = None
         self._camera_position: NDArray[np.float64] | None = None
+        self._camera_to_world: NDArray[np.float64] | None = None
         self._last: _Frame | None = None
         self._stage = stage
         self._up_axis = up_axis
@@ -315,6 +325,9 @@ class IrCamera:
         xform = UsdGeom.Xformable(stage.GetPrimAtPath(self.camera_path))
         matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
         self._camera_position = np.asarray(matrix.ExtractTranslation(), dtype=np.float64)
+        # USD matrices are row-vector (p_world = p_camera @ M), and `ray_directions` applies its
+        # rotation as `vec @ rot.T`, so the transpose of the upper-left 3x3 is what it wants.
+        self._camera_to_world = np.asarray(matrix, dtype=np.float64)[:3, :3].T
 
         configure_renderer()
         width, height = self.optics.resolution
@@ -372,12 +385,14 @@ class IrCamera:
             aovs.position,
             frame=self.position_frame,
             camera_position=self._camera_position,
+            camera_to_world=self._camera_to_world,
         )
         geometry = geometry_planes(
             aovs,
             up_axis=self._up_axis or "Y",
             position_frame=self.position_frame,
             camera_position=self._camera_position,
+            camera_to_world=self._camera_to_world,
         )
         if aovs.instance_id is None:  # pragma: no cover - `required` already guarantees it
             raise RuntimeError("the instance-id channel produced no data this frame")

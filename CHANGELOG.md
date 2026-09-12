@@ -6,6 +6,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Aerial demo stage and a one-command render (roadmap M10.19, stage half):
+  `irsim_isaac.aerial_demo` authors six targets against sky -- a resolved quadrotor at 120 m, one
+  at the pixel limit at 500 m, one well below it at 1500 m, an aircraft at 2.5 km, a bird and a
+  hot motor pod -- and `scripts/render_aerial_demo.py` renders them through `IrCamera` and writes
+  the frames with M10.10a. Sizes are the real ones, so the demo shows what the range problem
+  actually looks like: a 0.35 m quadrotor at 500 m is 0.82 of a Boson pixel, and the stage says
+  which targets are in MS.6's sub-pixel territory rather than leaving it to be discovered.
+- There is **no sky dome and no ground plane** in the stage. A ray that hits nothing takes
+  `T_sky(theta)` at its own elevation, or `T_ground` below the horizon (ADR 0060). An emissive
+  dome would push the sky through a colour AOV -- all float16 on this build, ~100 mK against a
+  50 mK NETD -- and would be worst at the horizon, where the gradient is steepest and the targets
+  are.
+
+### Fixed
+- **`Camera3dPositionSD` is in camera space, not world space** (ADR 0014 addendum). ADR 0014
+  recorded it as world, which was true of every scene that measured it: all of them had an
+  unrotated camera at the origin, where the two frames coincide. Tilt the camera up and they
+  separate -- measured at 8 degrees about X, the AOV still reports the frame centre's ray as
+  `(0, 0, -1)`.
+- Read as world it produces no error, just a different camera: the boresight reads 0 degrees
+  instead of 8, the horizon moves 164 rows to the middle of the picture, the upper half of the sky
+  falls below the model's horizon and is painted with `T_ground` 30 K too warm, and
+  `normal_dot_view`, `normal_dot_up` and the sky-view factor all tilt with it. The result is
+  smooth, monotonic and entirely plausible. `IrCamera` now defaults to `position_frame="camera"`
+  and passes the prim's own local-to-world rotation.
+- It was caught by asking where the horizon *should* be: `cy + f_px tan(tilt)` has no free
+  parameters. With the fix, elevation crosses zero at native row 221.5 against a predicted 221.7
+  and the frame centre reads 7.979 degrees for an 8 degree tilt. Nothing else in the repo was
+  affected, because nothing else had rotated a camera -- which is exactly why it survived until a
+  scene needed to look up.
+- The in-sim aerial phenomenology suite (10 tests) states the background claims, since on a
+  sky-target camera the background is most of the image and is where a wrong model hides: the
+  boresight elevation, the horizon row, a monotone sky gradient over every row above it, a single
+  flat ground temperature below it, and the sky reading 25 K below ambient while the ground reads
+  at it.
+- One of those is worth its own line because it is counter-intuitive and was a wrong assumption in
+  the first draft of the test: **the horizon is not a visible edge**. A grazing clear sky has
+  unbounded path length, so its emissivity approaches one at about the air temperature -- which is
+  what the ground is at. The step across the horizon is smaller than the sky gradient over the
+  frame, and an algorithm hunting the strongest edge finds a place in the sky instead.
 - Float32-preserving dataset writers (roadmap M10.10a): `irsim.io.write_frame` puts one frame's
   four §12.2 outputs on disk with a JSON sidecar. radiance and apparent temperature go to float32
   `.npy` or float32 EXR; DN16 to a uint16 PNG (an ADC code is an integer and loses nothing);

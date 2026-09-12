@@ -320,3 +320,38 @@ Isaac *files* — no working Kit, no display — can run the GPU half of the tes
   then.
 - SPG gains cross-frame state (the main "revisit when"), which would move stages out of Warp and
   make this harness less central.
+
+## Addendum (M10.19, 2026-09-12): `Camera3dPositionSD` is in camera space, not world space
+
+This ADR recorded the position AOV as delivering **world** positions. That was true of every
+scene it was measured on and is false in general: all of those scenes put an unrotated camera at
+the origin, where camera space and world space are the same thing. Measured on 6.1.0-rc.26 with
+the camera tilted 8° about X, the AOV still reports the frame centre's ray as `(0, 0, −1)` — the
+camera-space direction. It is `Camera3dPositionSD`, and it means it.
+
+The consequence of reading it as world is not an error message. Every ray comes out rotated by the
+inverse of the camera's pose, so on a camera tilted up to look at the sky:
+
+- the boresight reads 0° elevation instead of 8°, putting the horizon through the middle of the
+  picture instead of near the bottom;
+- the upper half of the sky is therefore below the model's horizon and gets painted with
+  `T_ground` (ADR 0060's split), which is 30 K warmer than the sky belongs there;
+- `normal_dot_view`, `normal_dot_up` and the sky-view factor all tilt with it, because
+  `geometry_planes` takes the same rays.
+
+The result is smooth, monotonic and entirely plausible. It was caught by asking where the horizon
+*should* be — `cy + f_px·tan(tilt)` has no free parameters — and finding it 164 rows away.
+
+`IrCamera` therefore defaults to `position_frame="camera"` and passes the prim's own
+local-to-world rotation, which `ray_directions` already supported; the `PositionFrame` parameter
+existed precisely because this was an open question, and this is its answer. USD matrices are
+row-vector (`p_world = p_camera @ M`) while `ray_directions` applies `vec @ rot.T`, so what it
+wants is the **transpose** of the upper-left 3×3.
+
+Verified: with the fix, elevation crosses zero at native row 221.5 against a predicted 221.7, and
+the frame centre reads 7.979° for an 8° tilt (`tests/integration/test_aerial_demo_isaac.py`).
+
+Nothing else in the repo was wrong, because nothing else had rotated a camera:
+`test_gbuffer_isaac.py`, `test_material_ids_isaac.py` and `test_aerial_bridge_isaac.py` all use
+cameras at the origin looking down −Z, where both readings agree. That is exactly why it survived
+until a scene needed to look *up*.
