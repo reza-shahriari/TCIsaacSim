@@ -22,6 +22,8 @@ from irsim.materials.mapping import (
     load_mapping_rules,
 )
 from irsim.materials.spectra import PropertySpectrum, load_property_spectrum
+from irsim.materials.surface import CLOSURE_TOL as SURFACE_CLOSURE_TOL
+from irsim.materials.surface import surface_radiance
 from irsim.materials.table import (
     UNMAPPED_MATERIAL_ID,
     UNMAPPED_NAME,
@@ -30,6 +32,8 @@ from irsim.materials.table import (
 )
 
 __all__ = [
+    "SURFACE_CLOSURE_TOL",
+    "surface_radiance",
     "CLOSURE_TOL",
     "MATERIAL_DIR",
     "BandProperties",

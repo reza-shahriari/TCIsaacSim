@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.materials.surface import surface_radiance
 from irsim.materials.table import MaterialTable
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes, require_fp32_or_better
 from irsim.pipeline.environment import environment_radiance
@@ -34,25 +35,40 @@ def band_radiance(
     quantity: Quantity = "lb",
     sky_mask: NDArray[np.bool_] | None = None,
     l_env: NDArray[np.floating] | None = None,
+    l_behind: NDArray[np.floating] | None = None,
 ) -> NDArray[np.float32]:
-    """ε₀[material] L_B(T) + (1 − ε₀) L_env as float32 (``lb_q`` for photon FPAs).
+    """ε₀ L_B(T) + ρ L_env + τ L_behind as float32 (``lb_q`` for photon FPAs).
 
     Under ``sky_mask`` the temperature is the *apparent* sky temperature, so ε₀ = 1 there
     (irsim.config.gbuffer) and the material id is ignored. Without ``l_env`` the stage is
-    emission only (the M3 form).
+    emission only (the M3 form). ``l_behind`` is what a second ray through a semi-transparent
+    material returns (M7.15); without it L_behind = L_env (ADR 0046), which collapses the three
+    terms back to the ε L_B + (1 − ε) L_env of M7.13 exactly, so an opaque scene is unaffected.
     """
     t = require_fp32_or_better(np.asarray(temperature_k), "temperature_k")
     ids = np.asarray(material_id)
     if ids.shape != t.shape:
         raise ValueError(f"material_id shape {ids.shape} != temperature shape {t.shape}")
-    eps = materials.emissivity_for(ids, sky_mask)
     lb = lut.lookup(t, quantity)
     if l_env is None:
-        return np.asarray(eps * lb, dtype=np.float32)
+        if l_behind is not None:
+            raise ValueError(
+                "l_behind was given without l_env: a second ray needs an environment model, "
+                "because the surface still reflects (rho L_env) as well as transmits. Configure "
+                "PipelineConfig.sky (M7.13) or drop the radiance_behind plane -- silently "
+                "ignoring it would make a transparent material render as opaque."
+            )
+        return np.asarray(materials.emissivity_for(ids, sky_mask) * lb, dtype=np.float32)
     env = require_fp32_or_better(np.asarray(l_env), "l_env")
     if env.shape != t.shape:
         raise ValueError(f"l_env shape {env.shape} != temperature shape {t.shape}")
-    out = eps.astype(np.float64) * lb + (1.0 - eps.astype(np.float64)) * env.astype(np.float64)
+    behind = None
+    if l_behind is not None:
+        behind = require_fp32_or_better(np.asarray(l_behind), "l_behind")
+        if behind.shape != t.shape:
+            raise ValueError(f"l_behind shape {behind.shape} != temperature shape {t.shape}")
+    eps, rho, tau = materials.properties_for(ids, sky_mask)
+    out = surface_radiance(eps, rho, tau, lb, env, behind)
     return np.asarray(out, dtype=np.float32)
 
 
@@ -75,6 +91,7 @@ def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineS
         config.quantity,
         sky_mask=planes.get("sky_mask"),
         l_env=l_env,
+        l_behind=planes.get("radiance_behind"),
     )
     return {"radiance": out}
 

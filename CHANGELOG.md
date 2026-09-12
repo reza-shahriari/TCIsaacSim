@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Semi-transparent second ray (M7.15, ADR 0046): `irsim.materials.surface_radiance`
+  (ε L_B + ρ L_env + τ L_behind, per-pixel closure to 1e-6) and `MaterialTable.properties_for`
+  (τ from the packed column, ρ derived, sky pixels blackbody-equivalent); stage 1 and `run_frame`
+  take an optional `radiance_behind` plane, which rides the existing G-buffer contract and is
+  float16-refused. With no such plane L_behind = L_env, so the form collapses to M7.13's exactly
+  and opaque scenes and goldens are bit-identical; supplying one without an environment model
+  raises rather than silently rendering a transparent material as opaque. The committed
+  windshield's dL/dL_behind is 0.0 in LWIR, 0.02 MWIR, 0.70 SWIR, 0.77 NIR.
 - `scripts/stage_own_hunk.sh`: stage only your own edit to a file several sessions are editing at
   once. It three-way merges your change (snapshot -> worktree) onto HEAD, so another session's
   *committed* change is a no-op instead of a failed patch, and a same-line collision conflicts loudly

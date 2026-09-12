@@ -37,6 +37,7 @@ __all__ = [
     "THERMAL_COLUMNS",
     "ANGULAR_A_PLACEHOLDER",
     "ANGULAR_P_PLACEHOLDER",
+    "CLOSURE_GUARD",
 ]
 
 UNMAPPED_MATERIAL_ID = 0
@@ -51,6 +52,8 @@ THERMAL_COLUMNS: tuple[str, ...] = (
 )
 ANGULAR_A_PLACEHOLDER = 0.0  # Level C: no falloff until the Level-B fit (M7.7)
 ANGULAR_P_PLACEHOLDER = 4.0
+# Slack on the derived reflectance before it is called a closure violation (float32 packing).
+CLOSURE_GUARD = 1e-6
 TABLE_FORMAT = 1
 
 
@@ -241,6 +244,35 @@ class MaterialTable:
     @classmethod
     def constant(cls, eps: float, ids: tuple[int, ...] = (1,), band_id: str = "") -> MaterialTable:
         return cls.from_mapping(dict.fromkeys(ids, eps), band_id)
+
+    def properties_for(
+        self, material_id: NDArray[np.integer], sky_mask: NDArray[np.bool_] | None = None
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        """Per-pixel (ε₀, ρ, τ) closing to 1 by construction (§4.1, §4.4).
+
+        ε comes from :meth:`emissivity_for`, τ from the packed transmittance column (0 when the
+        table has none, e.g. one built by :meth:`from_mapping`), and **ρ is derived** as
+        1 − ε − τ rather than read back, so the closure cannot drift from the authored values
+        (CLAUDE.md #4). Pixels under ``sky_mask`` are blackbody-equivalent: ε = 1, ρ = τ = 0.
+        """
+        eps = self.emissivity_for(material_id, sky_mask)
+        ids = np.asarray(material_id)
+        if self.transmittance is None:
+            tau = np.zeros(eps.shape, dtype=np.float32)
+        else:
+            tau = np.asarray(self.transmittance[ids], dtype=np.float32)
+            if sky_mask is not None:
+                tau = np.where(np.asarray(sky_mask), np.float32(0.0), tau).astype(np.float32)
+            if np.any(np.isnan(tau)):
+                raise ValueError("material table has NaN transmittance for a referenced id")
+        rho = np.asarray(1.0 - eps.astype(np.float64) - tau.astype(np.float64), dtype=np.float32)
+        if np.any(rho < -CLOSURE_GUARD):
+            worst = float(rho.min())
+            raise ValueError(
+                f"derived reflectance {worst:.6f} < 0: ε + τ > 1 for some material "
+                "(the library loader should have refused it, CLAUDE.md #4)"
+            )
+        return eps, np.maximum(rho, np.float32(0.0)), tau
 
     def emissivity_for(
         self, material_id: NDArray[np.integer], sky_mask: NDArray[np.bool_] | None = None
