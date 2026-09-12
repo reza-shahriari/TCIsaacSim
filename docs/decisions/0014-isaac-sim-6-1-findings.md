@@ -217,3 +217,51 @@ not match the render product.
 - `AmbientOcclusion` returns data — then `V_s` picks up real occlusion for ground scenes.
 - `PtWorldNormal` stops being all-zero, or any of these AOVs changes resolution or dtype; the
   integration tests pin each of those facts and will fail first.
+
+---
+
+## Addendum 2026-09-12 — instance ids are only per-prim on `instance_id_segmentation` (M10.2)
+
+The main decision above rests on "the renderer emits exact integer instance/semantic ids", measured
+as 64 distinct ids at 64 quad centres. That measurement is correct but its scene was special: the
+ramp's `label_quads()` applied a `class` semantic to **every** quad. On the M10.2 stage, where only
+one prim of five carries a semantic, the same annotator behaves very differently.
+
+| annotator | ids present | `idToLabels` |
+|---|---|---|
+| `instance_segmentation` | `0, 1, 2` | `{0: BACKGROUND, 1: UNLABELLED, 2: /World/Targets/Road}` |
+| `semantic_segmentation` | `0, 1, 2` | `{0: {class: BACKGROUND}, 1: {class: UNLABELLED}, 2: {class: road}}` |
+| **`instance_id_segmentation`** | `0, 1, 2, 3, 4, 5` | **one prim path per prim**, semantics irrelevant |
+
+`instance_segmentation` gives a distinct id only to prims that carry a semantic label and collapses
+every unlabelled prim into a single `UNLABELLED` id. Four of the five test prims therefore shared
+one id, and the material transport built on it painted all four with the first material it
+resolved — a G-buffer that passes the M0.6 schema, renders a plausible image, and is made of the
+wrong substances. Nothing raised.
+
+### Decisions that follow
+
+- **`material_id` transport uses `instance_id_segmentation`**, with `instance_segmentation` kept
+  only as a fallback. `AOV_NAMES` records the order and the reason.
+- **`colorize=False` is passed explicitly** on both segmentation channels (`AOV_INIT_PARAMS`). The
+  default happened to be False here; a colorized id is an RGBA palette entry that cannot be looked
+  up, only guessed at, so it is not left to a default.
+- **Requiring semantics for correct ids would have been the wrong fix.** Semantics are for dataset
+  labels and for the mapping's precedence rule 2 (ADR 0047); making radiometric correctness depend
+  on an artist remembering to label a prim reintroduces exactly the silent-default failure the
+  UNMAPPED sentinel exists to prevent.
+- `scripts/audit_materials.py` gains `--stage` (walk a USD asset directly) and `--dump-prims`.
+  The USD path boots Kit because `pxr` is not importable outside a running Kit application, so the
+  two-step flow — dump once inside Kit, audit the JSON anywhere — stays the fast path. Both paths
+  were measured to agree on the five-prim stage: `miss=1, override=1, pattern=2, semantic=1`.
+- `omni.usd.get_context().open_stage()` returns a **bare bool** on this build, not the `(ok, error)`
+  pair the older documentation shows; unpacking it raises *inside Kit*, which then reports exit
+  status **0**. A script that boots Kit must therefore print its result before `SimulationApp.close()`
+  (which ends in `os._exit`) and must not trust Kit to surface a Python failure as a non-zero exit.
+
+### Revisit when
+
+- `test_stage_walk_sees_every_binding_semantic_and_override` or the id-decode tests fail — the
+  segmentation semantics changed.
+- A build makes `instance_segmentation` per-prim regardless of labelling; the fallback order can
+  then be simplified.

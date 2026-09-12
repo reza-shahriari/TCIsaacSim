@@ -9,6 +9,14 @@
     [{"path": "/World/Car/Body", "material_name": "Car_Paint_Red",
       "semantic_class": "car_body", "override": null}, ...]
 
+A USD asset can be audited directly, which boots Isaac Sim because ``pxr`` is a Kit extension and
+is not importable outside a running Kit application on this build (ADR 0014 addendum):
+
+    python.sh scripts/audit_materials.py --stage asset.usd [--root /World] [--dump-prims p.json]
+
+Use ``--dump-prims`` once inside Kit and then audit that JSON anywhere: the audit itself is
+engine-free and takes milliseconds, where the Kit boot costs 15-35 s.
+
 Prints every prim that fell through to UNMAPPED, grouped and counted, plus the coverage; exits
 non-zero below the threshold (CI gate, ADR 0047).
 """
@@ -30,7 +38,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("prims", type=pathlib.Path, help="JSON list of prim records")
+    ap.add_argument(
+        "prims", type=pathlib.Path, nargs="?", help="JSON list of prim records (or use --stage)"
+    )
+    ap.add_argument(
+        "--stage", type=pathlib.Path, default=None, help="USD asset to walk (needs Isaac Sim)"
+    )
+    ap.add_argument("--root", default="/", help="prim path to walk under (with --stage)")
+    ap.add_argument(
+        "--dump-prims", type=pathlib.Path, default=None, help="write the records as JSON"
+    )
     ap.add_argument(
         "--rules", type=pathlib.Path, default=None, help="mapping.yaml (default: configs/materials)"
     )
@@ -45,14 +62,55 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="material directory (default: configs/materials)",
     )
     args = ap.parse_args(argv)
+    if (args.prims is None) == (args.stage is None):
+        ap.error("give exactly one of prims.json or --stage")
 
     library = MaterialLibrary.load(args.materials)
     names = MaterialTable.from_library(library, args.band).names
     rules = load_mapping_rules(args.rules, known_materials=library.names)
-    records = [PrimRecord.from_dict(d) for d in json.loads(args.prims.read_text(encoding="utf-8"))]
+    app = None
+    if args.stage is not None:
+        records, app = _open_stage_and_walk(args.stage, args.root)
+    else:
+        records = [
+            PrimRecord.from_dict(d) for d in json.loads(args.prims.read_text(encoding="utf-8"))
+        ]
+    if args.dump_prims is not None:
+        from irsim_isaac.pipeline.materials_usd import dump_prim_records
+
+        print(f"wrote {dump_prim_records(records, args.dump_prims)}")
     report = audit(records, MaterialResolver(rules, names), args.threshold)
     print(report.render())
-    return 0 if report.passed else 1
+    status = 0 if report.passed else 1
+    if app is not None:
+        # SimulationApp.close() ends in os._exit (ADR 0014), so it must come after every print
+        # and it carries the exit status itself -- the `return` below is never reached.
+        app.close(exit_code=status)
+    return status
+
+
+def _open_stage_and_walk(stage_path: pathlib.Path, root: str) -> tuple[list, object]:  # type: ignore[type-arg]
+    """Boot Kit, open the asset, walk it, and hand the app back so the caller closes it last.
+
+    Separated so the JSON path never touches Isaac Sim, and so the report is printed before the
+    app is closed: ``SimulationApp.close()`` does not return.
+    """
+    from isaacsim import SimulationApp
+
+    app = SimulationApp({"headless": True})
+    import omni.usd
+
+    from irsim_isaac.pipeline.materials_usd import prim_records
+
+    ctx = omni.usd.get_context()
+    # open_stage returns a bare bool on this build (6.1.0-rc.26), not the (ok, error) pair the
+    # older docs show; unpacking it raises inside Kit, which then reports exit status 0 anyway.
+    result = ctx.open_stage(str(stage_path))
+    ok = result[0] if isinstance(result, tuple) else bool(result)
+    if not ok:
+        print(f"could not open {stage_path}", file=sys.stderr)
+        app.close(exit_code=2)
+    return prim_records(ctx.get_stage(), root=root), app
 
 
 if __name__ == "__main__":

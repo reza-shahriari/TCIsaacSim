@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Material-ID transport for the Isaac path (M10.2): `irsim_isaac.pipeline.material_ids` (instance
+  id → prim path → M7.17 material id by exact integer lookup, UNMAPPED mask, magenta display
+  overlay) and `irsim_isaac.pipeline.materials_usd` (stage walk for bindings, `class` semantics and
+  the `thermal:material` override). `scripts/audit_materials.py` gains `--stage` / `--dump-prims`.
+  Measured: the id channel must be `instance_id_segmentation`, because `instance_segmentation`
+  gives a distinct id only to *labelled* prims and collapses the rest into one id (ADR 0014
+  addendum) -- four of five test prims would have shared a material with nothing raising.
 - Isaac geometry AOVs assembled into the M0.6 `GBuffer` (M10.1): `irsim_isaac.pipeline.gbuffer_isaac`
   (`AovReader` + engine-free assembly of `distance_m`, `normal_dot_view` against the per-pixel ray,
   `normal_dot_up`, V_s = occlusion·(1+n·up)/2, `sky_mask`), `irsim_isaac.geometry_probe` and

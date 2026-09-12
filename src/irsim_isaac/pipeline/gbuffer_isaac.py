@@ -80,6 +80,7 @@ __all__ = [
     "to_gbuffer",
     "motion_px_per_frame",
     "AOV_NAMES",
+    "AOV_INIT_PARAMS",
 ]
 
 #: Frame the position AOV is expressed in. ``Camera3dPositionSD`` reads as a world position on a
@@ -105,14 +106,27 @@ UP_AXIS_VECTOR: dict[str, tuple[float, float, float]] = {
 #: plausible-looking G-buffer with no surface orientation in it at all. ``normals`` is the one that
 #: delivers float32 at full resolution. ``AmbientOcclusion`` and ``Motion2d`` return no data here;
 #: they are kept as second choices in case a later build revives them.
+#:
+#: ``instance_id_segmentation`` before ``instance_segmentation`` is the other measured correction:
+#: ``instance_segmentation`` gives a distinct id only to prims that carry a **semantic label**, and
+#: collapses every unlabelled prim into a single ``UNLABELLED`` id. ADR 0014 recorded it as exact
+#: per prim, but its ramp scene labelled all 64 quads, so the degeneracy never showed. An asset
+#: with unlabelled prims would silently paint them all one material.
 AOV_NAMES: dict[str, tuple[str, ...]] = {
     "distance": ("DistanceToCameraSD",),
     "position": ("Camera3dPositionSD", "PtWorldPos"),
     "normal": ("normals", "PtWorldNormal", "SmoothNormal"),
     "occlusion": ("AmbientOcclusion",),
     "motion": ("motion_vectors", "Motion2d"),
-    "instance": ("instance_segmentation",),
+    "instance": ("instance_id_segmentation", "instance_segmentation"),
     "semantic": ("semantic_segmentation",),
+}
+
+#: Init params per annotator. ``colorize=False`` keeps the segmentation channels as uint32 ids
+#: rather than an RGBA palette image -- a colorized id cannot be looked up, only guessed at.
+AOV_INIT_PARAMS: dict[str, dict[str, Any]] = {
+    "instance": {"colorize": False},
+    "semantic": {"colorize": False},
 }
 
 _SKY_NORMAL_DOT_VIEW = np.float32(1.0)
@@ -452,9 +466,12 @@ class AovReader:
         import omni.replicator.core as rep
 
         for channel, candidates in self.names.items():
+            init_params = AOV_INIT_PARAMS.get(channel)
             for name in candidates:
                 try:
-                    anno = rep.AnnotatorRegistry.get_annotator(name, device=self.device)
+                    anno = rep.AnnotatorRegistry.get_annotator(
+                        name, init_params=init_params, device=self.device
+                    )
                     anno.attach(self.render_product_path)
                 except Exception as exc:  # noqa: BLE001 - any failure means "try the next name"
                     self.failures[f"{channel}:{name}"] = f"{type(exc).__name__}: {exc}"
