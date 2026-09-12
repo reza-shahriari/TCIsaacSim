@@ -6,6 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- MS.6 analytic point targets wired into `IrCamera` (roadmap M10.19, ADR 0071). Below one native
+  pixel the renderer is the wrong instrument -- it samples geometry, so a target covering a
+  quarter of a pixel is drawn or not drawn depending where the sample landed. `AnalyticTarget`
+  carries such a target's world position, projected area, material and thermal node;
+  `IrCamera.point_targets()` turns it into an MS.6 `PointTarget` each frame, rebuilt rather than
+  cached because the temperature is still moving.
+- **A target is rendered or injected, never both.** `aerial_demo.analytic_targets` hides the
+  sub-pixel prims in the same call that produces their specs, so the two paths cannot both claim
+  one, and `IrCamera.check_no_double_count()` reports any that still reached the id plane. Both
+  halves are tested, including the failure: with the prim left visible the guard names it.
+- The leaving radiance comes from `irsim.validation.aerial.target_leaving_radiance`, the same
+  function the engine-free aerial work uses, so the in-sim and CPU paths cannot disagree about
+  eps L_B(T) + (1 - eps) L_env.
+- In-sim verification (`tests/integration/test_point_targets_isaac.py`, 7 tests): the injected
+  excess **survives the whole chain to 5 %** -- splat, optical PSF, box downsample, detector, ADC
+  and the radiometric inversion all compose back to the excess that went in; an injected target
+  lands within half a native pixel of where the renderer draws the same object, so the handover at
+  one pixel introduces no jump; and the fill fraction carries the entire geometric range law
+  (phi R^2 constant to 1e-12).
+- **The "signal falls as tau/R^2" shorthand is not exact, and now there is a test saying so.**
+  Measured over 400-3200 m it drifts by 33 %, always in the direction of under-predicting the
+  longer range. The excess is phi * sum_k w_k tau_k (L_t - L_beyond,k): the bracket depends on
+  range too, because what a target occults is the sky column beyond it and there is less of that
+  column left at 3200 m. A trade study using the shorthand would over-estimate detection range.
+- `scripts/render_aerial_demo.py` uses the split: the 500 m, 1500 m and motor-pod targets are now
+  injected analytically and marked ANALYTIC in the report, with `--no-point-targets` as the
+  ADR 0071 ablation that renders them as geometry instead.
+
+### Fixed
+- `world_to_camera` returns **USD** camera space (+Y up, -Z forward), so the projection has to be
+  `project_usd`; `project` reads -Z as behind the camera and returns NaN for every target in front
+  of it. Caught by that NaN guard rather than by a wrong picture, which is what it is for.
 - Aerial demo stage and a one-command render (roadmap M10.19, stage half):
   `irsim_isaac.aerial_demo` authors six targets against sky -- a resolved quadrotor at 120 m, one
   at the pixel limit at 500 m, one well below it at 1500 m, an aircraft at 2.5 km, a bird and a

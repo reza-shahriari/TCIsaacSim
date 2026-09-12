@@ -34,6 +34,11 @@ parser.add_argument("--t0", type=float, default=0.0, help="scene time of the fir
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
+parser.add_argument(
+    "--no-point-targets",
+    action="store_true",
+    help="render sub-pixel targets as geometry instead of injecting them (ADR 0071 ablation)",
+)
 args = parser.parse_args()
 
 t_boot = time.time()
@@ -54,7 +59,7 @@ def main() -> int:
     from irsim.pipeline.core import PipelineConfig
     from irsim.radiometry.lut_files import load_band_lut_for_config
     from irsim.scene import Scene
-    from irsim_isaac.aerial_demo import build_aerial_demo, describe
+    from irsim_isaac.aerial_demo import analytic_targets, build_aerial_demo, describe
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
 
@@ -69,6 +74,13 @@ def main() -> int:
     demo = build_aerial_demo(camera_tilt_deg=args.tilt_deg)
     if demo.errors:
         print(f"stage errors: {demo.errors}", file=sys.stderr)
+
+    # Below one native pixel the renderer samples geometry and gets a phase-dependent fraction of
+    # the flux (ADR 0071), so those targets are hidden and injected analytically instead (MS.6).
+    # `analytic_targets` hides them in the same call that produces their specs, so the two paths
+    # cannot both claim a target.
+    ifov_mrad = 1e3 * spec.fpa.pitch_um * 1e-3 / spec.optics.focal_length_mm
+    analytic = [] if args.no_point_targets else analytic_targets(demo, ifov_mrad)
 
     table = MaterialTable.from_library(MaterialLibrary.load(), spec.band.band_id)
     resolver = MaterialResolver(load_mapping_rules(), list(table.names))
@@ -91,15 +103,17 @@ def main() -> int:
         # the same object the atmosphere, the sky and the target solvers hold (CLAUDE.md #6).
         pipeline = attach_sensor_chain(pipeline, scene.weather, t0_s=scene.t0_s)
 
-    ifov_mrad = 1e3 * spec.fpa.pitch_um * 1e-3 / spec.optics.focal_length_mm
     rows = describe(demo, ifov_mrad)
     print(
         f"\n{spec.name}: {spec.fpa.width}x{spec.fpa.height}, IFOV {ifov_mrad:.3f} mrad, "
         f"{spec.optics.supersample_factor}x supersampled, boresight "
         f"{demo.boresight_elevation_deg():.1f} deg above the horizon"
     )
+    injected = {t.name for t in analytic}
     for row in rows:
-        flag = "  SUB-PIXEL (MS.6 territory)" if row["subpixel"] else ""
+        flag = "  ANALYTIC (MS.6)" if row["name"] in injected else ""
+        if row["subpixel"] and row["name"] not in injected:
+            flag = "  SUB-PIXEL, rendered anyway (--no-point-targets)"
         print(
             f"  {row['name']:12s} {row['range_m']:7.0f} m  {row['mrad']:6.3f} mrad  "
             f"{row['pixels']:6.2f} px  el {row['elevation_deg']:5.1f} deg  "
@@ -112,6 +126,7 @@ def main() -> int:
         pipeline=pipeline,
         prim_to_target=demo.prim_to_target,
         resolutions=resolutions,
+        analytic_targets=analytic,
         camera_path=demo.camera_path,
         strict_materials=False,
     ).open(settle_frames=args.settle)
@@ -134,6 +149,7 @@ def main() -> int:
                 "scene": pathlib.Path(args.scene).name,
                 "camera_tilt_deg": demo.camera_tilt_deg,
                 "targets": rows,
+                "analytic_targets": sorted(injected),
             },
         )
         written.append(record)
@@ -155,6 +171,7 @@ def main() -> int:
         "supersample": spec.optics.supersample_factor,
         "ifov_mrad": round(ifov_mrad, 4),
         "targets": rows,
+        "analytic": sorted(injected),
         "files": [str(p.name) for r in written for p in r.files.values()],
     }
     path = out_dir / "summary.json"

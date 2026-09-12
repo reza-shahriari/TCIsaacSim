@@ -74,6 +74,14 @@ verified against the renderer to 0.2 px. Still open for a full M10.19: the ME.6 
 comparison, and the τ(R)/R² SCR law, which needs MS.6's analytic injection rather than renderer
 geometry.
 
+**Targets below one pixel are injected, not rendered.** A 0.35 m quadrotor at 500 m is 0.82 of a
+Boson pixel, and a rasteriser gives a phase-dependent fraction of its flux (ADR 0071), so those
+prims are hidden and MS.6's analytic excess is injected in their place -- one path or the other,
+never both, guarded by `IrCamera.check_no_double_count()`. Measured in sim: the excess survives
+the whole chain to 5 %, lands within half a pixel of where the renderer draws the same object, and
+shows that the usual `tau(R)/R^2` shorthand under-predicts longer ranges by 33 % over 400-3200 m,
+because what a target occults is the sky column beyond it.
+
 Bands configured: **LWIR** (`flir_boson_640_lwir`, estimated VOx response — ADR 0013; `make luts` builds the table) · Cameras modelled: _none yet_ (radiometry only; the pipeline starts at M3)
 
 ---

@@ -36,6 +36,8 @@ __all__ = [
     "DEMO_TARGETS",
     "build_aerial_demo",
     "camera_space_position",
+    "analytic_targets",
+    "describe",
 ]
 
 #: The stage's targets. ``material`` is written as a ``thermal:material`` override so the mapping
@@ -222,3 +224,48 @@ def describe(scene: AerialDemoScene, ifov_mrad: float) -> list[dict[str, Any]]:
         }
         for t in scene.targets.values()
     ]
+
+
+def analytic_targets(scene: AerialDemoScene, ifov_mrad: float, *, hide: bool = True) -> list[Any]:
+    """Split the stage at one native pixel: hide the sub-pixel prims and return their MS.6 specs.
+
+    This is the whole of the handover. Below one pixel the renderer samples geometry and gets a
+    phase-dependent fraction of the flux (ADR 0071); the analytic path computes the pixel-averaged
+    excess exactly. What makes it safe is that the two are **mutually exclusive** -- a prim handed
+    to the analytic path is made invisible here, in the same call that produces its spec, so the
+    two cannot drift apart in a caller that remembers one and forgets the other.
+
+    ``hide=False`` returns the specs without touching the stage. That is for measuring the
+    double-count this design prevents, not for production: with both paths live the target is
+    rendered *and* injected and reads too bright by a phase-dependent amount.
+    """
+    import omni.usd
+    from pxr import UsdGeom
+
+    from irsim_isaac.pipeline.ir_camera import AnalyticTarget
+
+    stage = omni.usd.get_context().get_stage()
+    out: list[Any] = []
+    for target in scene.targets.values():
+        if not target.subpixel_at(ifov_mrad):
+            continue
+        centre = _rotate_x(
+            camera_space_position(target.range_m, target.azimuth_deg, target.elevation_deg),
+            scene.camera_tilt_deg,
+        )
+        if hide:
+            prim = stage.GetPrimAtPath(target.prim_path)
+            if prim and prim.IsValid():
+                UsdGeom.Imageable(prim).MakeInvisible()
+        out.append(
+            AnalyticTarget(
+                name=target.name,
+                world_position=centre,
+                # The projected area of a front-parallel square; the analytic path needs the area
+                # the camera sees, not the object's total surface.
+                area_m2=target.size_m**2,
+                material=target.material,
+                thermal_node=target.thermal_node,
+            )
+        )
+    return out

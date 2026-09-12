@@ -62,10 +62,17 @@ from numpy.typing import NDArray
 
 from irsim.config.sensor import DistortionSpec, SensorConfig, SensorSpec
 from irsim.materials.mapping import Resolution
-from irsim.optics.projection import FTHETA_UNVERIFIED, Intrinsics, opencv_pinhole_coeffs
+from irsim.optics.projection import (
+    FTHETA_UNVERIFIED,
+    Intrinsics,
+    opencv_pinhole_coeffs,
+    project_usd,
+)
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.frame import Outputs, run_frame
+from irsim.pipeline.point_target import PointTarget, fill_fraction
 from irsim.scene import Scene
+from irsim.validation.aerial import AerialTarget, target_leaving_radiance
 from irsim_isaac.pipeline.aerial_bridge import AerialThermalBridge, elevation_from_rays
 from irsim_isaac.pipeline.gbuffer_isaac import (
     UP_AXIS_VECTOR,
@@ -86,9 +93,11 @@ __all__ = [
     "DISTORTION_SCHEMA",
     "DISTORTION_NAMESPACE",
     "CameraOptics",
+    "AnalyticTarget",
     "camera_optics",
     "distortion_attributes",
     "author_camera",
+    "world_to_camera",
     "IrCamera",
 ]
 
@@ -223,6 +232,48 @@ def author_camera(
     }
 
 
+@dataclass(frozen=True)
+class AnalyticTarget:
+    """A scene object too small to rasterise, injected analytically instead (MS.6, ADR 0071).
+
+    Below one native pixel the renderer is the wrong instrument: it samples geometry, so a target
+    covering a quarter of a pixel is either drawn or not drawn depending on where the sample
+    fell, and the flux error per sub-pixel phase is large and phase-dependent (ADR 0071). The
+    analytic path computes the pixel-averaged excess from the fill fraction instead, which is
+    exact at every phase and is what the resolved formula collapses to at phi = 1.
+
+    **A target is one thing or the other, never both.** A prim that is injected here must not
+    also be rendered, or its radiance is counted twice; :func:`irsim_isaac.aerial_demo.
+    analytic_targets` hides the prims it hands over, and :meth:`IrCamera.check_no_double_count`
+    verifies none of them reached the id plane.
+
+    ``sky_view_factor`` is of the face the camera sees -- 1 for a face seeing only sky, which is
+    the honest default for something airborne above the camera.
+    """
+
+    name: str
+    world_position: tuple[float, float, float]
+    area_m2: float
+    material: str
+    thermal_node: str
+    sky_view_factor: float = 1.0
+
+
+def world_to_camera(
+    point_world: Any, camera_position: Any, camera_to_world: Any
+) -> NDArray[np.float64]:
+    """A world point in USD **camera** space (+X right, +Y up, −Z forward).
+
+    USD matrices are row-vector, ``p_world = p_camera @ R + t``, so the inverse rotation is
+    ``(p_world − t) @ R.T``. ``camera_to_world`` is the array :class:`IrCamera` stores, which is
+    already ``R.T`` (what ``ray_directions`` wants), so the product here is with it directly --
+    the one place the two conventions meet, written out rather than left as a transpose to
+    rediscover.
+    """
+    p = np.asarray(point_world, dtype=np.float64) - np.asarray(camera_position, dtype=np.float64)
+    return np.asarray(p @ np.asarray(camera_to_world, dtype=np.float64))
+
+
 @dataclass
 class _Frame:
     """One frame's intermediates, kept so a caller can inspect what produced an image."""
@@ -252,6 +303,7 @@ class IrCamera:
         pipeline: PipelineConfig,
         prim_to_target: Mapping[str, str],
         resolutions: Sequence[Resolution],
+        analytic_targets: Sequence[AnalyticTarget] = (),
         camera_path: str = "/World/IrCamera",
         stage: Any = None,
         position_frame: PositionFrame = "camera",
@@ -286,6 +338,13 @@ class IrCamera:
         self.strict_materials = strict_materials
         self.device = device
         self.resolutions = list(resolutions)
+        self.analytic_targets = list(analytic_targets)
+        if self.analytic_targets and pipeline.sky is None:
+            raise ValueError(
+                "analytic point targets need a SkyModel: their leaving radiance is "
+                "eps L_B(T) + (1 - eps) L_env and the background they occult is the sky beyond "
+                "them (MS.6, ADR 0071)"
+            )
         self.state = PipelineState(t_s=scene.t0_s)
         self.bridge = AerialThermalBridge(scene, prim_to_target, band=band)
         self.frame_period_s = 1.0 / float(sensor.sensor.fpa.frame_rate_hz)
@@ -433,6 +492,90 @@ class IrCamera:
         )
         return planes
 
+    def point_targets(self) -> list[PointTarget]:
+        """The MS.6 injections for this frame: position, range, elevation and leaving radiance.
+
+        Rebuilt every frame rather than cached, because the temperature is: each target's thermal
+        node has advanced, and a cached radiance would quietly render a target that stopped
+        warming up.
+        """
+        if not self.analytic_targets:
+            return []
+        if self._camera_position is None or self._camera_to_world is None:
+            raise RuntimeError("call open() first (the camera pose comes from the stage)")
+        sky = self.config.sky
+        assert sky is not None  # checked in __init__
+        sensor = self.sensor.sensor
+        native = Intrinsics.from_sensor(sensor, 1)
+        distortion = sensor.optics.distortion
+        up = np.asarray(UP_AXIS_VECTOR[self._up_axis or "Y"], dtype=np.float64)
+        temperatures = self.bridge.temperatures()
+        t_abs = self.scene.t0_s + self._t_rel_s
+
+        out: list[PointTarget] = []
+        for target in self.analytic_targets:
+            offset = np.asarray(target.world_position, dtype=np.float64) - self._camera_position
+            range_m = float(np.linalg.norm(offset))
+            if range_m <= 0.0:
+                raise ValueError(f"analytic target {target.name!r} is at the camera")
+            elevation = float(np.arcsin(np.clip(float(offset @ up) / range_m, -1.0, 1.0)))
+            phi = fill_fraction(
+                target.area_m2,
+                range_m,
+                sensor.optics.focal_length_mm * 1e-3,
+                sensor.pixel_area_m2,
+            )
+            if phi >= 1.0:
+                raise ValueError(
+                    f"analytic target {target.name!r} fills {phi:.2f} native pixels at "
+                    f"{range_m:.0f} m: render it as geometry instead (ADR 0071)"
+                )
+            eps = float(
+                self.config.materials.emissivity_for(
+                    np.array([[self.config.materials.id_for(target.material)]], dtype=np.int32)
+                )[0, 0]
+            )
+            radiance = target_leaving_radiance(
+                AerialTarget(
+                    temperature_k=float(temperatures[target.thermal_node]),
+                    emissivity=eps,
+                    range_m=range_m,
+                    sky_view_factor=target.sky_view_factor,
+                ),
+                sky,
+                t_abs,
+            )
+            # `world_to_camera` returns USD camera space (+Y up, -Z forward), so the projection
+            # has to be the one that flips into OpenCV; `project` would read -Z as "behind the
+            # camera" and hand back NaN for every target in front of it.
+            cam = world_to_camera(
+                target.world_position, self._camera_position, self._camera_to_world
+            )
+            u, v = project_usd(np.array([cam]), native, distortion)
+            out.append(
+                PointTarget(
+                    area_m2=target.area_m2,
+                    range_m=range_m,
+                    radiance=radiance,
+                    position_px=(float(u[0]), float(v[0])),
+                    elevation_rad=elevation,
+                )
+            )
+        return out
+
+    def check_no_double_count(self) -> list[str]:
+        """Analytic targets whose prims still reached the id plane -- each is counted twice.
+
+        Returns the offending names, so a caller can raise with all of them rather than the first.
+        An analytic target must be hidden from the renderer; if it is not, its radiance arrives
+        once from the rasteriser and once from the injection, and the result is simply too bright
+        by an amount that depends on the sub-pixel phase.
+        """
+        if not self.analytic_targets or self._last is None:
+            return []
+        rendered = {path for ident, path in self._last.labels.items() if ident != 0}
+        return sorted(t.name for t in self.analytic_targets if _matches(rendered, t.name))
+
     def get_outputs(self, *, step: bool = True, rt_subframes: int = 1) -> Outputs:
         """One frame, all the way to ``radiance`` / ``apparent_t`` / ``dn16`` / ``display8``.
 
@@ -442,7 +585,7 @@ class IrCamera:
         """
         planes = self.planes(step=step, rt_subframes=rt_subframes)
         self.state.t_s = self.scene.t0_s + self._t_rel_s
-        outputs = run_frame(planes, self.config, self.state)
+        outputs = run_frame(planes, self.config, self.state, self.point_targets())
         overlay = (
             self.debug_unmapped
             and outputs.display8 is not None
@@ -474,3 +617,8 @@ class IrCamera:
                 mask[: h * k, : w * k].reshape(h, k, w, k).any(axis=(1, 3)), dtype=np.bool_
             )
         return overlay_unmapped(display8, mask)
+
+
+def _matches(rendered_paths: set[str], name: str) -> bool:
+    """Whether any rendered prim path names this target (its leaf name)."""
+    return any(path.rsplit("/", 1)[-1] == name for path in rendered_paths)
