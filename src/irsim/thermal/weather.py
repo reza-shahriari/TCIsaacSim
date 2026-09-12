@@ -36,7 +36,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from irsim.atmosphere.humidity import absolute_humidity_g_m3, vapour_pressure_hpa
 from irsim.radiometry.constants import SOLAR_CONSTANT_W_M2
 
 __all__ = ["WEATHER_FIELDS", "WeatherSample", "WeatherSeries", "seconds_since"]
@@ -65,7 +64,16 @@ def seconds_since(epoch_utc: datetime, when: datetime) -> float:
 
 @dataclass(frozen=True)
 class WeatherSample:
-    """The weather at one instant (the interpolated state consumers read)."""
+    """The weather at one instant (the interpolated state consumers read).
+
+    The humidity helpers are imported inside the two properties rather than at module scope.
+    ``irsim.atmosphere.humidity`` cannot be imported without running ``irsim/atmosphere/__init__``,
+    which imports modules that import this one; at module scope that cycle made
+    ``import irsim.thermal`` fail outright on a clean interpreter, and it only ever appeared to
+    work because some other module imported ``irsim.atmosphere`` first. Deferring it here breaks
+    the cycle at its source, so no atmosphere module has to care. See
+    ``tests/unit/test_import_order.py``.
+    """
 
     t_air_k: float
     rh_fraction: float
@@ -79,10 +87,14 @@ class WeatherSample:
     @property
     def vapour_pressure_hpa(self) -> float:
         """e = RH · e_s(T_air) (Magnus, M8.2) -- the input of the sky emissivity (M6.5)."""
+        from irsim.atmosphere.humidity import vapour_pressure_hpa
+
         return vapour_pressure_hpa(self.t_air_k, self.rh_fraction)
 
     @property
     def absolute_humidity_g_m3(self) -> float:
+        from irsim.atmosphere.humidity import absolute_humidity_g_m3
+
         return absolute_humidity_g_m3(self.t_air_k, self.rh_fraction)
 
 

@@ -272,6 +272,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ruff ignores `N802` alongside `N803`/`N806` (physics notation such as `d_spectral_radiance_dT`).
 
 ### Fixed
+- `import irsim.thermal` failed outright on a clean interpreter: `irsim.thermal.weather` imported
+  `irsim.atmosphere.humidity` at module scope, which runs `irsim/atmosphere/__init__` and lands back
+  in the partially-initialised `weather` module. The whole suite passed only because pytest collects
+  alphabetically and something imported `irsim.atmosphere` first, so the cycle was invisible until a
+  single test file was run alone. The two humidity helpers are now imported inside the two
+  `WeatherSample` properties that use them, breaking the cycle at its source; no atmosphere module
+  needed changing. `tests/unit/test_import_order.py` imports each subpackage in its own subprocess
+  so collection order can never hide this again.
 - `SpectralResponse.resampled` snaps grid points within 1e-9 µm of the support edges: a grid built as
   `lo + k·dl` lands 2e-16 µm past the last sample and lost the endpoint (a 5 % error for SWIR at 300 K).
 - `make check` is green on the scaffold: three files reformatted, one `Any` return in
