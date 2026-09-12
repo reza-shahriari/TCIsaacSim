@@ -84,6 +84,8 @@ src/irsim_isaac/        # Isaac Sim glue — the ONLY place engine imports are a
   spg/                  # SPG assets: .cu kernels, .cu.lua launch scripts, .usda shader defs
 
 tests/
+  conftest.py           # synthetic G-buffer fixtures (ramp, uniform, two-material, grazing sphere,
+                         # supersampled step edge, moving edge) — the engine-free kernel test bed
   unit/                 # fast, no GPU, no Isaac Sim. Must run in < 30 s total.
   integration/          # requires Isaac Sim. Marked @pytest.mark.isaac, skipped by default.
   golden/               # regression fixtures (reference arrays + tolerances)
@@ -91,10 +93,16 @@ tests/
 configs/sensors/        # one YAML per camera (see docs/physics-model.md §12.2)
 configs/materials/      # material library
 configs/atmospheres/    # atmosphere presets
+configs/environments/   # illumination/weather-regime presets
 data/                   # spectral response curves, n/k tables, generated LUTs, weather files
+                         # ($IRSIM_DATA_DIR overrides the root)
 docs/physics-model.md   # THE physics specification
+docs/roadmap.md         # milestones, one-commit steps, risks, ADR backlog
+docs/spec-issues.md     # contradictions found in physics-model.md and the resolution the code assumes
 docs/decisions/         # ADRs — one file per significant decision
+docs/maps/              # per-module JSON maps used for fast navigation of the physics core
 scripts/                # LUT generation, validation reports, dataset export
+.github/workflows/      # CI: plain-CPython gate only, no GPU, no Isaac Sim (mirrors `make ci`)
 ```
 
 ---
@@ -102,15 +110,23 @@ scripts/                # LUT generation, validation reports, dataset export
 ## Commands
 
 ```bash
-make install      # editable install + dev dependencies
-make test         # unit tests only (fast, no GPU) — this is the default gate
-make test-all     # includes integration tests (needs Isaac Sim)
-make lint         # ruff check + ruff format --check
-make fmt          # ruff format
-make typecheck    # mypy on src/irsim
-make check        # lint + typecheck + test  ← run this before every commit
-make luts         # regenerate band LUTs from configs + spectral response data
+make install       # editable install + dev dependencies
+make test          # unit + golden tests (fast, no GPU) — this is the default gate
+make test-all      # includes integration tests (needs Isaac Sim)
+make lint          # ruff check + ruff format --check
+make fmt           # ruff format
+make typecheck     # mypy on src/irsim and src/irsim_isaac
+make check         # lint + typecheck + test  ← run this before every commit
+make ci            # reproduces the GitHub Actions job locally: plain CPython 3.10 venv + make check
+                    # (proves the engine-free core needs neither Isaac Sim nor CUDA)
+make luts          # regenerate band LUTs from configs + spectral response data
+make golden-update # regenerate golden reference arrays deliberately (never to silence a failure)
 ```
+
+Every target honours `PYTHON=`. Locally this should point at the Isaac Sim interpreter (ADR 0002),
+e.g. `make check PYTHON=/path/to/IsaacSim/_build/linux-x86_64/release/python.sh` — the system Python
+and a bare conda base typically lack pytest/numpy/ruff/mypy. Any CPython ≥ 3.10 with `.[dev]` installed
+also works for everything under `src/irsim/` and `tests/unit/`; only `test-all` needs the Isaac interpreter.
 
 `make check` must pass before any commit. No exceptions, no `--no-verify`.
 

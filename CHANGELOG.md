@@ -357,6 +357,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sidecars regenerated for the new `config_hash` -- all twelve arrays bit-identical (ADR 0004).
 
 ### Changed
+- `CLAUDE.md` now matches the repository it describes: the layout block gains `tests/conftest.py`
+  (the synthetic G-buffer fixtures), `configs/environments/`, `docs/roadmap.md`,
+  `docs/spec-issues.md`, `docs/maps/`, `.github/workflows/` and the `$IRSIM_DATA_DIR` override, and
+  the command table gains `make ci` and `make golden-update`, records that `make test` runs the
+  golden suite too and that `make typecheck` covers `src/irsim_isaac`, and states that every target
+  honours `PYTHON=` (ADR 0002). The guidance was describing an earlier tree, which is the failure
+  mode a project instruction file cannot afford.
 - The reflected-environment tests no longer assume a fully overcast sky reads exactly `T_air`. The
   isothermal-enclosure test derives its enclosure temperature from the sky model (and pins the
   ground to it with `ground.mode: fixed`), and the cold-roof test computes a reference from each
