@@ -11,6 +11,12 @@ from irsim.validation.aerial import (
     target_leaving_radiance,
     zero_contrast_elevation,
 )
+from irsim.validation.aerial_scene import (
+    AerialScene,
+    SceneTarget,
+    build_aerial_gbuffer,
+    elevation_grid_rad,
+)
 from irsim.validation.bench import SitfResult, measured_netd_k, sitf
 from irsim.validation.mtf import SlantEdgeResult, slant_edge_mtf
 from irsim.validation.noise import (
@@ -24,7 +30,11 @@ from irsim.validation.noise import (
 )
 
 __all__ = [
+    "AerialScene",
     "AerialTarget",
+    "SceneTarget",
+    "build_aerial_gbuffer",
+    "elevation_grid_rad",
     "apparent_target_radiance",
     "background_radiance",
     "target_contrast",

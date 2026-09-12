@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim.validation.aerial_scene` + the `gbuffer_aerial` fixture and `tests/unit/test_tier3_sky.py`
+  (MS.8): a synthetic sky-background G-buffer -- exact per-pixel ray elevation for a pitched pinhole,
+  horizon, optional 1/f^β cloud coverage, targets rasterised above one native pixel and handed to
+  MS.6's analytic injection below it -- plus the Tier 3 checks it exists for: the rendered sky
+  profile is an identity on MS.2 within 1 mK and scale-free to 1 %, cloud reads its base temperature
+  > 20 K above clear sky with real spatial structure, a sub-pixel target's excess follows
+  φ τ(R)(L_t − L_air)/R² exactly against a grey atmosphere and decays measurably slower against the
+  layered one (the occulted sky dims with range), and a 2 px target's footprint aliases with
+  sub-pixel phase while the optical PSF lowers the peak and conserves the flux.
 - Aerial thermal bridge (M10.18, ADR 0060): `irsim_isaac.pipeline.aerial_bridge` couples the M6.6
   target solvers to the renderer through a float32 table indexed by instance id -- 317.25 K reads
   back within 10 mK and a 50 mK pair stays resolved, where the rejected fp16 emissive path would

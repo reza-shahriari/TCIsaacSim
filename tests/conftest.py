@@ -221,3 +221,104 @@ def gbuffer_moving_edge(step_edge_params: dict[str, float]) -> list[dict[str, np
         planes["motion_px"] = motion
         frames.append(planes)
     return frames
+
+
+# --- aerial scene (MS.8) ---------------------------------------------------------------
+# A sky-background scene needs a sky model, which needs an atmosphere, a weather series and a
+# band LUT, so the expensive pieces are session-scoped: MS.2's elevation LUT costs ~0.4 s to
+# build and is cached per weather time inside the SkyModel.
+
+AERIAL_T_AIR_K = 288.15
+AERIAL_RH = 0.4
+AERIAL_BORESIGHT_DEG = 20.0
+
+
+@pytest.fixture(scope="session")
+def aerial_sensor():  # type: ignore[no-untyped-def]
+    """A wide-field 64x48 LWIR camera: the Boson's pitch and f/1 optics on a 1 mm lens, so a
+    small frame still spans 42 deg horizontally and the sky gradient is visible across it."""
+    import copy
+    import pathlib as _pathlib
+
+    import yaml
+
+    from irsim.config.sensor import SensorConfig
+
+    repo = _pathlib.Path(__file__).resolve().parent.parent
+    raw = yaml.safe_load((repo / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
+    d = copy.deepcopy(raw)
+    d["sensor"]["fpa"].update(width=64, height=48)
+    d["sensor"]["optics"]["focal_length_mm"] = 1.0
+    d["sensor"]["optics"]["supersample_factor"] = 1
+    return SensorConfig.model_validate(d)
+
+
+def _aerial_sky(lut, cloud_fraction: float, rh: float = AERIAL_RH):  # type: ignore[no-untyped-def]
+    from irsim.atmosphere.layered import LayeredAtmosphere
+    from irsim.atmosphere.library import load_atmosphere_preset
+    from irsim.atmosphere.sky import SkyModel
+    from irsim.config.environment import load_environment_preset
+    from irsim.thermal.weather import WeatherSample, WeatherSeries
+
+    weather = WeatherSeries.constant(
+        WeatherSample(AERIAL_T_AIR_K, rh, 1.0, cloud_fraction, 0.0, 0.0, 23000.0, 0.0), 3600.0
+    )
+    atmosphere = LayeredAtmosphere(
+        load_atmosphere_preset("us_standard_clear"), weather, {"lwir": lut}
+    )
+    return SkyModel(atmosphere, load_environment_preset("clear_dry"), "lwir", lut)
+
+
+@pytest.fixture(scope="session")
+def aerial_sky(tophat_lwir_lut):  # type: ignore[no-untyped-def]
+    """Clear-sky LWIR SkyModel over the US Standard atmosphere at 288.15 K, RH 0.4."""
+    return _aerial_sky(tophat_lwir_lut, cloud_fraction=0.0)
+
+
+@pytest.fixture(scope="session")
+def aerial_cloudy_sky(tophat_lwir_lut):  # type: ignore[no-untyped-def]
+    """The same sky at cloud fraction 0.4 and RH 0.6 (a cloud base around 800 m)."""
+    return _aerial_sky(tophat_lwir_lut, cloud_fraction=0.4, rh=0.6)
+
+
+@pytest.fixture(scope="session")
+def aerial_materials():  # type: ignore[no-untyped-def]
+    """The committed material library packed for the LWIR band (ids 1..N, 0 = UNMAPPED)."""
+    from irsim.materials.library import MaterialLibrary
+    from irsim.materials.table import MaterialTable
+
+    return MaterialTable.from_library(MaterialLibrary.load(), "lwir")
+
+
+@pytest.fixture
+def aerial_scene(aerial_sensor, aerial_sky, aerial_materials):  # type: ignore[no-untyped-def]
+    """Clear sky from ~4 deg to ~36 deg elevation with one resolved 2 px target.
+
+    Returns the :class:`irsim.validation.aerial_scene.AerialScene`, which carries the per-pixel
+    elevation grid and the target bookkeeping a phenomenology test needs to state the right
+    answer; ``gbuffer_aerial`` is just its plane dict.
+    """
+    from irsim.validation.aerial_scene import SceneTarget, build_aerial_gbuffer
+
+    sensor = aerial_sensor.sensor
+    range_m = 700.0
+    size_m = 2.0 * range_m * sensor.fpa.pitch_um * 1e-6 / (sensor.optics.focal_length_mm * 1e-3)
+    return build_aerial_gbuffer(
+        sensor,
+        aerial_sky,
+        aerial_materials,
+        boresight_elevation_deg=AERIAL_BORESIGHT_DEG,
+        targets=[SceneTarget("painted_composite", 310.0, size_m, range_m, (20.5, 20.5))],
+    )
+
+
+@pytest.fixture
+def gbuffer_aerial(aerial_scene) -> dict[str, np.ndarray]:  # type: ignore[no-untyped-def]
+    """64x48 aerial G-buffer: sky with an elevation gradient, a 2 px target, ``sky_mask`` set.
+
+    Unlike the ground fixtures above this one *does* carry ``material_id`` 0 -- under the sky
+    mask, where it is the agreed contract rather than an unmapped asset (ADR 0050) -- so it is
+    deliberately not in ``test_gbuffer_schema.py``'s sentinel-free list; ``test_tier3_sky.py``
+    checks the sky-aware form of that rule instead.
+    """
+    return dict(aerial_scene.planes)
