@@ -148,3 +148,72 @@ command line with `parse_known_args`, so runner scripts may add arguments.
 - A target needs sub-facet temperature structure (id-per-face or a UV temperature texture).
 - Isaac Sim moves off the 6.1 line; re-run `scripts/probe_isaac_environment.py` and
   `scripts/probe_isaac_spg.py` and diff the reports against this ADR.
+
+---
+
+## Addendum 2026-09-12 — geometry AOVs on a lit, tilted, moving scene (M10.1)
+
+The decision above was measured on an unlit, static, front-parallel ramp with the camera at the
+world origin. On that scene the normals, ambient-occlusion and motion annotators returned nothing,
+and a world-space and a camera-space channel were numerically identical, so four questions were
+left open. `scripts/probe_isaac_geometry.py` answers them on the M10.1 scene
+(`src/irsim_isaac/geometry_probe.py`): lit by a distant light, a sphere and a 24° tilted quad,
+plates facing up / sideways / down, a translating bar, and the **camera at (2, 1, 5)** rather than
+the origin. Same build as above (6.1.0-rc.26 / Kit 110.3.0 / Replicator 1.13.36), 384² render
+product, `/rtx/post/aa/op = 0`.
+
+| channel | annotator | dtype | shape | verdict |
+|---|---|---|---|---|
+| distance | `DistanceToCameraSD` | float32 | 384² | **use.** Euclidean ray length; `inf` where nothing is hit. `DistanceToImagePlaneSD` (z-depth) also delivers and must not be substituted |
+| position | `Camera3dPositionSD` | float32 ×4 | 384² | **use.** **World space** (misses carry a −1000 sentinel). `PtWorldPos` delivers at 192² only |
+| normal | `normals` | float32 ×4 | 384² | **use.** **World space** (see the pitch test below) |
+| normal | `PtWorldNormal` | float16 ×4 | **192²** | **do not use.** Attaches, returns data, and is **all zero** |
+| normal | `BumpNormal` | float32 ×4 | 192² | unusable: half resolution, values up to ±3 × 10³⁸ |
+| normal | `SmoothNormal` | — | — | no data; `NormalSD` / `PtSmoothNormal` are not registered |
+| occlusion | `AmbientOcclusion` | — | — | **no data** on a lit scene either; no alternative name is registered |
+| motion | `motion_vectors` | float32 ×4 | 384² | **carries no motion.** A constant ≈ 6 × 10⁻⁵ floor after displacements of 3 px **and 180 px** |
+| motion | `Motion2d` | — | — | no data (`SdPostRenderVarToHost: invalid input resource`) |
+| instance / semantic | `instance_segmentation`, `instance_id_segmentation`, `semantic_segmentation` | uint32 | 384² | **use.** 7 distinct ids for 6 targets plus background, as ADR 0014 found |
+
+**The normals frame.** With an axis-aligned camera a world-space and a camera-space normal are the
+same numbers, so the scene cannot distinguish them — and getting it wrong silently corrupts every
+angular emissivity and sky-view factor downstream. Pitching the camera 20° breaks the degeneracy:
+the up-facing plate's normal must stay exactly `(0, 1, 0)` in world space, where a camera-space
+normal would read `cos 20° = 0.940` on the up axis. Measured `max |n·up| > 0.99`
+(`test_normals_are_world_space_not_camera_space`), so the AOV is world space.
+
+**Resolution is a trap, not a detail.** Several AOVs come back at the renderer's internal
+resolution (192² for a 384² product) whether or not AA is off, and a plane at the wrong resolution
+misaddresses every pixel lookup without raising anything. `configure_renderer()` exists so no
+caller forgets `/rtx/post/aa/op = 0`, and `AovReader` rejects a required channel whose shape does
+not match the render product.
+
+### Decisions that follow
+
+- **The adapter's annotator preference order is a measurement.** `normals` before `PtWorldNormal`,
+  `motion_vectors` before `Motion2d`. `irsim_isaac.pipeline.gbuffer_isaac.AOV_NAMES` is the single
+  place it is written down, and `scripts/probe_isaac_geometry.py` regenerates the evidence.
+- **A required channel that returns an all-zero buffer is a failure, not data.** This is the same
+  hazard the SPG lane already records (a kernel that fails to load still produces a zero-filled
+  output with status ok). `PtWorldNormal` would otherwise have produced a G-buffer that passes the
+  M0.6 schema and contains no surface orientation at all.
+- **`sky_view_factor` uses the unoccluded geometric form** `V_s = (1 + n·up)/2`, because no ambient
+  occlusion AOV delivers. This is exact for the open-sky aerial scenes of phase 1 (ADR 0003) and
+  optimistic for a cluttered ground scene, where a wall in a street sees less sky than the formula
+  says. Phase 2 needs either a working AO AOV or the §5.3(b) irradiance cubemap.
+- **`motion_px` is omitted from the Isaac G-buffer.** It is optional in the M0.6 contract, so
+  nothing downstream breaks today; what does not work today is motion MTF and bolometer smear
+  *in-sim* (M10.11, M10.19), which need per-pixel image-plane velocity. The cheap fix, when those
+  steps arrive, is to synthesise it analytically from the per-prim transforms and the camera pose
+  rather than from an AOV — exact for rigid targets, and it removes a renderer dependency. That is
+  a step, not a silent addition to M10.1; it is on the roadmap as M10.1b.
+- **Temperature and material id are still not renderer-transported.** Unchanged from the main
+  decision: `to_gbuffer()` takes them as float32 facet-table lookups keyed by instance id.
+
+### Revisit when
+
+- `test_motion_aov_does_not_transport_motion_on_this_build` fails — the channel started working;
+  determine its units and wire `motion_px` instead of synthesising it.
+- `AmbientOcclusion` returns data — then `V_s` picks up real occlusion for ground scenes.
+- `PtWorldNormal` stops being all-zero, or any of these AOVs changes resolution or dtype; the
+  integration tests pin each of those facts and will fail first.

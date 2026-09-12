@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Isaac geometry AOVs assembled into the M0.6 `GBuffer` (M10.1): `irsim_isaac.pipeline.gbuffer_isaac`
+  (`AovReader` + engine-free assembly of `distance_m`, `normal_dot_view` against the per-pixel ray,
+  `normal_dot_up`, V_s = occlusion·(1+n·up)/2, `sky_mask`), `irsim_isaac.geometry_probe` and
+  `scripts/probe_isaac_geometry.py`. Sphere cos θ matches the closed form to 1e-5 engine-free and
+  0.01 in-sim; tilted-quad ray length to 1 cm; plates read V_s 1.0/0.5/0.0 ± 0.05.
 - Four-material aerial library and target thermal signature (MS.7, ADR 0072): `configs/materials/`
   gains `painted_composite`, `carbon_fibre`, `aircraft_aluminium_painted` and `propeller_rubber`
   (`source: literature`, scalar `emissivity_per_band`, opaque, ρ derived -- CLAUDE.md #4 closure
@@ -19,6 +24,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `us_standard_clear` the contrast is +64 K at zenith and crosses zero at 1.26° (1.97° at ε = 0.8,
   0.78° at ε = 0.95, and **never at ε = 1**, which is what shows the inversion is the reflected
   cold sky rather than a path-radiance artefact).
+- `irsim.atmosphere.cloud` + `SkyModel` cloud methods (MS.3): LCL base from the shared weather (Espy,
+  `dew_point_k` in humidity), T_base by the preset lapse rate, ε_cloud = 1 − τ_cloud (τ authored in the
+  environment preset's new `clouds:` block, schema v2), seeded 1/f^β structure with an exact-coverage
+  threshold and a PSD-slope self-test; `radiance_field` / `apparent_temperature_field`. ADR 0070.
 - `irsim.pipeline.point_target` (MS.6): `PointTarget`, `fill_fraction`, `excess_radiance` (per-class
   τ_k(R)[L_t − L_beyond,k] with the layered atmosphere; grey and no-atmosphere forms), `excess_power` via
   the single aperture factor, bilinear `splat`, `run_frame(..., point_targets=)`;

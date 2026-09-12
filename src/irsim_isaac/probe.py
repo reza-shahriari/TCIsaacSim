@@ -34,6 +34,7 @@ __all__ = [
     "AOV_CANDIDATES",
     "EXTENSIONS_OF_INTEREST",
     "RampScene",
+    "author_omnipbr_usdshade",
     "build_ramp_scene",
     "probe_environment",
     "probe_render_mode",
@@ -272,7 +273,7 @@ def _author_quad(stage: Any, path: str, centre: tuple[float, float], half: float
     return mesh
 
 
-def _author_omnipbr_usdshade(
+def author_omnipbr_usdshade(
     stage: Any,
     mat_path: str,
     *,
@@ -403,7 +404,7 @@ def build_ramp_scene(
         centres.append(centre)
         ids.append(i + 1)  # 0 stays free for an UNMAPPED sentinel test later
         mesh = _author_quad(stage, f"/World/Quads/Quad_{i:02d}", centre, quad_half_size_m, z)
-        material = _author_omnipbr_usdshade(
+        material = author_omnipbr_usdshade(
             stage,
             f"/World/Looks/Emissive_{i:02d}",
             emissive=(float(c_plain[i]), float(coarse[i]), float(fine[i])),
