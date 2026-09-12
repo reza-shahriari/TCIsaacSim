@@ -252,6 +252,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   "0.6 frames" phrasing conflates with `tau_th/dt`. Verified against the closed-form step response to
   1e-6, against RK4 of the membrane ODE to 1e-4 over 100 varying frames, and by measuring the tail of
   a rendered moving edge to within 2 %; the photon path is asserted memoryless (§15 T3).
+- `irsim.detector.fpa_thermal` (M9.2, ADR 0053): `FpaThermalModel` -- the §9.2 FPA node
+  `C dT/dt = P - h(T - T_amb)` in its identifiable form (tau = C/h and DeltaT_self = P/h are authored;
+  C, h and P separately are not observable), RK2 (Heun) on the thermal tick, with the housing node's
+  three modes -- `fixed` (TEC-pinned, no drift), `ambient` (zero-tau), `coupled`. Ambient comes from
+  the scene's shared `WeatherSeries` *or* an injected provider, never both and never neither
+  (CLAUDE.md #6). `gain_of_t`/`offset_of_t` are the **raw, uncorrected** response, coefficients in
+  ascending powers of (T - T_cal) from order 1 so `g(T_cal) == 1` and `o(T_cal) == 0` structurally;
+  what survives correction stays `nuc.residual_*` (M9.6), so the drift is not counted twice.
+  Steady state and the 63.2 % time constant verified to 1 mK / 1 %, per-step energy conservation to
+  1e-6 against the C/h/P form, and a 5 K ambient rise shown to shift DN uniformly and not at all
+  when TEC-pinned. Sensor schema -> v5 (`fpa_temp_mode`, `fpa_t_cal_k`, `fpa_gain_coeffs_per_k`,
+  `fpa_offset_coeffs_dn_per_k`; the node is opt-in, so existing configs are unchanged). Golden
+  sidecars regenerated for the new `config_hash` -- all twelve arrays bit-identical (ADR 0004).
 
 ### Changed
 - The reflected-environment tests no longer assume a fully overcast sky reads exactly `T_air`. The

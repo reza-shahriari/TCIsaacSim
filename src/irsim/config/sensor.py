@@ -42,6 +42,7 @@ __all__ = [
     "RATIO_ORDER",
     "BadPixelTypeMix",
     "NucSpec",
+    "FpaTempMode",
     "IspSpec",
     "OutputsSpec",
 ]
@@ -49,10 +50,13 @@ __all__ = [
 # 2: optional optics fields (housing, supersample, mtf, vignetting_map); 3: optional detector
 # constants (bolometer thermal/bias, photon dark current & read noise, FPA thermal node);
 # 4: noise.bad_pixel_type_mix and noise.netd_ref_f_number. ADR 0017.
-SCHEMA_VERSION = 4
+# 5: fpa_temp_mode and the raw gain/offset(T_FPA) polynomials with their T_cal (M9.2, ADR 0053).
+SCHEMA_VERSION = 5
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
+# The FPA node takes the same three modes as the housing node; 'fixed' is a TEC-pinned core.
+FpaTempMode = Literal["fixed", "ambient", "coupled"]
 DistortionModel = Literal["brown_conrady", "kannala_brandt", "ftheta"]
 NucMode = Literal["shuttered", "shutterless", "ideal"]
 AgcMode = Literal["linear", "plateau_equalization", "none"]
@@ -200,9 +204,36 @@ class _FpaCommon(_Frozen):
     frame_rate_hz: float = Field(gt=0)
     bit_depth: int = Field(ge=8, le=16)
     # FPA thermal node (§9.2 "FPA temperature coupling"), distinct from the optics housing node.
+    # fpa_temp_mode is None while the node is not modelled; M9.2 builds it when it is set.
+    fpa_temp_mode: FpaTempMode | None = Field(default=None)
     fpa_temp_k: float | None = Field(default=None, gt=0)
     fpa_tau_s: float | None = Field(default=None, gt=0)
     fpa_self_heating_k: float = Field(default=0.0, ge=0)
+    # Raw, uncorrected response drift (M9.2, ADR 0053): gain(T) = 1 + sum c_i (T - T_cal)^i and
+    # offset(T) = sum d_i (T - T_cal)^i, ascending powers from i = 1 so both are normalised at
+    # T_cal by construction. What SURVIVES correction is nuc.residual_* -- do not conflate them.
+    fpa_t_cal_k: float | None = Field(default=None, gt=0)
+    fpa_gain_coeffs_per_k: tuple[float, ...] = ()
+    fpa_offset_coeffs_dn_per_k: tuple[float, ...] = ()
+
+    @model_validator(mode="after")
+    def _fpa_node(self) -> _FpaCommon:
+        if self.fpa_temp_mode == "fixed" and self.fpa_temp_k is None:
+            raise ValueError("fpa_temp_mode 'fixed' (TEC-pinned) needs fpa_temp_k")
+        if self.fpa_temp_mode == "coupled" and self.fpa_tau_s is None:
+            raise ValueError("fpa_temp_mode 'coupled' needs fpa_tau_s")
+        if (self.fpa_gain_coeffs_per_k or self.fpa_offset_coeffs_dn_per_k) and self.t_cal_k is None:
+            raise ValueError(
+                "gain/offset(T_FPA) coefficients need a calibration temperature: set fpa_t_cal_k, "
+                "or fpa_temp_k for a TEC-pinned core"
+            )
+        return self
+
+    @property
+    def t_cal_k(self) -> float | None:
+        """The temperature the gain/offset polynomials are normalised at: the explicit
+        ``fpa_t_cal_k`` if given, otherwise a TEC-pinned core's own set point."""
+        return self.fpa_t_cal_k if self.fpa_t_cal_k is not None else self.fpa_temp_k
 
 
 class BolometerFpa(_FpaCommon):

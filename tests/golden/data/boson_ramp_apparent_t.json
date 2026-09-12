@@ -1,6 +1,6 @@
 {
   "atol": 0.001,
-  "config_hash": "fc71f8d0077d84ba5fe490f363f1e0f08ddc1d7726a638fbd2fbc66037ad2d3d",
+  "config_hash": "3d5928a424c113bde36d2935db921234dfa5036eb952bcc58742a4629c45122a",
   "dtype": "float32",
   "name": "boson_ramp_apparent_t",
   "numpy_version": "2.3.1",
