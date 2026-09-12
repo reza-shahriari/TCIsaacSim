@@ -475,6 +475,11 @@ class LayeredAtmosphere:
 
         return lb
 
+    def air_radiance(self, band: str, t_s: float, quantity: Quantity = "lb") -> float:
+        """L_B(T_air) at the surface, from this model's own LUT: the level a horizontal ray's
+        path radiance tends to, and what a fast path must use to stay bit-comparable (§7.1)."""
+        return float(self._lb_of_height(band, t_s, quantity)(np.zeros(1))[0])
+
     def transmittance(
         self, band: str, t_s: float, distance_m: Any, elevation_rad: float = 0.0
     ) -> NDArray[np.float64]:
@@ -565,7 +570,7 @@ class LayeredAtmosphere:
         tau = es.transmittance(d, elevation_rad)
         path: NDArray[np.float64] | float
         if math.sin(elevation_rad) <= 0.0:
-            lb_air = float(self._lb_of_height(band, t_s, quantity)(np.zeros(1))[0])
+            lb_air = self.air_radiance(band, t_s, quantity)
             tau_k = np.exp(-es.optical_depths(d, 0.0))
             path = np.tensordot(es.weights, 1.0 - tau_k, axes=1) * lb_air
         else:

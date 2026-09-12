@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stages 2 and 3 (roadmap M10.5): the atmosphere and the optics run on the device as twins of
+  `irsim.pipeline.atmosphere` and `irsim.optics.stage`. One atmosphere kernel serves the grey M8.1
+  path, MS.1's multi-term exponential sum and the constant-tau L1 fallback, because the class weights
+  sum to 1 and the per-term path radiance collapses to (1 - tau) L_air. The optics kernels convolve
+  the supersampled buffer with the optical PSF *before* the block-mean downsample and then apply
+  Omega_eff tau_opt cos^4 A_d + Phi_self, with the aperture factor and Phi_self computed by
+  `irsim.optics` on the host and passed in -- non-negotiable #5 holds across the second
+  implementation, and `tests/unit/test_aperture_guard.py`'s scanner is pointed at the kernel file by
+  name to keep it that way. Measured on an RTX A6000, `cuda:0` and Warp `cpu`: stage 2 within 1.9e-7
+  relative / 0.015 mK on every branch (d = 0 and d = inf included, sky pixels bit-identical), stage 3
+  within 8.5e-7 through a 53x53 PSF on the 4x step edge against a 1e-5 budget, and a +1 K housing step
+  reading +87.43 mK on both paths -- the +87 +/- 2 mK the roadmap predicted, now a test.
+- `irsim.pipeline.optics.optics_stage`: the plane-dict form of stage 3 (`radiance` on the k-x grid ->
+  `flux` on the detector grid), which is what the Warp twin is compared against. It delegates to
+  `apply_optics`; the only thing it adds is the housing-radiance lookup `run_frame` already did.
+- `irsim.atmosphere.layered.LayeredAtmosphere.air_radiance`: L_B(T_air) at the surface from the
+  model's own LUT, so a fast path can take the same value the oracle uses instead of recomputing it.
 - `tests/unit/test_tier3_atmosphere.py` and the solar-path stub (M8.8, ADR 0051): every preset is
   checked for the §7.2 band orderings, the humid crossover (τ_LWIR < τ_SWIR in humid clear air) and
   the fog reversal from the weather alone, a target at T_air is distance-invariant to 1e-9 on a
