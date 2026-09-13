@@ -6,6 +6,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Warp stage 5's remainder on device (roadmap M10.7b): the bad-pixel map and its RTS chain, the
+  iterated 4-neighbour replacement, and the FFC hold. Unlike M10.7a's noise these are mostly
+  **exact**, and the tests say so in those terms -- 34 of them, on `cuda:0` and Warp `cpu`.
+- **The defect map is uploaded, not redrawn.** A bad-pixel map is a property of one physical focal
+  plane, drawn once per sensor and never per frame (§10.4), so two independent draws would be two
+  different cameras rather than two implementations of one. The device map is therefore
+  bit-identical to the CPU's by construction. The RTS state is seeded from the CPU's own starting
+  realisation for the same reason M10.7a seeded the fixed pattern that way: what is measured
+  afterwards is the two generators, not two unrelated defect populations.
+- The RTS chain is launched over the whole plane rather than a compact list of stateful pixels.
+  The CPU restricts it because drawing 327k uniforms to move a few dozen bits is most of the noise
+  chain's cost; on a GPU that argument does not apply. It stays a **chain**: a pixel that was bad
+  leaves with probability 1/dwell, and redrawing the state independently each frame would give
+  white dwell statistics where the geometric ones are the defining signature of RTS.
+- The replacement kernel accumulates in **float64**, as `replace_bad_pixels` does, so "matches the
+  CPU" means every bit rather than a tolerance -- a float32 mean of four neighbours differs in the
+  last bit, and a tolerance there would hide an arithmetic difference instead of measuring one.
+  Passes ping-pong two buffers because the CPU builds its neighbour sums before writing any of
+  them; in place on a GPU that ordering is not merely different, it is non-deterministic.
+- The pass loop lives on the host and reads back two counters per pass. That is two tiny transfers
+  for a stencil that finishes in two or three passes on any map ADR 0055 can produce, and it keeps
+  the CPU's loud failures: a region with no valid neighbour on any side raises rather than being
+  filled, and so does a cluster still unfilled after the pass cap.
+- The FFC hold is one device buffer, written on every unfrozen frame and read on every frozen one,
+  so a freeze emits the same bytes for its whole length -- which is the fingerprint ME.3 looks for
+  in real video. A freeze that begins before anything is held passes the frame through rather than
+  inventing one the camera never saw. The *schedule* stays on the host: when the shutter fires is
+  frame arithmetic, and a second `FfcController` on the device would be another thing to keep in
+  step.
+- Verified, exactly: the map reaches the device bit-identically; replacement matches
+  `irsim.isp.replace_bad_pixels` bit for bit on 1x1, 2x2 and 3x3 clusters and on the real defect
+  map; defect injection matches `apply_defects` for a given chain state, including the detail that
+  an already-saturated hot pixel keeps its sub-LSB float value; a frozen frame is bit-identical
+  across a six-frame freeze; and the **composition** -- inject then replace, in order -- matches
+  `SensorChain.finish_frame` bit for bit. That last one is there because M10.7a's lesson was that
+  two individually correct stages can still disagree by a factor of ten if the seam between them
+  sits in different places.
+- Verified, statistically: the chain holds its configured occupancy within 25 % and its mean dwell
+  within 35 % over 2500 frames, and the dwell is more than two frames -- a memoryless redraw would
+  give about one. The population comes from area rather than a raised defect fraction, because the
+  schema caps that at one percent and it is right to: a focal plane with more than one percent of
+  its pixels dead is scrap, not a sensor.
 - `irsim_eval.data` (roadmap ME.1b): the `Sequence` / `Frame` / `Box` form every validation
   analyser reads, plus a canonical on-disk layout (a JSON index and one array per frame) and its
   writer. The indexed sets agree on nothing -- Halmstad ships MATLAB labels beside mp4, Anti-UAV410

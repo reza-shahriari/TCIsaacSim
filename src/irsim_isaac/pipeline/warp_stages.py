@@ -53,6 +53,7 @@ from irsim.detector.params import BolometerParams
 from irsim.detector.photon import PhotonDetector
 from irsim.detector.quantise import dn_max_for_bits
 from irsim.isp.agc import CONSTANT_FRAME_LEVEL, percentile_from_histogram
+from irsim.isp.bad_pixel import MAX_PASSES as REPLACEMENT_MAX_PASSES
 from irsim.isp.palette import palette_table
 from irsim.materials.table import MaterialTable
 from irsim.noise.stage import NoiseStage
@@ -101,6 +102,13 @@ __all__ = [
     "launch_noise",
     "launch_nuc_residual",
     "launch_ou_drift",
+    "launch_defects",
+    "launch_rts_step",
+    "launch_replacement",
+    "launch_ffc_hold",
+    "DefectTerms",
+    "defect_terms",
+    "defects_stage_warp",
     "agc_lut_warp",
     "display_stage_warp",
     "launch_display",
@@ -536,6 +544,153 @@ if wp is not None:
         out[i, j, 1] = palette[code, 1]
         out[i, j, 2] = palette[code, 2]
         out[i, j, 3] = wp.uint8(255)
+
+    @wp.kernel
+    def _rts_step_kernel(
+        kind: wp.array2d(dtype=wp.uint8),
+        was_bad: wp.array2d(dtype=wp.uint8),
+        p_enter: wp.float32,
+        p_leave: wp.float32,
+        frame_index: wp.int32,
+        seed: wp.int32,
+        cols: wp.int32,
+        out: wp.array2d(dtype=wp.uint8),
+    ):
+        """One step of the two-state RTS chain of the flickering and blinking pixels (§10.4).
+
+        Launched over the whole plane rather than over a compact list of the stateful pixels: the
+        CPU restricts it because drawing 327k uniforms to move a few dozen bits is most of the
+        noise chain's cost, and on a GPU that argument does not apply. Every other pixel takes the
+        branch that writes zero.
+
+        The chain, not a fresh draw: a pixel that was bad leaves with probability 1/dwell and one
+        that was good enters with the balancing probability. Redrawing the state independently
+        each frame would give white dwell statistics instead of geometric ones -- ordinary noise
+        where the defining signature of RTS should be.
+        """
+        i, j = wp.tid()
+        k = kind[i, j]
+        if k != wp.uint8(3) and k != wp.uint8(4):  # FLICKERING, BLINKING
+            out[i, j] = wp.uint8(0)
+            return
+        state = wp.rand_init(frame_index * 1000003 + seed + 101, i * cols + j)
+        u = wp.randf(state)
+        if was_bad[i, j] != wp.uint8(0):
+            out[i, j] = wp.where(u >= p_leave, wp.uint8(1), wp.uint8(0))
+        else:
+            out[i, j] = wp.where(u < p_enter, wp.uint8(1), wp.uint8(0))
+
+    @wp.kernel
+    def _apply_defects_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        kind: wp.array2d(dtype=wp.uint8),
+        rts_bad: wp.array2d(dtype=wp.uint8),
+        dn_max: wp.int32,
+        amplitude_dn: wp.int32,
+        out: wp.array2d(dtype=wp.float32),
+        active: wp.array2d(dtype=wp.uint8),
+    ):
+        """§11.1's defect injection on the quantised plane, op for op with ``apply_defects``.
+
+        Two details are load-bearing. The defect is applied to ``floor(signal)`` and carried back
+        onto the float plane **only where it actually changed the code**, so an already-saturated
+        hot pixel keeps its sub-LSB value exactly as on the CPU. And the replacement mask is the
+        *active* mask -- dead and hot always, blinking and flickering only while their chain is in
+        the bad state -- which is what makes an intermittent defect reach the image through a
+        static factory map (§10.4).
+        """
+        i, j = wp.tid()
+        s = signal_dn[i, j]
+        q = wp.int32(wp.clamp(wp.floor(s), wp.float32(0.0), wp.float32(dn_max)))
+        d = q
+        k = kind[i, j]
+        bad = rts_bad[i, j] != wp.uint8(0)
+        is_active = wp.uint8(0)
+        if k == wp.uint8(1):  # DEAD
+            d = 0
+            is_active = wp.uint8(1)
+        elif k == wp.uint8(2):  # HOT
+            d = dn_max
+            is_active = wp.uint8(1)
+        elif k == wp.uint8(4) and bad:  # BLINKING, currently bad
+            d = 0
+            is_active = wp.uint8(1)
+        elif k == wp.uint8(3) and bad:  # FLICKERING, currently bad
+            d = wp.clamp(q + amplitude_dn, 0, dn_max)
+            is_active = wp.uint8(1)
+        active[i, j] = is_active
+        if d != q:
+            out[i, j] = wp.float32(d)
+        else:
+            out[i, j] = s
+
+    @wp.kernel
+    def _replace_init_kernel(
+        signal_dn: wp.array2d(dtype=wp.float32),
+        active: wp.array2d(dtype=wp.uint8),
+        work: wp.array2d(dtype=wp.float64),
+        valid: wp.array2d(dtype=wp.uint8),
+    ):
+        """Seed the replacement: float64 work plane and the validity mask ``replace_bad_pixels``
+        iterates on. float64 because the CPU accumulates there, and a float32 mean of four
+        neighbours differs from it in the last bit -- which is the difference between "matches
+        exactly" and "matches to a tolerance nobody can interpret."""
+        i, j = wp.tid()
+        work[i, j] = wp.float64(signal_dn[i, j])
+        valid[i, j] = wp.where(active[i, j] != wp.uint8(0), wp.uint8(0), wp.uint8(1))
+
+    @wp.kernel
+    def _replace_pass_kernel(
+        work: wp.array2d(dtype=wp.float64),
+        valid: wp.array2d(dtype=wp.uint8),
+        rows: wp.int32,
+        cols: wp.int32,
+        work_out: wp.array2d(dtype=wp.float64),
+        valid_out: wp.array2d(dtype=wp.uint8),
+        remaining: wp.array(dtype=wp.int32),
+        filled: wp.array(dtype=wp.int32),
+    ):
+        """One pass of the iterated 4-neighbour mean, from the state at the pass's start.
+
+        Ping-pong rather than in place: the CPU builds its neighbour sums from ``work`` before it
+        writes any of them, so a pixel filled earlier in the same pass must not feed its
+        neighbour. In place on a GPU that ordering is not merely different, it is
+        non-deterministic.
+        """
+        i, j = wp.tid()
+        if valid[i, j] != wp.uint8(0):
+            work_out[i, j] = work[i, j]
+            valid_out[i, j] = wp.uint8(1)
+            return
+        total = wp.float64(0.0)
+        count = wp.int32(0)
+        if i > 0 and valid[i - 1, j] != wp.uint8(0):
+            total = total + work[i - 1, j]
+            count = count + 1
+        if i + 1 < rows and valid[i + 1, j] != wp.uint8(0):
+            total = total + work[i + 1, j]
+            count = count + 1
+        if j > 0 and valid[i, j - 1] != wp.uint8(0):
+            total = total + work[i, j - 1]
+            count = count + 1
+        if j + 1 < cols and valid[i, j + 1] != wp.uint8(0):
+            total = total + work[i, j + 1]
+            count = count + 1
+        if count > 0:
+            work_out[i, j] = total / wp.float64(count)
+            valid_out[i, j] = wp.uint8(1)
+            wp.atomic_add(filled, 0, 1)
+        else:
+            work_out[i, j] = work[i, j]
+            valid_out[i, j] = wp.uint8(0)
+            wp.atomic_add(remaining, 0, 1)
+
+    @wp.kernel
+    def _replace_finish_kernel(
+        work: wp.array2d(dtype=wp.float64), out: wp.array2d(dtype=wp.float32)
+    ):
+        i, j = wp.tid()
+        out[i, j] = wp.float32(work[i, j])
 
 
 # ---- device-resident tables ------------------------------------------------------------------
@@ -1124,6 +1279,10 @@ class WarpPipelineState:
         self._fixed_shape: tuple[int, int] | None = None
         self._xi: tuple[Any, Any] | None = None
         self._xi_shape: tuple[int, int] | None = None
+        self._defects: tuple[Any, Any, Any] | None = None
+        self._defects_shape: tuple[int, int] | None = None
+        self._held: Any = None
+        self._held_shape: tuple[int, int] | None = None
 
     def iir_state(self, shape: tuple[int, int]) -> tuple[Any, bool]:
         """The IIR buffer for ``shape`` and whether this frame must adopt its input.
@@ -1204,6 +1363,62 @@ class WarpPipelineState:
             return None
         return tuple(int(b.ptr) for b in self._fixed)  # type: ignore[return-value]
 
+    def defect_buffers(self, bad_map: Any, seed_state: Any) -> tuple[Any, Any, Any]:
+        """The defect ``kind`` plane and the two RTS state buffers (M10.7b).
+
+        The map is **uploaded, not redrawn**, so it is bit-identical to the CPU's by construction.
+        That is not a shortcut: a bad-pixel map is a property of one physical focal plane, drawn
+        once per sensor and never per frame (§10.4), so two independent draws would be two
+        different cameras rather than two implementations of one. The RTS state is uploaded once
+        too, from the CPU's own starting realisation, and then advances on device -- the same rule
+        M10.7a used for the fixed pattern, and for the same reason: what is under test afterwards
+        is the two generators, not two unrelated defect populations.
+
+        Two state buffers, ping-ponged, because the chain reads its previous state.
+        """
+        warp = _require()
+        kind = np.ascontiguousarray(bad_map.kind, dtype=np.uint8)
+        shape = (int(kind.shape[0]), int(kind.shape[1]))
+        if self._defects is None or self._defects_shape != shape:
+            self._defects = (
+                warp.array(kind, dtype=warp.uint8, device=self.device),
+                warp.zeros(shape, dtype=warp.uint8, device=self.device),
+                warp.zeros(shape, dtype=warp.uint8, device=self.device),
+            )
+            self._defects_shape = shape
+            self._defects[1].assign(np.ascontiguousarray(seed_state, dtype=np.uint8))
+        return self._defects
+
+    def swap_rts(self) -> None:
+        """Make the freshly written RTS state the current one."""
+        if self._defects is not None:
+            kind, current, scratch = self._defects
+            self._defects = (kind, scratch, current)
+
+    @property
+    def defect_ptrs(self) -> tuple[int, int, int] | None:
+        if self._defects is None:
+            return None
+        return tuple(int(b.ptr) for b in self._defects)  # type: ignore[return-value]
+
+    def held_frame(self, shape: tuple[int, int]) -> tuple[Any, bool]:
+        """The FFC hold buffer and whether it is new (nothing held yet) -- M9.7 on device.
+
+        One buffer, written on every unfrozen frame and read on every frozen one, so a freeze
+        emits the *same bytes* for its whole length. Holding on the host instead would mean a
+        round trip per frozen frame to send back a frame the device already had.
+        """
+        warp = _require()
+        if self._held is None or self._held_shape != shape:
+            self._held = warp.zeros(shape, dtype=warp.float32, device=self.device)
+            self._held_shape = shape
+            return self._held, True
+        return self._held, False
+
+    @property
+    def held_ptr(self) -> int | None:
+        return None if self._held is None else int(self._held.ptr)
+
     def reset(self) -> None:
         """Cold start: drop every device buffer, so the next frame adopts its input again."""
         self._iir = None
@@ -1212,6 +1427,10 @@ class WarpPipelineState:
         self._fixed_shape = None
         self._xi = None
         self._xi_shape = None
+        self._defects = None
+        self._defects_shape = None
+        self._held = None
+        self._held_shape = None
 
 
 def warp_pipeline_state(state: PipelineState, device: str = DEFAULT_DEVICE) -> WarpPipelineState:
@@ -1749,4 +1968,242 @@ def display_stage_warp(
         "dn16": dn,
         "y": np.asarray(y.numpy(), dtype=np.float32),
         "display8": np.asarray(rgba.numpy(), dtype=np.uint8),
+    }
+
+
+# -- M10.7b: defects, the iterated replacement and the FFC hold on device ----------------------
+
+
+@dataclass(frozen=True)
+class DefectTerms:
+    """The per-camera scalars the defect kernels need, read off the same spec the CPU uses."""
+
+    dn_max: int
+    amplitude_dn: int
+    p_enter: float
+    p_leave: float
+
+    def __post_init__(self) -> None:
+        for name in ("p_enter", "p_leave"):
+            value = float(getattr(self, name))
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be a probability, got {value}")
+
+
+def defect_terms(sensor: SensorSpec, dn_max: int) -> DefectTerms:
+    """Derive the RTS switch probabilities exactly as ``irsim.noise.defects.advance_state`` does.
+
+    Detailed balance, in one place: the stationary occupancy and the mean dwell are what the
+    config authors, and the two switch probabilities follow. Computing them here rather than
+    passing them in keeps the device path from acquiring its own idea of what the chain is.
+    """
+    noise = sensor.noise
+    occupancy = float(noise.bad_pixel_rts_occupancy)
+    dwell = float(noise.bad_pixel_rts_dwell_frames)
+    p_leave = 1.0 / dwell
+    p_enter = p_leave * occupancy / (1.0 - occupancy)
+    if not 0.0 <= p_enter <= 1.0:
+        raise ValueError(
+            f"bad_pixel_rts_occupancy {occupancy} with dwell {dwell} frames implies a switch "
+            f"probability of {p_enter:.3f}; lower the occupancy or raise the dwell"
+        )
+    return DefectTerms(
+        dn_max=int(dn_max),
+        amplitude_dn=int(round(float(noise.bad_pixel_rts_amplitude_dn))),
+        p_enter=p_enter,
+        p_leave=p_leave,
+    )
+
+
+def launch_rts_step(
+    device_state: "WarpPipelineState",
+    terms: DefectTerms,
+    frame_index: int,
+    sensor_seed: int,
+    device: str = DEFAULT_DEVICE,
+) -> Any:
+    """Advance the RTS chain one frame on device and return the now-current state buffer."""
+    warp = _require()
+    assert device_state._defects is not None, "call defect_buffers() first"
+    kind, current, scratch = device_state._defects
+    rows, cols = int(kind.shape[0]), int(kind.shape[1])
+    warp.launch(
+        _rts_step_kernel,
+        dim=(rows, cols),
+        inputs=[
+            kind,
+            current,
+            np.float32(terms.p_enter),
+            np.float32(terms.p_leave),
+            np.int32(frame_index),
+            np.int32(sensor_seed),
+            np.int32(cols),
+        ],
+        outputs=[scratch],
+        device=device,
+    )
+    device_state.swap_rts()
+    assert device_state._defects is not None
+    return device_state._defects[1]
+
+
+def launch_defects(
+    signal: Any,
+    kind: Any,
+    rts_bad: Any,
+    terms: DefectTerms,
+    out: Any,
+    active: Any,
+    device: str = DEFAULT_DEVICE,
+) -> None:
+    """Inject the defects and write the active mask the replacement will consume."""
+    warp = _require()
+    rows, cols = int(signal.shape[0]), int(signal.shape[1])
+    warp.launch(
+        _apply_defects_kernel,
+        dim=(rows, cols),
+        inputs=[
+            signal,
+            kind,
+            rts_bad,
+            np.int32(terms.dn_max),
+            np.int32(terms.amplitude_dn),
+        ],
+        outputs=[out, active],
+        device=device,
+    )
+
+
+def launch_replacement(
+    signal: Any,
+    active: Any,
+    out: Any,
+    device: str = DEFAULT_DEVICE,
+    max_passes: int = REPLACEMENT_MAX_PASSES,
+) -> int:
+    """Iterated 4-neighbour replacement on device; returns the number of passes it took.
+
+    The loop lives on the host and reads back two counters per pass. That is two tiny transfers
+    for a stencil that finishes in two or three passes on any map ADR 0055's cluster process can
+    produce -- and the alternative, a fixed pass count, would either waste passes or silently
+    leave a cluster unfilled, which is the failure `replace_bad_pixels` refuses to make quietly.
+    """
+    warp = _require()
+    rows, cols = int(signal.shape[0]), int(signal.shape[1])
+    work = warp.zeros((rows, cols), dtype=warp.float64, device=device)
+    work_next = warp.zeros((rows, cols), dtype=warp.float64, device=device)
+    valid = warp.zeros((rows, cols), dtype=warp.uint8, device=device)
+    valid_next = warp.zeros((rows, cols), dtype=warp.uint8, device=device)
+    counters = warp.zeros(2, dtype=warp.int32, device=device)
+
+    warp.launch(
+        _replace_init_kernel,
+        dim=(rows, cols),
+        inputs=[signal, active],
+        outputs=[work, valid],
+        device=device,
+    )
+
+    passes = 0
+    for _ in range(int(max_passes)):
+        counters.zero_()
+        warp.launch(
+            _replace_pass_kernel,
+            dim=(rows, cols),
+            inputs=[work, valid, np.int32(rows), np.int32(cols)],
+            outputs=[work_next, valid_next, counters[0:1], counters[1:2]],
+            device=device,
+        )
+        work, work_next = work_next, work
+        valid, valid_next = valid_next, valid
+        passes += 1
+        remaining, filled = (int(v) for v in counters.numpy())
+        if remaining == 0:
+            break
+        if filled == 0:
+            raise ValueError(
+                "a masked region has no valid neighbour on any side and cannot be interpolated "
+                "(a fully masked row, column or border block)"
+            )
+    else:
+        raise ValueError(
+            f"a defect cluster was still unfilled after {max_passes} passes; the bad-pixel map "
+            "has a region far larger than the §10.4 cluster process should produce"
+        )
+
+    warp.launch(
+        _replace_finish_kernel, dim=(rows, cols), inputs=[work], outputs=[out], device=device
+    )
+    return passes
+
+
+def launch_ffc_hold(
+    signal: Any,
+    device_state: "WarpPipelineState",
+    freezing: bool,
+    out: Any,
+    device: str = DEFAULT_DEVICE,
+) -> bool:
+    """§11.2's freeze on a device buffer; returns whether a held frame was emitted.
+
+    A freeze that begins before anything has been held passes the frame through and starts
+    holding it, exactly as `FfcController.process` does -- inventing a frame the camera never saw
+    would put a synthetic first frame into every clip that opens on a shutter event.
+    """
+    warp = _require()
+    shape = (int(signal.shape[0]), int(signal.shape[1]))
+    held, fresh = device_state.held_frame(shape)
+    if freezing and not fresh:
+        warp.copy(out, held)
+        return True
+    warp.copy(held, signal)
+    warp.copy(out, signal)
+    return False
+
+
+def defects_stage_warp(
+    planes: Planes,
+    config: PipelineConfig,
+    state: PipelineState,
+    device: str = DEFAULT_DEVICE,
+    *,
+    freezing: bool = False,
+) -> Planes:
+    """§11.1's post-ADC half on device: RTS step, defects, replacement, then the FFC hold.
+
+    The chain's *schedule* stays on the host -- when the shutter fires is frame arithmetic, and
+    duplicating `FfcController` on the device would be a second thing to keep in step. What moves
+    here is the per-pixel work and the held buffer, which are the parts that would otherwise cost
+    a round trip per frame.
+    """
+    warp = _require()
+    chain = config.chain
+    if chain is None:
+        raise ValueError("defects_stage_warp needs a SensorChain attached (attach_sensor_chain)")
+    signal = require_fp32_or_better(np.asarray(planes["signal_dn"]), "signal_dn")
+    shape = (int(signal.shape[0]), int(signal.shape[1]))
+    sensor = config.sensor.sensor
+    terms = defect_terms(sensor, dn_max_for_bits(sensor.fpa.bit_depth))
+
+    device_state = warp_pipeline_state(state, device)
+    kind, _, _ = device_state.defect_buffers(
+        chain.bad_pixels, np.asarray(chain.defect_state.bad, dtype=np.uint8)
+    )
+    rts_bad = launch_rts_step(device_state, terms, state.frame_index, config.sensor_seed, device)
+
+    src = _as_device(warp, signal.astype(np.float32), warp.float32, device)
+    defective = warp.zeros(shape, dtype=warp.float32, device=device)
+    active = warp.zeros(shape, dtype=warp.uint8, device=device)
+    launch_defects(src, kind, rts_bad, terms, defective, active, device)
+
+    replaced = warp.zeros(shape, dtype=warp.float32, device=device)
+    passes = launch_replacement(defective, active, replaced, device)
+
+    out = warp.zeros(shape, dtype=warp.float32, device=device)
+    held = launch_ffc_hold(replaced, device_state, freezing, out, device)
+    return {
+        "signal_dn": np.asarray(out.numpy(), dtype=np.float32),
+        "defects_active": np.asarray(active.numpy(), dtype=np.uint8),
+        "replacement_passes": np.asarray([passes], dtype=np.int32),
+        "ffc_held": np.asarray([held], dtype=np.bool_),
     }
