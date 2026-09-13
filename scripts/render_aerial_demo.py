@@ -35,6 +35,16 @@ parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument(
+    "--rgb",
+    action="store_true",
+    help="also capture the visible-light frame from the same camera (registered RGB/IR pair)",
+)
+parser.add_argument(
+    "--no-flat-field",
+    action="store_true",
+    help="skip the camera's flat-field correction, so cos^4 vignetting shows (ME.8 ablation)",
+)
+parser.add_argument(
     "--no-point-targets",
     action="store_true",
     help="render sub-pixel targets as geometry instead of injecting them (ADR 0071 ablation)",
@@ -95,6 +105,7 @@ def main() -> int:
         lut,
         sky=scene.sky_models[spec.band.band_id],
         atmosphere=scene.layered,
+        flat_field_enabled=not args.no_flat_field,
     )
     if not args.no_chain:
         from irsim.pipeline.sensor_chain import attach_sensor_chain
@@ -128,6 +139,7 @@ def main() -> int:
         resolutions=resolutions,
         analytic_targets=analytic,
         camera_path=demo.camera_path,
+        capture_rgb=args.rgb,
         strict_materials=False,
     ).open(settle_frames=args.settle)
 
@@ -135,6 +147,12 @@ def main() -> int:
     t_render = time.time()
     for index in range(args.frames):
         outputs = camera.get_outputs()
+        # The companion visible frame, already box-filtered onto the IR pixel grid, so the pair is
+        # registered by construction rather than by calibration. An `extra_plane`, not an output:
+        # nothing in the radiometric chain reads it, and the sidecar's unit string says so.
+        extra = {}
+        if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
+            extra["rgb"] = camera.last_frame.rgb
         record = write_frame(
             out_dir,
             outputs,
@@ -145,6 +163,7 @@ def main() -> int:
             band_hash=band_hash(sensor),
             quantity=pipeline.quantity,
             float_format=args.float_format,
+            extra_planes=extra,
             extra_metadata={
                 "scene": pathlib.Path(args.scene).name,
                 "camera_tilt_deg": demo.camera_tilt_deg,

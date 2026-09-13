@@ -75,6 +75,7 @@ from irsim.scene import Scene
 from irsim.validation.aerial import AerialTarget, target_leaving_radiance
 from irsim_isaac.pipeline.aerial_bridge import AerialThermalBridge, elevation_from_rays
 from irsim_isaac.pipeline.gbuffer_isaac import (
+    AOV_NAMES,
     UP_AXIS_VECTOR,
     AovReader,
     PositionFrame,
@@ -283,6 +284,7 @@ class _Frame:
     material_id: NDArray[np.int32]
     unmapped: NDArray[np.bool_]
     elevation_rad: NDArray[np.float64]
+    rgb: NDArray[np.uint8] | None = None
     labels: dict[int, str] = field(default_factory=dict)
 
 
@@ -308,6 +310,7 @@ class IrCamera:
         stage: Any = None,
         position_frame: PositionFrame = "camera",
         up_axis: str | None = None,
+        capture_rgb: bool = False,
         debug_unmapped: bool = True,
         strict_materials: bool = True,
         device: str = "cpu",
@@ -334,6 +337,7 @@ class IrCamera:
         self.optics = camera_optics(sensor.sensor)
         self.camera_path = camera_path
         self.position_frame = position_frame
+        self.capture_rgb = capture_rgb
         self.debug_unmapped = debug_unmapped
         self.strict_materials = strict_materials
         self.device = device
@@ -392,9 +396,13 @@ class IrCamera:
         width, height = self.optics.resolution
         self._render_product = rep.create.render_product(self.camera_path, (width, height))
         path = getattr(self._render_product, "path", None) or str(self._render_product)
+        names = dict(AOV_NAMES)
+        if not self.capture_rgb:
+            names.pop("rgb", None)
         self._reader = AovReader(
             path,
             device=self.device,
+            names=names,
             required=("distance", "position", "normal", "instance"),
             expected_shape=(height, width),
         ).attach(settle_frames=settle_frames, rt_subframes=rt_subframes)
@@ -483,6 +491,7 @@ class IrCamera:
             )
         planes = to_gbuffer(geometry, temperature_k=temperature, material_id=material_id).to_dict()
         self._last = _Frame(
+            rgb=self._native_rgb(aovs.rgb),
             planes=planes,
             instance_id=instance_id,
             material_id=material_id,
@@ -600,6 +609,26 @@ class IrCamera:
             )
         self._t_rel_s += self.frame_period_s
         return outputs
+
+    def _native_rgb(self, rgb: Any) -> NDArray[np.uint8] | None:
+        """The companion visible frame, box-filtered from the k× grid to the detector grid.
+
+        The same box the optics stage uses, so the RGB lands on exactly the IR pixels rather than
+        near them: an RGB/IR pair that is a quarter of a pixel out is worse than no pair at all
+        for anything that learns from both. It carries **no** infrared information -- it is the
+        renderer's tone-mapped colour and nothing in the radiometric chain ever reads it.
+        """
+        if rgb is None:
+            return None
+        arr = np.asarray(rgb, dtype=np.uint8)
+        if arr.ndim != 3:
+            return None
+        k = self.config.supersample
+        if k > 1:
+            h, w = arr.shape[0] // k, arr.shape[1] // k
+            block = arr[: h * k, : w * k].reshape(h, k, w, k, arr.shape[2])
+            arr = np.rint(block.mean(axis=(1, 3))).astype(np.uint8)
+        return np.asarray(arr, dtype=np.uint8)
 
     def _downsample_mask_overlay(
         self, display8: NDArray[np.uint8], mask: NDArray[np.bool_]

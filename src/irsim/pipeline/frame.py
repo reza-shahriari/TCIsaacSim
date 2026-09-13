@@ -189,7 +189,14 @@ def run_frame(
     display8 = None
     isp_hash = None
     if outputs.display_8:
-        display = run_display_branch(dn16, sensor.isp, sensor.fpa.bit_depth)
+        # §11.2's flat field, on the display branch alone (M9.12). The raw `dn16` above and the
+        # radiometric outputs keep the un-corrected ADC plane, because `invert_optics` already
+        # divides cos⁴ out per pixel -- correcting both would remove the same term twice. What a
+        # viewer sees is what the camera's own ISP shows, which on any real core is flat-fielded.
+        display_dn = dn16
+        if config.flat_field is not None:
+            display_dn = quantise(config.flat_field.apply(dn16), sensor.fpa.bit_depth)
+        display = run_display_branch(display_dn, sensor.isp, sensor.fpa.bit_depth)
         display8, isp_hash = display.display8, display.isp_hash
     state.advance()
     return Outputs(

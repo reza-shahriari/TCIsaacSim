@@ -40,6 +40,13 @@ class TwoPointNuc:
 
     gain: Float32Array
     offset: Float32Array
+    #: Level added back after the correction. Zero keeps §11.2's convention exactly -- the
+    #: corrected cold blackbody reads 0, sharing a reference with the radiometric branch
+    #: (ADR 0021). A *display* flat field sets it to the cold frame's mean instead, so the
+    #: corrected plane keeps the DN range the AGC downstream was written for; without it a
+    #: flat-fielded frame reads zero on a cold scene and the histogram moves for reasons that
+    #: have nothing to do with the scene.
+    pedestal: float = 0.0
 
     def __post_init__(self) -> None:
         if self.gain.dtype != np.float32 or self.offset.dtype != np.float32:
@@ -48,8 +55,14 @@ class TwoPointNuc:
             raise ValueError("gain and offset must share a shape")
 
     @classmethod
-    def calibrate(cls, dn_low: object, dn_high: object) -> TwoPointNuc:
-        """§11.2: G_ij = (mean DN_H − mean DN_L)/(DN_H_ij − DN_L_ij), O_ij = DN_L_ij."""
+    def calibrate(
+        cls, dn_low: object, dn_high: object, *, restore_pedestal: bool = False
+    ) -> TwoPointNuc:
+        """§11.2: G_ij = (mean DN_H − mean DN_L)/(DN_H_ij − DN_L_ij), O_ij = DN_L_ij.
+
+        ``restore_pedestal`` adds the cold frame's mean level back on application; see
+        :attr:`pedestal`.
+        """
         lo = _as_signal(dn_low, "dn_low")
         hi = _as_signal(dn_high, "dn_high")
         if lo.shape != hi.shape:
@@ -60,17 +73,20 @@ class TwoPointNuc:
                 "every pixel must respond more to the hot blackbody than to the cold one"
             )
         gain = (hi.mean() - lo.mean()) / span
-        return cls(gain=gain.astype(np.float32), offset=lo.astype(np.float32))
+        return cls(
+            gain=gain.astype(np.float32),
+            offset=lo.astype(np.float32),
+            pedestal=float(lo.mean()) if restore_pedestal else 0.0,
+        )
 
     @classmethod
     def identity(cls, shape: tuple[int, int]) -> TwoPointNuc:
         return cls(gain=np.ones(shape, np.float32), offset=np.zeros(shape, np.float32))
 
     def apply(self, dn: object) -> Float32Array:
-        """DN_corr = G (DN − O), float32; the corrected cold blackbody is 0."""
+        """DN_corr = G (DN − O) + pedestal, float32; with pedestal 0 the cold blackbody reads 0."""
         x = _as_signal(dn, "dn")
         if x.shape != self.gain.shape:
             raise ValueError(f"frame shape {x.shape} != coefficient shape {self.gain.shape}")
-        return np.asarray(
-            self.gain.astype(np.float64) * (x - self.offset.astype(np.float64)), dtype=np.float32
-        )
+        corrected = self.gain.astype(np.float64) * (x - self.offset.astype(np.float64))
+        return np.asarray(corrected + float(self.pedestal), dtype=np.float32)

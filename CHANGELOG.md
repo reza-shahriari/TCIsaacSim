@@ -5,6 +5,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The camera's flat-field correction was never applied** (roadmap M9.12). `irsim.isp.TwoPointNuc`
+  has existed since M5 with its own tests, and nothing in `irsim.pipeline` referenced it -- so the
+  8-bit picture carried every fixed spatial structure the optics put into the DN plane. Most
+  visibly cos⁴ vignetting: measured at 21 % from centre to corner on the Boson's 14 mm lens, which
+  plateau equalisation then stretched into black corners. No real thermal clip looks like that,
+  because every real camera flat-fields before its AGC.
+- The README claimed "the NUC stage (M9) removes it". It did not. That line is corrected rather
+  than quietly deleted, because it is the kind of claim that was ahead of the code and got
+  repeated.
+- The correction lives in the **display branch alone**, and that is a decision. §11.1 forks the
+  branches after the ADC and `invert_optics` already divides cos⁴ out per pixel analytically --
+  which is why apparent temperature was flat across a row while the picture was not. Applying a
+  measured correction to the radiometric side as well would remove the same term twice, so `dn16`
+  and the radiometric outputs are **bit-identical** with the flat field on or off, and there is a
+  test asserting exactly that.
+- Coefficients come from two synthetic blackbody frames through the real forward chain with the
+  noise off -- what a bench calibration does with two real blackbodies -- rather than from the
+  analytic cos⁴ field. A correction built from the formula would remove exactly the term the
+  formula describes and stay silent about any other fixed structure the chain grows later.
+- `TwoPointNuc` gains an optional `pedestal`: §11.2's convention makes the corrected cold blackbody
+  read 0, which is right for the radiometric reference and wrong as an AGC input, since a
+  flat-fielded frame reading zero on a cold scene moves the histogram for reasons that have nothing
+  to do with the scene. Default 0 keeps the spec convention and every existing test.
+- Measured after the fix, on a scene whose temperature varies with row only so that any
+  left-to-right difference is the camera: uncorrected the edges read 20+ display codes below the
+  centre; corrected the difference is under a fifth of that. A uniform blackbody comes out flat to
+  0.1 %, at temperatures it was not calibrated at as well as at them.
+
+### Added
+- `--rgb` on `scripts/render_aerial_demo.py` and `capture_rgb` on `IrCamera`: the visible-light
+  frame from the **same** camera prim, pose and lens, box-filtered onto the IR pixel grid, so an
+  RGB/IR pair is registered by construction rather than by calibration. It carries no infrared
+  information and nothing in the radiometric chain reads it -- the sidecar's unit string says so.
+  The demo stage gains a distant light for it, which changes nothing about the IR frame because
+  that path never reads a colour AOV.
+- `--no-flat-field` as the ME.8-style ablation, so the artefact can be reproduced deliberately.
+
 ### Added
 - Warp stage 5's remainder on device (roadmap M10.7b): the bad-pixel map and its RTS chain, the
   iterated 4-neighbour replacement, and the FFC hold. Unlike M10.7a's noise these are mostly

@@ -11,7 +11,7 @@ docs/physics-model.md §13.4, §13.6
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import numpy as np
@@ -63,6 +63,12 @@ class PipelineConfig:
         None  # L1 fallback: constant τ, path radiance at the weather's T_air
     )
     sky: SkyModel | None = None  # stage-1 reflected term (M7.13); None = emission only
+    #: The camera's own flat-field correction, applied in the **display branch only** (M9.12).
+    #: `dn16` and the radiometric outputs stay the raw ADC plane: the radiometric branch already
+    #: divides cos⁴ out analytically in `invert_optics`, so correcting it again would remove the
+    #: same term twice. ``None`` is the un-flat-fielded camera, which is what every golden written
+    #: before M9.12 describes.
+    flat_field: Any = None  # TwoPointNuc; Any avoids a cycle through irsim.isp
     #: The M9 sensor chain (M9.8): housing and FPA nodes, pattern drift, defects, NUC
     #: residual and the FFC. ``None`` is the ideal camera -- the chain every M9 mechanism is
     #: measured against -- and is the default so that existing benches and goldens describe
@@ -91,6 +97,7 @@ class PipelineConfig:
         atmosphere: Atmosphere | LayeredAtmosphere | None = None,
         tau_override: float | None = None,
         sky: SkyModel | None = None,
+        flat_field_enabled: bool = False,
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
@@ -170,7 +177,7 @@ class PipelineConfig:
                 spec.fpa.pitch_um,
                 spec.optics.supersample_factor,
             )
-        return cls(
+        built = cls(
             sensor=sensor,
             lut=lut,
             materials=materials,
@@ -187,6 +194,11 @@ class PipelineConfig:
             tau_override=tau_override,
             sky=sky,
         )
+        if flat_field_enabled:
+            from irsim.pipeline.flat_field import calibrate_flat_field
+
+            built = replace(built, flat_field=calibrate_flat_field(built))
+        return built
 
     @classmethod
     def from_yaml(

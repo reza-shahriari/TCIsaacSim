@@ -8,6 +8,7 @@ docs/physics-model.md §13.4, §13.6, §16.4
 """
 
 from irsim.pipeline.core import PipelineConfig, PipelineState, Stage
+from irsim.pipeline.flat_field import calibrate_flat_field, uniform_signal_dn
 from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance_stage
@@ -22,6 +23,8 @@ __all__ = [
     "band_radiance_stage",
     "Outputs",
     "run_frame",
+    "calibrate_flat_field",
+    "uniform_signal_dn",
     "SensorChain",
     "FrameReport",
     "attach_sensor_chain",

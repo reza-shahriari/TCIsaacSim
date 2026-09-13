@@ -145,7 +145,7 @@ def build_aerial_demo(
     distinguish and would make the expected contrast impossible to state in a test.
     """
     import omni.usd
-    from pxr import Gf, Sdf, UsdGeom
+    from pxr import Gf, Sdf, UsdGeom, UsdLux
 
     ctx = omni.usd.get_context()
     ctx.new_stage()
@@ -154,6 +154,9 @@ def build_aerial_demo(
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     stage.DefinePrim("/World", "Xform")
     stage.DefinePrim("/World/Targets", "Xform")
+    # A light for the *visible* render only. The infrared path never reads a colour AOV, so this
+    # changes nothing about the IR frame; without it the companion RGB capture is a black image.
+    UsdLux.DistantLight.Define(stage, "/World/SunForRgb").CreateIntensityAttr(2000.0)
 
     errors: dict[str, str] = {}
     built: dict[str, DemoTarget] = {}

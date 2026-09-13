@@ -120,6 +120,11 @@ AOV_NAMES: dict[str, tuple[str, ...]] = {
     "motion": ("motion_vectors", "Motion2d"),
     "instance": ("instance_id_segmentation", "instance_segmentation"),
     "semantic": ("semantic_segmentation",),
+    #: The ordinary visible-light render from the *same* camera prim. It carries no infrared
+    #: information whatever -- it is float16-adjacent 8-bit colour through the renderer's own tone
+    #: mapping -- and is captured only as a companion image: same pose, same lens, same distortion,
+    #: so an RGB/IR pair is registered by construction rather than by calibration.
+    "rgb": ("rgb", "LdrColor"),
 }
 
 #: Init params per annotator. ``colorize=False`` keeps the segmentation channels as uint32 ids
@@ -182,6 +187,7 @@ class RawAovs:
     motion: NDArray[np.floating[Any]] | None = None
     instance_id: NDArray[np.integer[Any]] | None = None
     semantic_id: NDArray[np.integer[Any]] | None = None
+    rgb: NDArray[np.uint8] | None = None
     device_handles: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -538,6 +544,7 @@ class AovReader:
                 raise RuntimeError(f"channel {channel!r} returned no data this frame")
         ids = planes.get("instance")
         semantic = planes.get("semantic")
+        colour = planes.get("rgb")
         return RawAovs(
             distance_m=np.asarray(planes["distance"]),
             normal=np.asarray(planes["normal"]),
@@ -546,6 +553,7 @@ class AovReader:
             motion=None if planes.get("motion") is None else np.asarray(planes["motion"]),
             instance_id=None if ids is None else np.asarray(ids).astype(np.uint32),
             semantic_id=None if semantic is None else np.asarray(semantic).astype(np.uint32),
+            rgb=None if colour is None else np.asarray(colour).astype(np.uint8),
             device_handles=handles,
         )
 

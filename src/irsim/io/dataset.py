@@ -66,6 +66,10 @@ PLANE_UNITS: dict[str, str] = {
     "signal_dn": "DN before quantisation (float32)",
     "flux": "W per pixel (energy form) or photons/s per pixel (photon form)",
     "semantic_id": "semantic class id (uint32)",
+    "rgb": (
+        "visible-light RGBA8 from the same camera prim, pose and lens -- a registered companion "
+        "image with NO infrared content; nothing in the radiometric chain reads it"
+    ),
     "instance_id": "renderer instance id (uint32)",
 }
 
