@@ -12,6 +12,7 @@ moment verifying Planck's law needs OpenCV installed, nobody verifies Planck's l
 roadmap ME.1; ADR 0003 (validation against public data, no camera).
 """
 
+from irsim_eval.data import Box, Frame, Sequence, read_sequence, write_sequence
 from irsim_eval.manifest import (
     Dataset,
     Manifest,
@@ -20,8 +21,18 @@ from irsim_eval.manifest import (
     readme_path,
     render_readme,
 )
+from irsim_eval.motion import StaticVerdict, classify_clip, cumulative_shifts, estimate_shift
 
 __all__ = [
+    "Box",
+    "Frame",
+    "Sequence",
+    "read_sequence",
+    "write_sequence",
+    "StaticVerdict",
+    "classify_clip",
+    "cumulative_shifts",
+    "estimate_shift",
     "Dataset",
     "Manifest",
     "load_manifest",

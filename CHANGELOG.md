@@ -6,6 +6,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `irsim_eval.data` (roadmap ME.1b): the `Sequence` / `Frame` / `Box` form every validation
+  analyser reads, plus a canonical on-disk layout (a JSON index and one array per frame) and its
+  writer. The indexed sets agree on nothing -- Halmstad ships MATLAB labels beside mp4, Anti-UAV410
+  per-sequence JSON, the single-frame sets folders of images -- so a per-dataset converter writes
+  this layout once and no analyser ever reads a publisher's format. Frames load on demand, since a
+  box-size histogram over a whole set should not pay for pixels it never looks at.
+- **The reader insists frames are 8-bit.** Every indexed set stores 8-bit frames, and that
+  quantisation is a floor under every statistic measured on them (ADR 0003); a dtype that quietly
+  widened would hide the floor rather than remove it, and invite a radiometric claim the data
+  cannot support. Boxes are top-left `(x, y)` plus `(w, h)` in the project's own pixel-edge
+  convention, pinned by a test because half a pixel here changes every size-versus-range number.
+- `irsim_eval.motion`: the static-camera clip detector that gates every per-pixel temporal
+  statistic. On flat sky a per-pixel temporal standard deviation is the closest thing these public
+  clips offer to a laboratory blackbody -- but only if the scene stayed on the same pixels. Pan by
+  a pixel a frame and the same number measures the sky gradient crossing the detector, which is
+  larger, perfectly smooth, and indistinguishable from a noisier camera.
+- The discriminator is **cumulative displacement from the first frame**, not per-frame motion,
+  because that is the distinction that matters: a shaken mount wobbles sub-pixel and goes nowhere
+  (static, the statistic still describes the sensor), while a slow drift takes equally small steps
+  that all point the same way and crosses many pixels (moving, however small each step was). The
+  two synthetic controls are built with the *same* per-frame step size so the pair tests
+  accumulation rather than amplitude.
+- Shifts come from phase correlation, which ignores the amplitude and so survives the brightness
+  changes an AGC makes between frames. Sub-pixel accuracy uses **Foroosh's ratio, not a parabolic
+  fit**: a phase-only peak is a Dirichlet kernel that splits linearly between its two nearest
+  samples, and the parabola everyone reaches for under-reads it by about 30 % at a third of a
+  pixel -- small enough to pass for noise, biased enough to drag a drifting clip under the
+  threshold. Caught by the estimator's own known-shift test, which the parabolic version failed at
+  (-0.4, 0.6) and passed at every integer shift.
+- New `validation` extra (imageio) for sets stored as images; sequences written as `.npy` need no
+  decoder, which is why the default gate installs nothing new and every test here runs without it.
 - The validation-data index (roadmap ME.1, first half; ADR 0003). `data/validation/datasets.yaml`
   records, per public dataset: licence, access mode, sensor, **signal path**, bit depth, codec,
   frame counts, and which ME.2-ME.4 analysers it may and may not support. `irsim_eval.manifest`
