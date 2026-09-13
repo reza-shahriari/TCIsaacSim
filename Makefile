@@ -29,7 +29,7 @@ fmt:
 	$(PYTHON) -m ruff check --fix src tests scripts
 
 typecheck:
-	$(PYTHON) -m mypy src/irsim src/irsim_isaac
+	$(PYTHON) -m mypy src/irsim src/irsim_isaac src/irsim_eval
 
 check: lint typecheck test
 	@echo "OK — safe to commit"

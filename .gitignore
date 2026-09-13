@@ -14,3 +14,6 @@ data/lut/*.f32
 outputs/
 *.usdc
 .DS_Store
+
+# Validation datasets are not in git (ADR 0003, roadmap ME.1); the index is.
+data/validation/*/

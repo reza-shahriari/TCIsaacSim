@@ -1,0 +1,244 @@
+# Public validation data (roadmap ME.1; ADR 0003).
+#
+# No IR camera is available to this project, so every comparison against reality is made against
+# imagery somebody else published. That makes *what each set actually is* a first-class fact:
+# a statistic measured on a display-output MP4 is not the same statistic measured on a Y16 stream,
+# and a set whose sensor is undocumented cannot support a radiometric claim at all.
+#
+# This file is the single source of truth for that. `data/validation/README.md` is generated from
+# it (`python -m irsim_eval.manifest --render`), so the prose and the machine-readable fields
+# cannot drift apart.
+#
+# FIELD NOTES
+#
+#   licence         SPDX id, or `unstated` when the publisher did not state one. `unstated` is
+#                   not a guess that it is permissive -- it means the redistribution and use terms
+#                   are unknown, and `scripts/fetch_validation_data.py` refuses such a set unless
+#                   it is asked explicitly.
+#   signal_path     What happened to the photons between the detector and the file. This decides
+#                   which analysers are allowed to run: an AGC signature cannot be measured on a
+#                   set that never went through an AGC, and noise statistics from a lossy codec
+#                   are bounded below by the codec, not by the sensor.
+#   access          `direct` (a URL a script can fetch), `manual` (a drive link, a form, or an
+#                   access request -- a human has to do it), or `unreleased`.
+#   sha256          Filled in by the fetch script once the archive is on disk; empty here because
+#                   this project has not downloaded these sets and will not invent a hash.
+#   analysers       Which ME.2-ME.4 measurements this set may be used for. Deliberately narrow.
+#
+# VERIFIED indicates the field was checked against the publisher's own page on the stated date.
+# ESTIMATED or UNVERIFIED means it came from a paper or a secondary source and should be confirmed
+# before any number derived from it is published.
+
+schema_version: 1
+checked_utc: "2026-09-13"
+
+datasets:
+  halmstad_drone_detection:
+    title: "A dataset for multi-sensor drone detection (Svanström et al. 2021)"
+    role: primary
+    why: >-
+      The only set here with an unambiguous licence, a citable DOI, and a fully documented signal
+      path from a camera core this project already models. That combination makes it the reference
+      set: every other entry is a supplement to it, not a substitute.
+    doi: "10.5281/zenodo.5500576"
+    code_url: "https://github.com/DroneDetectionThesis/Drone-detection-dataset"
+    paper_doi: "10.1016/j.dib.2021.107521"
+    licence: "CC0-1.0"                       # VERIFIED 2026-09-13 (repository licence)
+    licence_note: >-
+      CC0-1.0 is the licence on the code repository, which also states the data is "free to
+      download, use and edit". UNVERIFIED whether the Zenodo record carries the same terms;
+      confirm at the DOI before redistributing any frame.
+    access: manual                            # Zenodo record; the repo README points at the DOI
+    sensor: "FLIR Breach PTQ-136 (Boson 320x256 core)"     # VERIFIED 2026-09-13
+    fov_deg: [24.0, 19.0]                                   # VERIFIED 2026-09-13
+    resolution: [320, 256]
+    frame_rate_hz: 60
+    bit_depth_native: 16                      # Y16 off the core
+    bit_depth_stored: 8
+    codec: "mp4"                              # UNVERIFIED: container known, encoder/bitrate not
+    bitrate_kbps: null                        # UNVERIFIED -- measure on the files, do not assume
+    clips: 365                                # IR clips; 285 visible clips are not used here
+    clip_seconds: 10
+    annotated_frames: 203328                  # across IR and visible together
+    classes: ["drone", "bird", "airplane", "helicopter"]
+    label_format: "matlab .mat (a python decoder ships in the repo)"
+    signal_path: >-
+      Boson Y16 16-bit stream -> recorder converts to 8-bit -> stored as mp4. The frames therefore
+      carry the core's noise, striping and FFC freezes but NOT its AGC, DDE or palette: the
+      recorder's conversion stands in for the ISP and its rule (linear? min-max per frame?) is
+      itself unverified. Treat any histogram-shape statistic as measuring the recorder.
+    analysers:
+      - noise_3d
+      - spatial_psd
+      - temporal_psd
+      - ffc_freeze
+      - fixed_pattern_growth
+      - bad_pixels
+      - target_size_and_scr
+      - edge_spread
+      - smear
+    excluded_analysers:
+      - agc_signature          # never went through an AGC
+      - dde_overshoot          # ditto
+    notes: >-
+      Ten-second clips are too short for an FFC *interval* distribution (the Boson's is 180 s);
+      they can still show freeze length. Maximum sensor-to-target range is 200 m by the flight
+      regulations in force, so this set says nothing about the 0.5-5 km regime phase 1 models.
+
+  anti_uav_410:
+    title: "Anti-UAV410 (Huang et al., TPAMI 2023)"
+    role: supplement
+    why: >-
+      410 sequences long enough to show an FFC *interval* distribution, which the 10-second
+      Halmstad clips cannot. Its frames are display output, so it is the set that says what a
+      finished thermal picture of a drone looks like.
+    code_url: "https://github.com/HwangBo94/Anti-UAV410"
+    paper_doi: "10.1109/TPAMI.2023.3335338"
+    licence: "unstated"                       # VERIFIED 2026-09-13: no licence file or statement
+    licence_note: >-
+      The repository states no licence for the data. Unstated is not permissive. Using the frames
+      for measurement on one machine is a different question from redistributing them or training
+      a model that is shipped; settle that before either.
+    access: manual                            # Google Drive / Baidu Disk links in the README
+    sensor: "undocumented"
+    resolution: null                          # UNVERIFIED -- varies by sequence, measure on load
+    frame_rate_hz: null
+    bit_depth_native: null
+    bit_depth_stored: 8
+    codec: "lossy"                            # UNVERIFIED beyond "not lossless"
+    bitrate_kbps: null
+    clips: 410
+    annotated_boxes: 438000                   # "over 438K", paper
+    label_format: "per-sequence json boxes"
+    signal_path: >-
+      The camera's display output through an unknown ISP, stored lossy. AGC, DDE, palette and any
+      temporal filtering are all baked in and none of them are documented, so nothing measured
+      here can be attributed to the sensor rather than to its ISP.
+    analysers:
+      - ffc_interval
+      - agc_signature
+      - dde_overshoot
+      - target_size_and_scr
+      - contrast_polarity
+    excluded_analysers:
+      - noise_3d               # ISP + codec dominate; the sensor's noise is not recoverable
+      - temporal_psd
+    notes: >-
+      The sensor being undocumented is the binding constraint: with no pitch, focal length or NETD
+      there is no way to convert a measured box size into a range or a measured contrast into
+      kelvin. Use it for shape-of-the-picture statistics only.
+
+  cst_anti_uav:
+    title: "CST Anti-UAV (Xie et al., ICCV 2025 Workshops)"
+    role: supplement
+    why: >-
+      220 sequences built specifically around *tiny* targets in complex scenes -- the regime where
+      the MS.6 point-target path replaces the renderer, and the one this simulator is least able
+      to check any other way.
+    code_url: "https://github.com/PCwenyue/CST-Anti-UAV"
+    paper_arxiv: "2507.23473"
+    licence: "unstated"                       # VERIFIED 2026-09-13
+    access: unreleased                        # the repo is a toolkit; the data release is pending
+    sensor: "undocumented"
+    resolution: null
+    bit_depth_stored: 8
+    codec: "lossy"
+    clips: 220
+    annotated_boxes: 240000                   # "over 240k", paper
+    signal_path: >-
+      Display output, as Anti-UAV410. UNVERIFIED in detail; confirm from the paper before use.
+    analysers:
+      - target_size_and_scr
+      - contrast_polarity
+      - cloud_clutter_psd
+    excluded_analysers:
+      - noise_3d
+      - agc_signature
+    notes: >-
+      Listed now so the index is complete and so nobody re-derives its status later. Check the
+      repository before planning work against it.
+
+  lrddv3:
+    title: "LRDDv3: long-range drone detection with range information and thermal data"
+    role: supplement
+    why: >-
+      The only indexed set with per-image **range** labels, which is the one thing needed to test
+      size-versus-range and SCR-versus-range against reality rather than against the model's own
+      geometry.
+    site_url: "https://research.coe.drexel.edu/ece/imaple/lrddv3/"
+    paper_arxiv: "2605.25942"
+    licence: "unstated"                       # VERIFIED 2026-09-13: access is by request
+    licence_note: >-
+      Access requires a request form and is stated to be subject to US export control regulations.
+      That is an access restriction, not a licence; read the form's terms before use and do not
+      assume the data may be redistributed or published from.
+    access: manual
+    sensor: "undocumented thermal, 640x512"   # UNVERIFIED sensor model
+    resolution: [640, 512]
+    frame_rate_hz: 5                          # sampled from video at 5 fps
+    bit_depth_stored: 8
+    clips: 128
+    thermal_images: 29630
+    signal_path: >-
+      Frames sampled at 5 fps from video. UNVERIFIED whether the thermal frames are Y16-derived or
+      display output. At 5 fps nothing temporal can be measured: no FFC freeze, no temporal PSD.
+    analysers:
+      - target_size_and_scr
+      - size_vs_range
+    excluded_analysers:
+      - noise_3d
+      - temporal_psd
+      - ffc_freeze
+      - smear
+    notes: >-
+      Ranges are mostly 0-50 m and reach only ~175 m, and the geometry is air-to-air with ground
+      clutter behind the target. It therefore constrains the near end of the range law and says
+      nothing about a 0.5-5 km sky-background target, which is the case phase 1 actually models.
+
+  irstd_1k:
+    title: "IRSTD-1k infrared small-target detection set"
+    role: prior
+    why: >-
+      A thousand single frames of small targets against sky, sea and land. No sequence, no sensor,
+      no radiometry -- but a large sample of what target *size* and local contrast look like.
+    licence: "unstated"                       # VERIFIED 2026-09-13: no canonical licensed source
+    access: manual
+    sensor: "undocumented"
+    resolution: [512, 512]
+    bit_depth_stored: 8
+    frames: 1000
+    signal_path: "unknown; single frames, provenance not documented per image"
+    analysers:
+      - target_size_prior
+      - scr_prior
+    excluded_analysers:
+      - noise_3d
+      - temporal_psd
+      - ffc_freeze
+      - agc_signature
+      - size_vs_range
+    notes: >-
+      Priors only. With no sensor and no range there is nothing to convert a pixel count into, so
+      a statistic from this set can bound a distribution but can never be a target the simulator
+      is tuned to hit.
+
+  nuaa_sirst:
+    title: "NUAA-SIRST (SIRST v1) single-frame infrared small-target set"
+    role: prior
+    why: "As IRSTD-1k, and commonly reported alongside it, so the two are indexed together."
+    licence: "unstated"                       # VERIFIED 2026-09-13
+    access: manual
+    sensor: "undocumented"
+    bit_depth_stored: 8
+    frames: 427
+    signal_path: "unknown; single frames, provenance not documented per image"
+    analysers:
+      - target_size_prior
+      - scr_prior
+    excluded_analysers:
+      - noise_3d
+      - temporal_psd
+      - ffc_freeze
+      - agc_signature
+      - size_vs_range
+    notes: "Priors only, for the same reasons as IRSTD-1k."

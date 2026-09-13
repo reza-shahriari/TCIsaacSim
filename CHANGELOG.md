@@ -6,6 +6,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- The validation-data index (roadmap ME.1, first half; ADR 0003). `data/validation/datasets.yaml`
+  records, per public dataset: licence, access mode, sensor, **signal path**, bit depth, codec,
+  frame counts, and which ME.2-ME.4 analysers it may and may not support. `irsim_eval.manifest`
+  makes licence, signal path and the analyser list *required* fields, so a set that cannot say
+  what its frames are cannot be added.
+- The index is the thing that decides whether a statistic means anything. The same flat-sky patch
+  is a laboratory noise measurement on a Y16-derived clip and a measurement of somebody's unknown
+  AGC on a display-output one. `usable_for("noise_3d")` returns exactly one set; the Halmstad
+  clips never went through an AGC, so `agc_signature` is in their *excluded* list and only
+  Anti-UAV410 can carry it; only LRDDv3 has range labels, so only it can do `size_vs_range`; and
+  the single-frame sets are marked `prior`, able to bound a distribution but never to be a target
+  the simulator is tuned to hit.
+- **Every field was checked against the publisher's own page, and the findings changed the plan.**
+  Only the Halmstad set (Svanström et al. 2021, Zenodo 10.5281/zenodo.5500576) states a licence at
+  all -- CC0-1.0 -- and it is also the only one whose sensor and signal path are fully documented
+  (FLIR Breach PTQ-136 / Boson 320x256, 24 deg x 19 deg, 60 fps, Y16 to 8-bit in the recorder,
+  mp4). It is therefore the **primary** set, and the schema permits exactly one.
+- The other five state no licence. `unstated` is recorded as a value, not left blank: it means the
+  terms are unknown, not that they are permissive. Anti-UAV410 and CST Anti-UAV publish no licence;
+  LRDDv3 is behind an access request citing US export control; IRSTD-1k and NUAA-SIRST have no
+  canonical licensed source. CST Anti-UAV is not released yet.
+- `scripts/fetch_validation_data.py` plans, reports and mostly refuses. A set with no stated
+  licence is **skipped** unless `--accept-unstated-licence` is passed, so using data on unknown
+  terms is always a deliberate act; a `manual` set (a drive link, a Zenodo record, an access form)
+  is never downloaded, because pretending a script can do that fails in a way that looks like a
+  network error; `http` is refused rather than silently upgraded. What it always does is hash what
+  is on disk, so "measured on these exact bytes" stays checkable (ADR 0004's rule applied to
+  someone else's data).
+- `data/validation/README.md` is **generated** from the YAML and a test fails when it is stale --
+  an index that disagrees with itself is worse than no index, because the prose is what people
+  read and the fields are what the code reads. Datasets stay out of git (`data/validation/*/`).
+- New package `src/irsim_eval/`, the home for everything that reads somebody else's imagery, kept
+  out of the core so that verifying Planck's law never requires an image decoder (CLAUDE.md #1).
+  `make typecheck` now covers it.
 - MS.6 analytic point targets wired into `IrCamera` (roadmap M10.19, ADR 0071). Below one native
   pixel the renderer is the wrong instrument -- it samples geometry, so a target covering a
   quarter of a pixel is drawn or not drawn depending where the sample landed. `AnalyticTarget`
