@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Maritime lane planned as phase 1b** (ADR 0078, roadmap milestone **MM**, 8 steps). Sky → sea →
+  ground, amending ADR 0003's two-phase split. The sea is an **analytic background**, not displaced
+  water geometry: at 3 km a Boson pixel spans 2.6 m and contains thousands of independent wave
+  facets, so one normal per pixel is not a coarse version of the right answer, it is a different
+  quantity. The reflected sky is integrated over a Cox–Munk slope distribution instead.
+- The geometry is the reason the lane exists: a camera 20 m up sees the sea at 5 km at **0.23°
+  depression = 89.8° incidence**, where water's emissivity has fallen from 0.99 to under 0.15. Nearly
+  all visible sea is a sky mirror, so a vessel reads **dark against near water and bright against far
+  water**, with a contrast null in between. A scalar `T_ground` below the horizon — what the code does
+  today — cannot produce that at all.
+- Phase 1b promotes **M7.3** and **M7.5** out of phase 2; M7.4 already landed early for the same
+  reason. Three phenomenology-checklist rows, three ADR backlog entries (0078 written, 0079/0080
+  pending) and the dependency graph updated to match.
+- ADR 0078 states one error it does **not** bound: wave shadowing and inter-facet reflection are
+  neglected, and that approximation is weakest in exactly the near-horizon band a low camera cares
+  about most.
+
 - **Branch-safe complex Fresnel reflectance** (M7.4, §4.2 Level A [R1]).
   `irsim.materials.fresnel_reflectance(n, k, cos θ) → (R, R⊥, R∥)` and
   `directional_emissivity_fresnel = 1 − R`, written with the §4.2 A/B reparameterisation rather

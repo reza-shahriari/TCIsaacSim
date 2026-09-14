@@ -10,8 +10,8 @@ stood on 2026-09-10.
 CHANGELOG + ADR if listed), tick it here in the same commit. Steps inside a milestone are ordered; milestones
 that do not depend on each other (see the dependency graph) can run in parallel across people. Sizes are
 S (hours), M (a day or two), L (several days). No calendar dates — the team decides pace. Work is split
-into **phase 1 (sky targets)** and **phase 2 (ground / automotive)** per ADR 0003; the Phase plan says
-which steps of each milestone belong to phase 1.
+into **phase 1 (sky targets)**, **phase 1b (sea targets, ADR 0078)** and **phase 2 (ground / automotive)**
+per ADR 0003 as amended; the Phase plan says which steps of each milestone belong to which phase.
 
 **Picking a step:** take the first step in phase-plan order whose `deps` are all ✅; when it ships, prefix
 its **what** cell with `✅ done YYYY-MM-DD <hash>` as M0.1 does. Step ids are stable (`M3.4`, `ME.2`,
@@ -76,6 +76,7 @@ simulator and is skipped by default (`@pytest.mark.isaac` / `@pytest.mark.gpu`).
 | phase | milestones in order | notes |
 |---|---|---|
 | **1 — sky targets** | M0 → M1 ∥ ME → M3 → M4 → M5 → MS → M9 → M12, with M2 beside M1 and the M10 subset beside M12 | phase-1 subsets of M6/M7/M8/M10/M11 below; ME.1–ME.2 must land before M4.4, ME.5 before MS.8 |
+| **1b — sea targets** | MM.1 ∥ MM.2 → MM.3 → MM.4 → MM.5 → MM.6 → MM.7 → MM.8 | ADR 0078. Starts once MS and the M10 aerial subset are in; promotes M7.3/M7.5 out of phase 2 |
 | **2 — ground / automotive** | M6 (rest) → M7 (rest) → M8.8 → M10.3, M10.11 → M11 → ground Tier 3/4 | re-instates the §16.4 order for what was deferred |
 
 Phase-1 subsets of the ground-oriented milestones (every phase-1 step's `deps` resolve inside phase 1):
@@ -93,6 +94,18 @@ Phase-1 subsets of the ground-oriented milestones (every phase-1 step's `deps` r
   thermal bridge on Prescribed/Newton solvers) and **M10.19** (in-sim aerial phenomenology). M10.3
   (ThermalField bridge) and M10.11 (ground demo stage) are phase 2.
 - **M11:** M11.1 only.
+
+Phase 1b adds one milestone of its own (**MM**) and promotes two steps out of phase 2:
+
+- **M7 (promoted to phase 1b):** **M7.3** (spectral ε(λ) loader and band-effective emissivity) and
+  **M7.5** (n/k tables). A sea surface is the one background whose emissivity cannot be a scalar —
+  §4.2 refuses Level C for water by name — so MM.1 needs band-effective Fresnel, not a 10 µm point
+  value. M7.4 (✅ 2026-09-14) already landed early for the same reason. M7.6/M7.8 follow only if
+  Level A proves too expensive per pixel; the rest of M7 stays phase 2.
+- **MWIR sun glint off the sea is explicitly *not* in phase 1b.** It belongs to M11.7's specular
+  lobe, which is a band step, and MM.2's slope distribution is exactly the input it will want — the
+  point of putting the slope statistics in their own step is that glint reuses them rather than
+  growing a second wave model.
 ## Milestones
 
 ### M0 — Green baseline and test infrastructure
@@ -270,6 +283,40 @@ MTF at Nyquist 0.31 ± 0.05.
 | MS.6 | `feat(pipeline): point-target radiometry — analytic injection below one native pixel` | §8.1, §8.3, §2, CLAUDE.md #5 | ✅ **done 2026-09-12.** Unresolved-target injection when the projected extent < 1 native px (4 supersamples across): `Φ_excess = aperture_factor(F) · τ_opt · A_d · (A_t f²/(R² A_pix)) · τ(R) · [L_t − L_sky_beyond(R, θ)]` — the fill-fraction form that equals the resolved-path formula by construction, importing `irsim.optics.aperture_factor` (no hand-written pupil area); `L_sky_beyond` from MS.1 (the path between camera and target is *not* double-counted); PSF-spread at the sub-pixel position through MS.4's `optical_psf`, then the same box downsample as the resolved side. The rasteriser's flux error vs size is measured and recorded in ADR 0071 so the threshold is evidence. | With τ ≡ 1 the excess ∝ 1/R² within 2 %; with the preset atmosphere it equals τ(R)/R² times the same constant within 2 %; a target at `L_t = L_sky_beyond` has zero excess at every range to 1e-9; continuous (±1 %) across the handoff; a sub-pixel phase sweep conserves total flux to 1e-6; **on the resolved side a 1.2 px target swept through 16 sub-pixel phases has total flux within 5 % of its area-exact value in the phase mean, with a per-phase rms above 10 % at k = 4 (pure 2-D count quantisation, irreducible at fixed k -- the evidence for the threshold, ADR 0071)**; point-target Φ at F = 1 vs F = 2 has ratio 3.4, not 4.0 | in 0071 | MS.4, MS.2, M3.9 | M | no |
 | MS.7 | `feat(materials): four-material aerial library and target thermal signature` | §16.2, §6.6, §4.4, CLAUDE.md #4 | ✅ **done 2026-09-12.** `painted_composite`, `carbon_fibre`, `aircraft_aluminium_painted`, `propeller_rubber` -- `source: literature`, scalar `emissivity_per_band` via the M7.2 fallback, opaque, ρ derived; packed by M7.18. `irsim.thermal.aerial`: motor/ESC/battery ΔT = ΔT_max u² (45/30/15 K, **ESTIMATED** -- the ordering is the defensible part) and an airframe node at the shared weather's T_air, all as M6.6 `PrescribedSolver`s on a grid `refine_nodes` bisects until linear interpolation holds the analytic law to 1 mK. `irsim.validation.aerial` closes the loop with MS.1/MS.2. **L_env uses the ground-level sky model**, so the belly case (V_s → 0) carries an unquantified bias and V_s = 1 is the honest configuration (ADR 0072). | Closure < 1e-6 in every band, before and after float32 packing; belly (V_s = 0) reads warmer than top (V_s = 1) for all four and the gap widens as ε falls; motor/ESC/battery schedules within 1 mK of T_air + ΔT_max u² **between** nodes as well as on them; **horizon test** (T_air = 300 K, ε = 0.9, V_s = 1, R = 1 km, `us_standard_clear`): +64 K contrast at zenith, single sign change, analytic root **1.26°** agreeing with the rendered stage-1+2 root within 1° (target and sky apparent temperatures equal to < 1 mK there); 1.97° at ε = 0.8, 0.78° at ε = 0.95, **no crossing at ε = 1** -- the inversion is the reflected cold sky, not path radiance | 0072 aerial library & target heat schedules | M7.2, M7.18, M7.13, M6.6, MS.2 | M | no |
 | MS.8 | `test(pipeline): aerial-scene fixture and Tier 3 sky phenomenology` | §15 T3, §5.3 | ✅ **done 2026-09-12** (the ME.5 frame-statistics comparison is written and skipped with reason until the evaluation lane lands the reference bands). `gbuffer_aerial` (sky with elevation gradient, optional cloud field, N targets at given ranges and sizes, horizon; material ids from M7.18); tests: scale-free sky profile and SNR-per-degree vs MS.2 after the matched signal path; clouds warmer than clear sky; target SCR falls with range as τ(R)/R²; MTF/aliasing on a 2-px target; frame statistics compared to the ME.5 reference bands. Smear and the ME.6 pass are asserted in M9.9 on this fixture. | Every assertion above passes; the fixture's schema test is green | — | MS.3, MS.5, MS.6, MS.7, ME.5 | M | no |
+
+### MM — Sea surface background and maritime targets (phase 1b)
+
+**Goal:** the background below the horizon stops being one number. A sea surface is a Fresnel reflector
+seen almost edge-on, and the geometry is unforgiving: a camera 20 m up sees the sea at 5 km at 0.23°
+depression, i.e. **89.8° incidence**, where water's emissivity has fallen from 0.99 to under 0.15. Nearly
+all visible sea is therefore a sky mirror, not a 290 K blackbody, and a vessel's contrast against it
+changes *sign* between long and short range. Everything here is analytic for the reason ADR 0078 records:
+at 3 km a Boson pixel spans 2.6 m and contains thousands of independent wave facets, so what the sensor
+integrates is a slope *distribution*, which no practical tessellation delivers.
+
+**Tier:** T1 (emissivity, slope statistics, the isothermal identity) → T3 (horizon gradient, contrast
+polarity vs range) → T4 (public maritime LWIR imagery).
+**Exit criteria:** the isothermal identity holds to 1 mK at every depression angle and wind speed; the
+band-effective sea emissivity matches published sea-surface tables within 0.01 over 0–60°; a vessel
+closing from 5 km to 500 m crosses zero contrast at the analytic range within 15 %; one command renders
+a maritime scene from a scene YAML, the way `render_aircraft_pass.py` does for the air.
+
+**Deliberately not here:** wakes, whitecaps and foam (L3 — each is a separate surface class with its own
+emissivity and temperature, and none is needed to get the background right), and MWIR solar glint, which
+is M11.7 reusing MM.2.
+
+| id | commit title | spec | what | verification | ADR | deps | size | Isaac? |
+|---|---|---|---|---|---|---|---|---|
+| MM.1 | `feat(materials): band-effective sea-water emissivity vs angle` | §4.2, §4.1, §16.2 | Band-average M7.4's Fresnel ε(λ, θ) over the sensor's spectral response through the M7.3 machinery into `sea_water_emissivity(band, cos θ)`; `configs/materials/sea_water.yaml` with `angular_model: fresnel` pointing at the n/k table. Salinity is handled by *bounding* it, not by carrying a salinity axis. (`MAT-14`, `SEA-00`) | ε_B(0°) LWIR ∈ [0.985, 0.99] and ε_B(80°) ∈ [0.68, 0.72]; within 0.01 of published sea-surface emissivity tables over 0–60° and 0.02 to 80°; **band-effective differs from the monochromatic 10 µm value by > 0.002** (else the band average is decoration); Kirchhoff closure < 1e-6 at every angle; fresh-vs-sea n/k moves ε_LWIR < 0.005 | 0079 sea-water optical constants & salinity bound | M7.4 ✅, M7.5, M7.3 | M | no |
+| MM.2 | `feat(atmosphere): Cox–Munk wave-slope statistics from the shared weather's wind` | §4.3, §5.4 | `slope_variance(wind_m_s) → (σ²_up, σ²_cross)` on Cox & Munk's 1954 coefficients (σ²_c = 3.0e-3 + 1.92e-3 U, σ²_u = 3.16e-3 U, total 3.0e-3 + 5.12e-3 U at 12.5 m), Gaussian form first. Wind comes from the one `WeatherSeries` (#6) and is never authored beside it. (`SEA-01`) | σ²(U) matches the closed form to 1e-12 and σ²(0) = 3.0e-3; **total rms slope 13.1° at U = 10 m/s**; slope pdf integrates to 1 to 1e-9 with second moments to 1e-9; σ²_u/σ²_c > 1 for U > 0; a wind read from anywhere but the shared series fails the layering/weather test | 0079 | M6.2 ✅ | S | no |
+| MM.3 | `feat(atmosphere): sea-surface apparent temperature vs depression angle` | §5.3, §4.2, §7.4 | The maritime analogue of MS.2's sky profile: `SeaModel.apparent_temperature_k(t, depression)` = Lb⁻¹[ ε_B(θ) Lb(T_skin) + (1 − ε_B(θ)) ⟨L_sky(θ_mirror)⟩ ], the reflection **integrated over MM.2's slope pdf** rather than sampled at the specular angle, then carried to the camera through MS.1's slant path over the range to that patch. Horizon elevation −atan√(2h/R_e). (`SEA-02`) | **Isothermal identity: T_sky ≡ T_sea ⇒ T_app = T_sea within 1 mK at every depression 0.01–90° and every wind 0–20 m/s** — it must hold for *any* ε, so it catches a mis-weighted reflection that a plausible-looking gradient would hide; monotone in depression; T_app(90°) → T_skin within 0.2 K; T_app(0.05°) within 2 K of T_sky(0°); horizon-to-nadir span equals (1 − ε̄)(Lb(T_sea) − L_sky)/dLb_dT within 5 %; flat calm is steeper near the horizon than 15 m/s; horizon depression 0.045° at 2 m and 0.144° at 20 m eye height | 0078 | MM.1, MM.2, MS.1 ✅, MS.2 ✅ | L | no |
+| MM.4 | `feat(thermal): sea skin temperature — bulk SST, cool skin, diurnal warm layer` | §6.1, §6.5 | `T_skin = T_bulk − ΔT_cool(U, Q_net) + ΔT_warm(t)`: the Saunders-form cool-skin deficit driven by the shared weather's wind and M6.5's net longwave, the warm layer only in daylight at low wind. `T_bulk` is an authored scenario input, because a measured SST is what a maritime scenario actually has. (`SEA-03`) | ΔT_cool ∈ [0.1, 0.6] K, monotone decreasing in wind, **never negative** under net cooling; ΔT_cool < 0.25 K above 8 m/s; warm layer zero at night and above 6 m/s, ≤ 3 K at noon in 1 m/s; **a 1 K T_bulk change moves nadir T_app by > 0.9 K but a 0.2°-depression patch by < 0.15 K** — the sensitivity ordering is the deliverable, because it says where SST accuracy matters and where it does not | 0080 sea temperature model | MM.3, M6.5 ✅, M6.2 ✅ | M | no |
+| MM.5 | `feat(config): sea as a ground mode, and the horizon in the background model` | §5.3, §12.2 | `GroundSpec.mode: sea` with `bulk_sst_k`; `ground_temperature_k` gains the angle-aware path; `AerialThermalBridge.background_temperature_k` consults the `SeaModel` below the horizon instead of one scalar. `air`/`fixed` presets keep rendering bit-identically. (`SEA-04`) | **Every existing aerial frame bit-identical** (the guard that this is an addition, not a change); a sea preset gives a monotone below-horizon gradient; `mode: sea` without `bulk_sst_k` raises; the sea/sky junction is continuous to < 0.5 K when T_skin ≈ T_sky — the numerically dangerous case, where the two models must agree across the seam | in 0078 | MM.3, M10.18 ✅, M7.11 ✅ | M | no |
+| MM.6 | `feat(isaac): a maritime stage — vessels at range on an analytic sea` | §15 T3 | The `aerial_demo` analogue: `irsim_isaac/maritime_demo.py`, vessels at 0.5/2/5 km with hull / superstructure / stack nodes each, `configs/scenes/vessel_transit_clear_day.yaml`, and `stage.py`'s dome reused with a water look so the companion RGB frame shows a sea. **No water geometry** (ADR 0078). (`SEA-05`) | Stage builds headless; ids resolve to three nodes per vessel; a 12 m hull at 5 km spans 1.6 px so the sub-pixel flag fires and MS.6 takes over; the visible frame's horizon sits at the computed elevation; the engine-free half is covered by `make check` | in 0078 | MM.5, MS.7, M10.19 ✅ | M | **yes** |
+| MM.7 | `feat(isaac): a vessel transit, filmed in LWIR` | §15 T3 | `scripts/render_vessel_transit.py` — scene YAML in, frames out, the `render_aircraft_pass.py` shape including `--rgb`. A vessel closing from 5 km to 500 m, so the background it sits against sweeps the entire sea gradient in one clip. (`SEA-06`) | Runs end to end on the Isaac interpreter; four physical-unit outputs per frame; **target contrast against the sea changes sign during the run** and the crossing range matches MM.3's analytic root within 15 % | in 0078 | MM.6, M10.21 ✅ | M | **yes** |
+| MM.8 | `test(validation): Tier 3 maritime phenomenology and the public-imagery comparison` | §15 T3, T4 | The maritime checklist rows as scalar tests, plus ME.2–ME.4's statistics run over public maritime LWIR imagery indexed the ME.1 way, licences recorded. (`SEA-07`, `VAL-19`) | Sea near the horizon reads colder than sea close in under a clear sky by the analytic amount within 10 %; overcast collapses that span below 20 % of clear; polarity flips with range; sea-region clutter PSD slope inside the band measured from public imagery, each statistic with N, CI and its codec floor | in 0078 | MM.7, ME.5 | L | no |
+
+---
 
 ### M6 — Thermal solver, weather, spin-up, vehicle heat (§16.4 step 6)
 
@@ -491,7 +538,12 @@ graph LR
   M9 --> M12[M12 Tier 4/5 on public data]
   ME --> M12
   M10 -. optional .-> M12
+  M1 --> M7b[M7.3 + M7.5 spectral eps + n/k tables]
+  MS --> MM[MM sea surface + maritime targets, phase 1b]
+  M7b --> MM
+  M10 --> MM
   M12 --> P2[phase 2: M6 rest, M7 rest, M8.8, M10.3, M10.11, M11]
+  MM --> P2
 ```
 
 **Critical path (phase 1):** M0 → M1 → M3 → M4 → M5 → MS → M9 → M12, with ME.1–ME.2 landing before
@@ -500,6 +552,11 @@ ME (needs only M0.1/M0.6), M2 (needs only M0.5), M6.1–M6.6 and M6.17, M8.1–M
 M7.11, M7.18. Two people: {M0 → M1 → M3 → M4 → M5} and {ME → M6a/M8a → M7.2/M7.11/M7.18/M7.13 → MS}.
 A third: M2, then the M10 subset stage by stage as each oracle lands. M12.1 can run on the CPU pipeline;
 M10 is optional for the first Tier 4/5 numbers.
+
+**Phase 1b (sea)** opens once MS and the M10 aerial subset are in. Its own lane is M7.3 → M7.5 →
+MM.1 ∥ MM.2 → MM.3, which is engine-free and can run beside the tail of phase 1; only MM.6/MM.7
+need Isaac. MM.3 is the long pole and the one step whose isothermal identity test is worth writing
+first.
 
 ---
 ## Spikes and risk register
@@ -612,6 +669,9 @@ the revisit condition, using the template in ADR 0001.
 | 0070 | Cloud clutter model: LCL base from the weather, ε_cloud = 1 − τ_cloud, 1/f^β structure — authored, bounded only by display-domain clutter statistics | MS.3 |
 | 0071 | Layered slant-path atmosphere with an exponential-sum band model (2–3 terms per band), sky = column emission; point-target injection below one native pixel in the fill-fraction form, with the measured rasteriser flux error that justifies the threshold | MS.1, MS.6 |
 | 0072 | Aerial material library (four materials, literature values, thicknesses) and target heat schedules (motor / ESC / battery, ESTIMATED) | MS.7 |
+| 0078 | **Written 2026-09-14.** Maritime as phase 1b; the sea as an analytic background rather than displaced geometry; wakes, whitecaps and glint deferred | MM.3, MM.5, MM.6, MM.7, MM.8 |
+| 0079 | Sea-water optical constants (fresh vs saline n/k, salinity bounded rather than modelled) and the Cox–Munk slope model, including Gaussian vs Gram–Charlier | MM.1, MM.2 |
+| 0080 | Sea skin temperature: cool-skin parameterisation, the diurnal warm layer, and T_bulk as an authored scenario input rather than a solver output | MM.4 |
 
 ---
 
@@ -647,6 +707,9 @@ the revisit condition, using the template in ADR 0001.
 | Clouds warmer than clear sky and spatially structured | cloud edges > 20 K-equivalent warmer at zenith; display-domain PSD slope inside the measured band | MS.3, MS.8 | demo stage |
 | Target contrast falls with range (τ(R)/R² when unresolved) and converges to the sky of its elevation | excess ∝ τ(R)/R² within 2 %; a receding target converges to `L_sky(θ)` within 5 mK | MS.1, MS.6, MS.8 | — |
 | Contrast inversion near a warm horizon | zero-contrast elevation equals the analytic root within 1° for the specified T_air, ε, V_s, range and preset | MS.7 | — |
+| Sea near the horizon reads colder than sea close in (clear sky) | horizon-to-near span equals (1 − ε̄)(Lb(T_sea) − L_sky)/dLb_dT within 10 %; overcast collapses it below 20 % of clear | MM.3, MM.8 | maritime stage screenshot |
+| A vessel's contrast against the sea changes sign with range | polarity flips during a 5 km → 500 m closure; the crossing range matches the analytic root within 15 % | MM.7, MM.8 | — |
+| Roughening the sea flattens the horizon gradient | 15 m/s wind gives a strictly shallower near-horizon dT/dθ than flat calm, at the same SST and sky | MM.2, MM.3 | — |
 | Real-video statistics reproduced (noise, striping, FFC freeze, signal path, clutter) | ME.6 comparison passes on a synthetic aerial clip after the same codec | M9.9, M12.1, M12.2 | — |
 
 Items that stay manual (visual only): overall "does it look like a thermal camera" on the demo stage after
