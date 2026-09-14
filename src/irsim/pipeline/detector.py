@@ -38,14 +38,51 @@ __all__ = ["IIR_STATE_KEY", "bolometer_lag", "detector_stage", "DetectorStage"]
 IIR_STATE_KEY = "bolometer_iir"
 
 
+#: Where the previous frame's scene time is kept, so a time-lapse camera can be told the truth
+#: about its own interval (ADR 0074 renders one frame per six seconds of scene time).
+LAST_T_KEY = "bolometer_iir_t_s"
+
+
+def lag_interval_s(config: PipelineConfig, state: PipelineState) -> float:
+    """Seconds since the previous frame: elapsed scene time when it is known, else 1/frame_rate.
+
+    **A policy, not a property of the membrane.** It is applied by `run_frame`, which owns the
+    caller's clock, and *not* by :func:`bolometer_lag`, whose default stays the configured frame
+    interval. That is deliberate: `detector_stage` is the CPU oracle the Warp twin is compared
+    against (`EQUIVALENCE_STAGES["detector"]`), the twin takes `alpha_for(fpa.frame_dt_s, ...)`
+    at kernel-launch time, and quietly making the shared primitive depend on `state.t_s` would
+    have made the two paths disagree for any caller that advanced its clock.
+
+    **The detector's frame rate is the wrong answer for a time-lapse.** A 10 ms membrane settles
+    completely across a six-second capture interval, and driving it at 1/60 s instead leaves 19 %
+    of the *previous capture* in the picture -- a ghost of a scene six seconds old. The fallback
+    is for callers that never advance ``t_s`` at all, which is most unit tests and every
+    single-frame use, and for them the two answers coincide anyway.
+    """
+    dt = float(config.fpa.frame_dt_s)
+    previous = state.buffers.get(LAST_T_KEY)
+    if previous is not None:
+        elapsed = float(state.t_s) - float(previous)
+        if elapsed > 0.0:
+            dt = elapsed
+    state.buffers[LAST_T_KEY] = float(state.t_s)
+    return dt
+
+
 def bolometer_lag(
-    signal_dn: NDArray[np.floating], config: PipelineConfig, state: PipelineState
+    signal_dn: NDArray[np.floating],
+    config: PipelineConfig,
+    state: PipelineState,
+    dt_s: float | None = None,
 ) -> NDArray[np.float32]:
     """Advance the membrane IIR one frame, keeping the state in ``state.buffers`` (§9.2).
 
     The first frame adopts its input: a core that has been staring at the scene is already in
     thermal equilibrium with it, and starting from zero would put a frame-long ramp at the head of
     every sequence and every exported dataset. Drop the buffer to model a genuine cold start.
+
+    ``dt_s`` defaults to the configured frame interval, which is what the Warp twin is launched
+    with; `run_frame` passes :func:`lag_interval_s` instead so a time-lapse is told the truth.
     """
     fpa = config.fpa
     if not isinstance(fpa, BolometerParams):
@@ -53,7 +90,7 @@ def bolometer_lag(
     lag = BolometerLowPass(
         tau_s=fpa.thermal_time_constant_s, state=state.buffers.get(IIR_STATE_KEY)
     )
-    out = lag.step(signal_dn, fpa.frame_dt_s)
+    out = lag.step(signal_dn, float(fpa.frame_dt_s) if dt_s is None else float(dt_s))
     assert lag.state is not None  # step() always leaves one
     state.buffers[IIR_STATE_KEY] = lag.state
     return out

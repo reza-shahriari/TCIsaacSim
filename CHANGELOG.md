@@ -5,6 +5,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`
+  has existed since M9.1 and `irsim.pipeline.detector` has driven it since, but **`run_frame` never
+  called either.** Stage 4 reached the detector through `response(flux, frame_index, sensor_seed)` —
+  a signature with no `dt` and no state, so it could not have carried a lag whatever it intended.
+  Every frame *sequence* this repository has produced — the quadrotor flight, the aircraft pass, the
+  maritime demo, every golden — came from a bolometer with a thermal time constant of **zero**: no
+  trail behind a moving target, and §15 Tier 3's "lateral motion smears LWIR, not cooled MWIR" true
+  only in the within-frame half ADR 0077 supplied.
+- This is ADR 0077's failure mode a second time, and it was harder to see because **the
+  documentation asserted the opposite**: M9.8's roadmap title is "wire IIR, … into run_frame",
+  `sensor_chain`'s module docstring lists stage 4 as "detector + membrane IIR", and the README's
+  detector row said "wired into the pipeline by M9.8". Six of M9.8's seven landed. All three claims
+  are corrected.
+- Held to the closed form rather than to "there is now a tail": the step response is
+  `1 − e^(−k·dt/τ)` to 1e-6 in signal space, the first frame is **α = 0.811124** of the step,
+  successive residuals fall by exactly `e^(−dt/τ)` = **0.188876**, and a cooled photon detector
+  settles in one frame. The tail's tolerance is *derived* from float32's precision on each residual,
+  because by the fourth term the residual is ~2 DN on a 10 120 DN signal and a flat `rel=1e-4` would
+  fail there for no physical reason.
+- The interval is **elapsed scene time when the caller advances its clock**, not the frame rate. A
+  10 ms membrane settles completely across ADR 0074's six-second time-lapse; driving it at 1/60 s
+  would leave 19 % of a scene six seconds old in the picture — a flattering error, since it smooths
+  exactly the change being filmed. This is a `run_frame` policy and not a property of the membrane:
+  `bolometer_lag`'s default stays the configured interval, because `detector_stage` is the CPU
+  oracle the Warp twin is compared against and the twin takes `alpha_for(fpa.frame_dt_s, …)` at
+  kernel-launch time.
+- `MicrobolometerDetector.frame_from_signal` opens the seam the lag needed between the static
+  transfer and the noise (ADR 0052: filtering after noise cuts the per-frame temporal variance by
+  α/(2−α) ≈ 0.68 and breaks the M4.6 anchor). It is **not** on the `Detector` protocol: a photon
+  detector's noise is Poisson in electron space and there is no signal-DN point to insert at.
+- **No golden moved** — the membrane adopts its first input, so every single-frame reference is
+  bit-identical. One test changed: a semi-transparent plumbing check shared one `PipelineState`
+  across two frames and so read the second 81 % through its settle (65.50 against the 80.75 it
+  asserts — exactly α). Rendered scenes: the quadrotor time-lapse is unchanged, and the 30 Hz
+  aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
+
 ### Added
 - **ROI-weighted and locally-adaptive AGC** (M9.10, §11.3). Every histogram in `irsim.isp.agc` now
   takes per-pixel `weights`, and `agc_plateau_local` tiles the frame, equalises each tile's own

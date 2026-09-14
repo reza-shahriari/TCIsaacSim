@@ -151,7 +151,20 @@ class MicrobolometerDetector:
     def response(
         self, flux: NDArray[np.floating], frame_index: int, sensor_seed: int
     ) -> DetectorFrame:
-        signal = self.transfer.signal_dn(flux).astype(np.float64)
+        return self.frame_from_signal(self.transfer.signal_dn(flux), frame_index, sensor_seed)
+
+    def frame_from_signal(
+        self, signal_dn: NDArray[np.floating], frame_index: int, sensor_seed: int
+    ) -> DetectorFrame:
+        """Add this detector's per-pixel noise to a signal that is **already** in DN.
+
+        :meth:`response` is this composed with the static transfer, so the two cannot drift apart.
+        The seam exists because §9.2's membrane IIR has to run **between** them: ADR 0052 puts the
+        lag before the noise, and a bolometer's noise is Gaussian in DN, so splitting here costs
+        nothing. A photon detector has no such seam and needs none -- its noise is Poisson in
+        electron space (CLAUDE.md #3) and it has no thermal lag to insert.
+        """
+        signal = np.asarray(signal_dn, dtype=np.float64)
         noise = self.sigma_signal_dn * field_normal(
             stream_key(sensor_seed, frame_index, NoiseStream.TVH), signal.shape
         ).astype(np.float64)

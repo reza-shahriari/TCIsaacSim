@@ -28,6 +28,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.atmosphere.layered import LayeredAtmosphere
+from irsim.detector.bolometer import MicrobolometerDetector
 from irsim.detector.params import BolometerParams, PhotonParams
 from irsim.detector.quantise import dn_max_for_bits, quantise
 from irsim.isp.display import run_display_branch
@@ -35,6 +36,7 @@ from irsim.isp.radiometric import apparent_temperature
 from irsim.optics.stage import apply_optics, invert_optics
 from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer, apply_layered_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
+from irsim.pipeline.detector import bolometer_lag, lag_interval_s
 from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance
@@ -58,14 +60,34 @@ class Outputs:
 def _detector_signal(
     flux: NDArray[np.float32], config: PipelineConfig, state: PipelineState
 ) -> NDArray[np.float32]:
-    """Stage 4 + 5: detector response (per-pixel noise) then the correlated 3-D noise; the
-    ideal chain when noise is disabled. Seeded by the sensor's own frame index (ADR 0022).
+    """Stage 4 + 5: the membrane lag, the detector's per-pixel noise, then the correlated 3-D
+    noise; the ideal chain when noise is disabled. Seeded by the sensor's own frame index
+    (ADR 0022).
+
+    **A bolometer's signal is lagged before any noise is added** (§9.2, ADR 0052). ADR 0052
+    quantifies why the order matters: filtering *after* noise would cut the per-frame temporal
+    variance by α/(2 − α) ≈ 0.68 and silently break the M4.6 NETD anchor. A photon detector has no
+    membrane and takes the flux straight, which is §15 Tier 3's "lateral motion smears LWIR, not
+    cooled MWIR" in its across-frame half.
 
     With an M9 chain attached the fixed pattern stage 5 adds is the *breathing* one (M9.4), so it
     is handed to the stage each frame rather than left to the stage's own static copy."""
-    if not config.noise_enabled:
-        return config.detector.noiseless_signal_dn(flux)
-    frame = config.detector.response(flux, state.frame_index, config.sensor_seed)
+    detector = config.detector
+    if isinstance(config.fpa, BolometerParams):
+        # The seam is the bolometer's alone and the protocol does not carry it: a photon
+        # detector's noise is Poisson in electron space (CLAUDE.md #3), so there is no signal-DN
+        # point to insert anything at, and it has no membrane to insert.
+        assert isinstance(detector, MicrobolometerDetector), "a bolometer FPA needs its detector"
+        signal = bolometer_lag(
+            detector.noiseless_signal_dn(flux), config, state, lag_interval_s(config, state)
+        )
+        if not config.noise_enabled:
+            return signal
+        frame = detector.frame_from_signal(signal, state.frame_index, config.sensor_seed)
+    else:
+        if not config.noise_enabled:
+            return detector.noiseless_signal_dn(flux)
+        frame = detector.response(flux, state.frame_index, config.sensor_seed)
     fixed = None if config.chain is None else config.chain.fixed_pattern
     return config.noise.apply(
         frame.signal_dn, frame.sigma_dn, state.frame_index, fixed_override=fixed

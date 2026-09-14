@@ -187,9 +187,15 @@ def test_through_run_frame_a_transparent_pixel_follows_what_is_behind_it(
         psf_enabled=False,
         sky=aerial_sky,
     )
-    state = PipelineState(housing_temp_k=cfg.t_housing_cal_k)
-    cold = run_frame(_planes(shape, ids, behind_k=5.0), cfg, state)
-    hot = run_frame(_planes(shape, ids, behind_k=90.0), cfg, state)
+    # A state each: this is a steady-state radiometric identity, and since M9.13 the membrane
+    # IIR is on `run_frame`'s path, so reusing one state would read the second frame 81 % of the
+    # way through its settle (measured 65.50 against the 80.75 this asserts -- exactly alpha).
+    cold = run_frame(
+        _planes(shape, ids, behind_k=5.0), cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k)
+    )
+    hot = run_frame(
+        _planes(shape, ids, behind_k=90.0), cfg, PipelineState(housing_temp_k=cfg.t_housing_cal_k)
+    )
     assert cold.radiance is not None and hot.radiance is not None
     opaque_delta = float(np.abs(hot.radiance[:, :8] - cold.radiance[:, :8]).max())
     clear_delta = float((hot.radiance[:, 8:] - cold.radiance[:, 8:]).mean())
