@@ -36,7 +36,7 @@ __all__ = [
     "load_scene_config",
 ]
 
-SCENE_SCHEMA_VERSION = 3  # v3: aerial heat_source/airframe target solvers (ADR 0074)
+SCENE_SCHEMA_VERSION = 4  # v4: ram_skin aerodynamic-heating solver (ADR 0075)
 
 
 class _Frozen(BaseModel):
@@ -58,7 +58,12 @@ class TargetSpec(_Frozen):
       :data:`irsim.thermal.aerial.AERIAL_HEAT_SOURCES` (``motor``, ``esc``, ``battery``) and
       ``throttle_s`` → ``throttle`` is the pilot's throttle fraction over time. The temperature is
       T_air(t) + ΔT_max u(t)^n, derived, never authored.
-    * ``airframe`` is an unpowered skin: T_air(t) + ``offset_k``.
+    * ``airframe`` is an unpowered skin at *multirotor* speed: T_air(t) + ``offset_k``.
+    * ``ram_skin`` is an unpowered skin fast enough for aerodynamic heating to matter: the
+      adiabatic wall temperature T_air (1 + r (gamma-1)/2 M^2) at a constant ``speed_m_s``, with
+      the Mach number taken against the shared weather's own air temperature (ADR 0075). At 20 m/s
+      it agrees with ``airframe`` to 0.2 K; at 250 m/s it is 28 K warmer, and using ``airframe``
+      there understates the whole skin uniformly and plausibly.
 
     **The heat-source law is a steady-state relation** (ADR 0072): there is no thermal time
     constant in it, so the node follows the throttle instantaneously. It is only defensible where
@@ -68,7 +73,7 @@ class TargetSpec(_Frozen):
     """
 
     name: str = Field(min_length=1)
-    solver: Literal["newton", "prescribed", "heat_source", "airframe"]
+    solver: Literal["newton", "prescribed", "heat_source", "airframe", "ram_skin"]
     t0_k: float | None = Field(default=None, gt=0.0)
     tau_s: float | None = Field(default=None, gt=0.0)
     schedule_s: list[float] | None = None
@@ -77,15 +82,19 @@ class TargetSpec(_Frozen):
     throttle_s: list[float] | None = None
     throttle: list[float] | None = None
     offset_k: float | None = None
+    speed_m_s: float | None = Field(default=None, ge=0.0)
+    recovery_factor: float | None = Field(default=None, gt=0.0, le=1.0)
 
     @model_validator(mode="after")
     def _fields_for_solver(self) -> TargetSpec:
-        if self.solver in ("heat_source", "airframe"):
+        if self.solver in ("heat_source", "airframe", "ram_skin"):
             return self._aerial_fields()
         if self.source is not None or self.throttle is not None or self.throttle_s is not None:
             raise ValueError(f"target {self.name!r}: {self.solver} takes no throttle profile")
         if self.offset_k is not None:
             raise ValueError(f"target {self.name!r}: only airframe takes offset_k")
+        if self.speed_m_s is not None or self.recovery_factor is not None:
+            raise ValueError(f"target {self.name!r}: only ram_skin takes an airspeed")
         if self.solver == "newton":
             if self.t0_k is None or self.tau_s is None:
                 raise ValueError(f"target {self.name!r}: newton needs t0_k and tau_s")
@@ -119,9 +128,20 @@ class TargetSpec(_Frozen):
                 f"target {self.name!r}: {self.solver} derives its schedule from the model; "
                 "authoring temperatures directly is what this solver exists to replace"
             )
-        if self.solver == "airframe":
+        if self.solver in ("airframe", "ram_skin"):
             if self.source is not None or self.throttle is not None:
-                raise ValueError(f"target {self.name!r}: airframe takes no source or throttle")
+                raise ValueError(f"target {self.name!r}: {self.solver} takes no source/throttle")
+            if self.solver == "airframe":
+                if self.speed_m_s is not None or self.recovery_factor is not None:
+                    raise ValueError(
+                        f"target {self.name!r}: airframe has no airspeed -- it *assumes* a slow "
+                        "one. Use ram_skin if the speed matters."
+                    )
+                return self
+            if self.speed_m_s is None:
+                raise ValueError(f"target {self.name!r}: ram_skin needs speed_m_s")
+            if self.offset_k is not None:
+                raise ValueError(f"target {self.name!r}: only airframe takes offset_k")
             return self
 
         if self.source not in AERIAL_HEAT_SOURCES:
@@ -131,6 +151,8 @@ class TargetSpec(_Frozen):
             )
         if self.offset_k is not None:
             raise ValueError(f"target {self.name!r}: only airframe takes offset_k")
+        if self.speed_m_s is not None or self.recovery_factor is not None:
+            raise ValueError(f"target {self.name!r}: only ram_skin takes an airspeed")
         if not self.throttle_s or not self.throttle:
             raise ValueError(f"target {self.name!r}: heat_source needs throttle_s and throttle")
         if len(self.throttle_s) != len(self.throttle):

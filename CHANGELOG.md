@@ -6,6 +6,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **An aircraft flying a low pass, filmed in LWIR** (ADR 0075). `scripts/render_aircraft_pass.py`
+  flies a light business jet past a ground sensor at 150 m/s and films ten seconds of it in real
+  time. The variable is **aspect**, not throttle: the exhaust nozzles are hidden behind their own
+  nacelles from the front and fully exposed from the rear, which is why a real aircraft's measured
+  infrared signature varies by a large factor around the clock. Measured off the instance-id plane
+  at the *same range* either side of closest approach, a rear aspect shows several times more
+  nozzle than a head-on one and its hottest pixel is tens of kelvin warmer.
+- `irsim_isaac.aircraft` — a parametric light jet (16 m span, rear-mounted engines so both nozzles
+  sit on the centreline and occlusion is a clean function of one aspect angle). A jet's hot part is
+  a *fortieth* of its span across, so unlike the quadrotor's motors you never resolve it: it is a
+  near-point source, bright because it is hundreds of kelvin hot rather than because it is large.
+- `irsim_isaac.aircraft_pass` — the track, the mount and the stage. The pass sweeps range 2:1 from
+  the geometry alone, so it exercises the inverse-square fall-off and the atmospheric path against
+  a target of known size and temperature for free.
+
+### Changed
+- **Aerodynamic heating: the `ram_skin` node, and scene schema v3 → v4.** `airframe_solver` puts an
+  unpowered skin *at* air temperature and justifies it by forced convection at flight speed — true
+  at 20 m/s, false at 200. A stagnating boundary layer heats a skin to its recovery temperature,
+  `T_r = T_air (1 + r (γ−1)/2 M²)` with `r = Pr^⅓ ≈ 0.892`: 0.18 K at multirotor speed, 10 K at
+  150 m/s, 35 K at M 0.8. A config names an **airspeed** and the Mach number is taken against the
+  shared weather's own air temperature, so one true airspeed is correctly a different Mach number
+  on a cold day. The two skin models are deliberately not interchangeable — `airframe` refuses an
+  airspeed, because it *assumes* a slow one and silently ignoring a stated 200 m/s is the failure
+  this exists to prevent.
+- `IrCamera.refresh_pose()`, so a camera can be **moved between frames**. The pose that every
+  pixel's ray direction is built from is cached at `open()`; without a refresh the geometry AOVs
+  follow a re-aimed prim while the elevations, the sky temperature and every view cosine stay at
+  the opening aim — a completely normal looking frame describing two different cameras. The
+  aircraft mount slews through 20° of elevation across a pass, and the sky is tens of kelvin colder
+  at the top of that.
+- `irsim_isaac.airframe` — `Part` and `author_parts` extracted from `quadrotor.py`, so the
+  `thermal:material` override and the prim→thermal-node map have exactly one implementation.
+- Both flight scripts share the burnt-in readout via `irsim_eval.video.overlay_readout`, and gain
+  `--no-flat-field`.
+
+- **The fixed-span videos now span the *target*, not the scene.** ±50 K about ambient spends half
+  of 256 display levels on sky-to-ambient, which is two flat regions, and squeezes every part of
+  the target into the rest. The span is now taken from the scene's own node temperatures across
+  the sequence, with the floor a quarter of the node spread *below* the coldest node — on it, and
+  a target that starts at ambient is invisible in the opening frames. Measured on the quadrotor at
+  full throttle, like for like over the airframe's own 1000 pixels: 76 display codes of spread
+  from the old rule, 128 from the new, with the cool parts starting near black rather than
+  mid-grey. Sky clips to black, deliberately. `--span-c` restores a scene-context span.
+
+### Fixed
+- **The flight videos' AGC companion carried cos⁴ vignetting.** `PipelineConfig.from_sensor`
+  defaults `flat_field_enabled=False` and neither flight script passed it, so the 8-bit picture
+  showed the full 21 % centre-to-corner falloff that M9.12 exists to remove, stretched into dark
+  corners by plateau equalisation — measured at 2.19× centre-to-edge before the fix and 0.93×
+  after, the residual being genuine sky structure. The radiometric branch was never affected — it
+  divides cos⁴ out analytically, and `tests/unit/test_flat_field.py` already asserted that
+  `radiance`, `apparent_t` and `dn16` are bit-identical with the flat field on or off while
+  `display8` changes — so the main fixed-span videos were always correct and only the companion
+  was wrong.
+
+### Added
 - **A resolved quadrotor flying a mission, filmed in LWIR** (ADR 0074). `scripts/render_quad_flight.py`
   puts one heavy-lift multirotor at 20 m -- 105 px across the span, 6 px per motor bell -- against
   sky and flies a 30-minute profile while ADR 0072's heat sources take the motors from ambient to

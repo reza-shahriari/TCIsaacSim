@@ -24,12 +24,52 @@ from numpy.typing import NDArray
 
 __all__ = [
     "annotate",
+    "target_span_k",
+    "overlay_readout",
     "temperature_bar",
     "encode_mp4",
     "ffmpeg_available",
 ]
 
 _MARGIN = 10
+
+
+def target_span_k(
+    samples: Iterable[Mapping[str, float]],
+    *,
+    below: float = 0.25,
+    above: float = 0.10,
+    minimum_spread_k: float = 5.0,
+) -> tuple[float, float]:
+    """A display span that spends its range on the **target**, not on the scene.
+
+    Eight bits is 256 levels and a sky-target scene spans hundreds of kelvin, so the choice of
+    what to spend them on is the whole of the picture. Spanning ambient +/- 50 K -- the obvious
+    rule -- gives half the palette to sky-to-ambient, which is one flat region and one flat
+    region, and leaves every part of the target squeezed into the top half. Measured on the
+    quadrotor at full throttle: arms at code 128 and motors at 227, real contrast but compressed
+    into a third of the range.
+
+    So the span is taken from the target's own nodes over the whole sequence instead. The floor
+    sits a quarter of the node spread *below* the coldest node rather than on it, for two reasons:
+    a node at the very bottom of the span is black and invisible, and at the start of a flight
+    every node is at ambient, so a floor on the coldest node would make the aircraft disappear
+    exactly when the viewer is looking for it. The ceiling gets a tenth of headroom so the hottest
+    node is bright rather than clipped.
+
+    The sky falls below the floor and clips to black. That is deliberate: the sky is the thing
+    there is least to see in, and giving it any of the range costs the target all of the
+    difference. Pass ``--span-c`` when the scene context matters more than the target.
+
+    **None of this is a measurement.** The mapping from temperature to brightness is a display
+    choice; the burnt-in gauge and the JSON sidecar carry the temperatures.
+    """
+    values = [float(v) for sample in samples for v in sample.values()]
+    if not values:
+        raise ValueError("need at least one node temperature to span")
+    coldest, hottest = min(values), max(values)
+    spread = max(hottest - coldest, float(minimum_spread_k))
+    return (coldest - below * spread, hottest + above * spread)
 
 
 def _font(size: int) -> Any:
@@ -177,3 +217,23 @@ def encode_mp4(
     ]
     subprocess.run(command, check=True)
     return out
+
+
+def overlay_readout(
+    frame: NDArray[np.uint8],
+    lines: Sequence[str],
+    values_k: Mapping[str, float],
+    span_k: tuple[float, float],
+    *,
+    bare: bool = False,
+) -> NDArray[np.uint8]:
+    """The standard flight-film readout: caption block top-left, node gauges bottom-left.
+
+    One function rather than one per stage, because the two videos of a scene differ only in how
+    temperature was mapped to brightness, and the caption is the only thing that says which -- so
+    it has to look the same in both or the comparison is doing the reader no favours.
+    """
+    arr = np.asarray(frame, dtype=np.uint8)
+    if bare:
+        return np.ascontiguousarray(arr[..., :3])
+    return np.ascontiguousarray(temperature_bar(annotate(arr, lines), values_k, span_k)[..., :3])

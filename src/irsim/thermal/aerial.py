@@ -18,6 +18,22 @@ they are the parameters a Tier 4 comparison against public aerial IR imagery sho
 The airframe node follows the shared ``WeatherSeries`` (CLAUDE.md #6: it is injected, never loaded
 here), optionally with a small constant offset for a sun-soaked upper surface.
 
+**That airframe treatment is a multirotor's, and it does not carry to a fast aircraft.** It says
+the skin sits at air temperature because forced convection at *multirotor* speed pins it there,
+which is true at 20 m/s and false at 200. A body moving through air is heated by the stagnation of
+its own boundary layer, and the skin settles not at the free-stream temperature but at the
+**adiabatic wall (recovery) temperature**
+
+    T_r = T_air (1 + r (gamma - 1)/2 M^2),      r = Pr^(1/3) ~ 0.89 (turbulent)      (ADR 0075)
+
+which at M = 0.5 is about 15 K above ambient and at M = 0.8 about 34 K. Applying the multirotor
+airframe model to a jet understates its whole skin by that much -- uniformly, plausibly, and in the
+direction that makes the target harder to detect than it is. :func:`ram_skin_solver` is the node
+for anything fast enough for that to matter.
+
+Nothing in ``docs/physics-model.md`` covers this: §6.6 is an automotive table and the spec has no
+aircraft section at all. ADR 0075 records the extension and its sources.
+
 Everything returns a ``PrescribedSolver``, so an aerial target drops into the same
 ``Scene``/solver plumbing as a ground surface. The schedule is refined until piecewise-linear
 interpolation between its nodes reproduces the analytic law to a stated tolerance, which is what
@@ -35,10 +51,17 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.radiometry.constants import GAMMA_AIR, PRANDTL_AIR, R_SPECIFIC_AIR
 from irsim.thermal.solvers import PrescribedSolver
 from irsim.thermal.weather import WeatherSeries
 
 __all__ = [
+    "RECOVERY_FACTOR_TURBULENT",
+    "RECOVERY_FACTOR_LAMINAR",
+    "speed_of_sound_m_s",
+    "mach_number",
+    "recovery_temperature_k",
+    "ram_skin_solver",
     "HeatSource",
     "MOTOR",
     "ESC",
@@ -59,6 +82,14 @@ FloatArray = NDArray[np.float64]
 # both the cheapest test and, for the u² law, the exact one.
 DEFAULT_TOLERANCE_K = 1e-3
 MAX_SCHEDULE_NODES = 1 << 16
+
+#: Recovery factor r in T_r = T_air (1 + r (gamma-1)/2 M^2). For a flat plate the boundary-layer
+#: result is r = Pr^(1/2) laminar and r = Pr^(1/3) turbulent; a full-scale aircraft skin at flight
+#: Reynolds number is turbulent over almost all of its wetted area, so the turbulent value is the
+#: default. The two differ by about 6 %, which at M = 0.8 is 2 K -- worth knowing, not worth
+#: agonising over. (Standard boundary-layer result; e.g. White, *Viscous Fluid Flow*, ch. 7.)
+RECOVERY_FACTOR_TURBULENT = PRANDTL_AIR ** (1.0 / 3.0)
+RECOVERY_FACTOR_LAMINAR = PRANDTL_AIR**0.5
 
 
 @dataclass(frozen=True)
@@ -226,5 +257,82 @@ def airframe_solver(
     def law(t_query: FloatArray) -> FloatArray:
         t_air = weather.interpolate(np.asarray(t_query, dtype=np.float64))["t_air_k"]
         return np.asarray(np.asarray(t_air, dtype=np.float64) + offset_k, dtype=np.float64)
+
+    return prescribed_from_schedule(law, _base_nodes(weather, span), tolerance_k)
+
+
+# --- aerodynamic heating of a moving skin (ADR 0075) -----------------------------------------
+
+
+def speed_of_sound_m_s(t_air_k: object) -> FloatArray:
+    """a = sqrt(gamma R T) for dry air, m/s. 340.29 m/s at the ISA sea-level 288.15 K."""
+    t = np.asarray(t_air_k, dtype=np.float64)
+    if np.any(t <= 0.0):
+        raise ValueError("air temperature must be positive kelvin")
+    return np.asarray(np.sqrt(GAMMA_AIR * R_SPECIFIC_AIR * t), dtype=np.float64)
+
+
+def mach_number(speed_m_s: object, t_air_k: object) -> FloatArray:
+    """Flight Mach number from true airspeed and the *shared weather's* air temperature.
+
+    Taking the speed of sound from the same ``WeatherSeries`` everything else reads is the point:
+    a config that named a Mach number directly would silently mean a different airspeed on a cold
+    day than on a warm one (CLAUDE.md #6).
+    """
+    v = np.asarray(speed_m_s, dtype=np.float64)
+    if np.any(v < 0.0):
+        raise ValueError("airspeed must be non-negative")
+    return np.asarray(v / speed_of_sound_m_s(t_air_k), dtype=np.float64)
+
+
+def recovery_temperature_k(
+    t_air_k: object,
+    mach: object,
+    recovery_factor: float = RECOVERY_FACTOR_TURBULENT,
+) -> FloatArray:
+    """Adiabatic wall temperature T_r = T_air (1 + r (gamma-1)/2 M^2), kelvin (ADR 0075).
+
+    The temperature an *unheated, uncooled* skin settles at in a moving airstream: the boundary
+    layer brings the flow to rest against the surface and recovers a fraction ``r`` of its kinetic
+    energy as heat. It is an equilibrium, not a transient, so it needs no time constant -- which is
+    what makes it usable as a prescribed node.
+
+    It is also an **upper bound on the skin alone**: a real airframe loses heat by radiation to a
+    cold sky and gains it from the sun and from anything hot inside, none of which is here. For a
+    cruising aircraft those are small against the ram term; for a slow one they are not, and then
+    :func:`airframe_solver` with an offset is the more honest model.
+    """
+    if not 0.0 < recovery_factor <= 1.0:
+        raise ValueError("the recovery factor lies in (0, 1]")
+    t = np.asarray(t_air_k, dtype=np.float64)
+    m = np.asarray(mach, dtype=np.float64)
+    if np.any(m < 0.0):
+        raise ValueError("Mach number must be non-negative")
+    return np.asarray(t * (1.0 + recovery_factor * 0.5 * (GAMMA_AIR - 1.0) * m**2))
+
+
+def ram_skin_solver(
+    weather: WeatherSeries,
+    speed_m_s: float,
+    times_s: object | None = None,
+    recovery_factor: float = RECOVERY_FACTOR_TURBULENT,
+    tolerance_k: float = DEFAULT_TOLERANCE_K,
+) -> PrescribedSolver:
+    """An aircraft skin at its recovery temperature, on the scene's shared weather (ADR 0075).
+
+    Constant true airspeed: a flypast lasts seconds and an aircraft does not change speed
+    appreciably in that time, whereas the *air* it flies through does change temperature over the
+    weather file -- so T_air comes from the series at every node and the airspeed does not.
+    """
+    if not math.isfinite(speed_m_s) or speed_m_s < 0.0:
+        raise ValueError("airspeed must be finite and non-negative")
+    span = weather.time_s if times_s is None else np.asarray(times_s, dtype=np.float64)
+
+    def law(t_query: FloatArray) -> FloatArray:
+        t_air = np.asarray(
+            weather.interpolate(np.asarray(t_query, dtype=np.float64))["t_air_k"],
+            dtype=np.float64,
+        )
+        return recovery_temperature_k(t_air, mach_number(speed_m_s, t_air), recovery_factor)
 
     return prescribed_from_schedule(law, _base_nodes(weather, span), tolerance_k)

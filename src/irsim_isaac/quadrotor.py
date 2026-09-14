@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
+
+from irsim_isaac.airframe import Part, author_parts
 
 __all__ = [
     "Part",
@@ -37,31 +39,6 @@ __all__ = [
     "HEAVY_LIFT",
     "author_quadrotor",
 ]
-
-Kind = Literal["box", "cylinder"]
-
-
-@dataclass(frozen=True)
-class Part:
-    """One rigid part: where it sits in the body frame, how big, what it is, what heats it.
-
-    Body frame is the stage frame of a level aircraft: +X right, +Y up, -Z forward. ``size_m`` is
-    the full extent of a box, or ``(diameter, height, diameter)`` of a cylinder whose axis is +Y.
-    """
-
-    name: str
-    kind: Kind
-    centre_m: tuple[float, float, float]
-    size_m: tuple[float, float, float]
-    material: str
-    thermal_node: str
-
-    def largest_dimension_m(self) -> float:
-        return max(self.size_m)
-
-    def pixels_across(self, range_m: float, ifov_mrad: float) -> float:
-        """How many native pixels the part's largest dimension spans at a range."""
-        return 1e3 * self.largest_dimension_m() / range_m / ifov_mrad
 
 
 @dataclass(frozen=True)
@@ -142,6 +119,9 @@ class QuadrotorSpec:
                     (arm, self.arm_thickness_m, self.arm_thickness_m),
                     self.body_material,
                     "airframe",
+                    # Yawed onto its diagonal. The layout put the centre there; this turns the box
+                    # so it points at the motor instead of along +X.
+                    rotate_xyz_deg=(0.0, math.degrees(math.atan2(-sz, sx)), 0.0),
                 )
             )
             out.append(
@@ -192,52 +172,5 @@ def author_quadrotor(
     *,
     look_binder: Any = None,
 ) -> dict[str, str]:
-    """Author the airframe under ``root_path``; returns prim path -> thermal node.
-
-    The returned map is exactly what
-    :class:`~irsim_isaac.pipeline.aerial_bridge.AerialThermalBridge` wants, so a caller never
-    writes the correspondence out by hand and cannot get it half-right.
-    ``look_binder(stage, prim, material)`` is the optional visible-band hook
-    (:func:`irsim_isaac.aerial_demo._bind_visible_look`).
-    """
-    from pxr import Gf, Sdf, UsdGeom
-
-    UsdGeom.Xform.Define(stage, root_path)
-    prim_to_node: dict[str, str] = {}
-    for part in spec.parts():
-        path = f"{root_path}/{part.name}"
-        width, height, depth = part.size_m
-        if part.kind == "cylinder":
-            gprim = UsdGeom.Cylinder.Define(stage, path)
-            gprim.CreateAxisAttr(UsdGeom.Tokens.y)
-            gprim.CreateRadiusAttr(0.5 * width)
-            gprim.CreateHeightAttr(height)
-            gprim.CreateExtentAttr(
-                [
-                    Gf.Vec3f(-0.5 * width, -0.5 * height, -0.5 * depth),
-                    Gf.Vec3f(0.5 * width, 0.5 * height, 0.5 * depth),
-                ]
-            )
-        else:
-            # A unit cube scaled per axis: `UsdGeom.Cube` has one `size`, so the extents have to
-            # come from a scale op rather than from the attribute.
-            gprim = UsdGeom.Cube.Define(stage, path)
-            gprim.CreateSizeAttr(1.0)
-            gprim.CreateExtentAttr([Gf.Vec3f(-0.5, -0.5, -0.5), Gf.Vec3f(0.5, 0.5, 0.5)])
-
-        xform = UsdGeom.Xformable(gprim)
-        xform.AddTranslateOp().Set(Gf.Vec3d(*part.centre_m))
-        if part.name.startswith("arm_"):
-            # Yaw the arm onto its diagonal. The layout put its centre there already; this only
-            # turns the box so it points at the motor instead of along +X.
-            cx, _, cz = part.centre_m
-            xform.AddRotateYOp().Set(float(math.degrees(math.atan2(-cz, cx))))
-        if part.kind == "box":
-            xform.AddScaleOp().Set(Gf.Vec3f(width, height, depth))
-
-        prim = gprim.GetPrim()
-        prim.CreateAttribute("thermal:material", Sdf.ValueTypeNames.String).Set(part.material)
-        if look_binder is not None:
-            look_binder(stage, gprim, part.material)
-        prim_to_node[path] = part.thermal_node
-    return prim_to_node
+    """Author the airframe under ``root_path``; returns prim path -> thermal node."""
+    return author_parts(stage, root_path, spec.parts(), look_binder=look_binder)

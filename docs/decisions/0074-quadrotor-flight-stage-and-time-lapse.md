@@ -97,7 +97,11 @@ minutes-long thermal process in a video a person will actually sit through.
   predicted — it is what the first render of this stage looked like.
 
   The main video is therefore a **fixed span**, held for every frame: apparent temperature mapped
-  through the ISP's own palette over ±50 K about ambient. This is what an operator does when they
+  through the ISP's own palette. *(Superseded in detail: the span was first taken as ±50 K about
+  ambient, which spends half of 256 levels on sky-to-ambient and leaves every part of the target
+  squeezed into the rest — measured at 76 display codes of spread across the airframe. It is now
+  taken from the target's own nodes over the sequence, which gives 128. See ADR 0075.)* This is
+  what an operator does when they
   switch to manual level and gain. The camera's own AGC output is filmed alongside it as a second
   video, because the difference between the two is itself the lesson.
 

@@ -110,7 +110,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
 
 def test_scene_config_guards() -> None:
     raw = {
-        "schema_version": 3,
+        "schema_version": 4,
         "scene": {
             "name": "x",
             "weather_file": "weather/clear_midlat_summer_48h.csv",

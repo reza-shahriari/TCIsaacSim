@@ -389,7 +389,7 @@ class IrCamera:
         """
         import omni.replicator.core as rep
         import omni.usd
-        from pxr import Usd, UsdGeom
+        from pxr import UsdGeom
 
         from irsim_isaac.geometry_probe import configure_renderer
 
@@ -402,12 +402,7 @@ class IrCamera:
         self._authored = author_camera(
             stage, self.camera_path, self.optics, self.sensor.sensor.optics.distortion
         )
-        xform = UsdGeom.Xformable(stage.GetPrimAtPath(self.camera_path))
-        matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        self._camera_position = np.asarray(matrix.ExtractTranslation(), dtype=np.float64)
-        # USD matrices are row-vector (p_world = p_camera @ M), and `ray_directions` applies its
-        # rotation as `vec @ rot.T`, so the transpose of the upper-left 3x3 is what it wants.
-        self._camera_to_world = np.asarray(matrix, dtype=np.float64)[:3, :3].T
+        self.refresh_pose()
 
         # Capturing the companion visible frame needs the renderer put into `PathTracing`.
         # Measured on 6.1.0-rc.26: this build defaults to `RealTimePathTracing`, and under it --
@@ -430,6 +425,29 @@ class IrCamera:
             expected_shape=(height, width),
         ).attach(settle_frames=settle_frames, rt_subframes=rt_subframes)
         return self
+
+    def refresh_pose(self) -> None:
+        """Re-read the camera prim's transform. Call after moving the camera between frames.
+
+        The pose is cached because every pixel's ray direction is built from it and re-reading it
+        per pixel would be absurd -- but that cache is why a camera that is *moved* after
+        ``open()`` keeps rendering rays from where it used to be. The geometry AOVs would follow
+        the prim while the elevations, the sky temperature and every view cosine stayed behind,
+        which is a frame that looks entirely normal and describes two different cameras.
+
+        A tracking mount is the first thing that needs this: it slews to follow a target, so the
+        sky behind the target changes elevation even though the target stays on the boresight.
+        """
+        import omni.usd
+        from pxr import Usd, UsdGeom
+
+        stage = self._stage if self._stage is not None else omni.usd.get_context().get_stage()
+        xform = UsdGeom.Xformable(stage.GetPrimAtPath(self.camera_path))
+        matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        self._camera_position = np.asarray(matrix.ExtractTranslation(), dtype=np.float64)
+        # USD matrices are row-vector (p_world = p_camera @ M), and `ray_directions` applies its
+        # rotation as `vec @ rot.T`, so the transpose of the upper-left 3x3 is what it wants.
+        self._camera_to_world = np.asarray(matrix, dtype=np.float64)[:3, :3].T
 
     def close(self) -> None:
         if self._reader is not None:

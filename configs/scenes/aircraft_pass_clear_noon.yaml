@@ -1,0 +1,37 @@
+# A light business jet flying a low pass in front of a ground sensor, clear midday.
+# Schema: irsim.config.scene (v4). The weather FILE is named here and nowhere else: the Scene
+# loads it once and injects the one WeatherSeries into the atmosphere, the sky and every target
+# node (CLAUDE.md #6).
+#
+# Unlike the quadrotor mission (quad_flight_clear_noon.yaml) nothing about this *target* changes
+# during the pass. A jet at steady power has a steady nozzle and a skin pinned to its recovery
+# temperature; what changes is geometry -- range halves and doubles again, and the aspect sweeps
+# from nose-on to tail-on, which is when the nozzles stop being hidden behind their own nacelles.
+# So two of the three nodes are simply constant, and saying so in the config is more honest than
+# dressing them up as a schedule that happens to be flat.
+
+schema_version: 4
+scene:
+  name: aircraft_pass_clear_noon
+  description: "Light business jet, 150 m/s low pass, clear midday, US Standard atmosphere"
+  weather_file: weather/clear_midlat_summer_48h.csv     # relative to the data root
+  atmosphere_preset: us_standard_clear                  # configs/atmospheres/
+  environment_preset: clear_dry                         # configs/environments/ (sky, ground, solar)
+  site: {latitude_deg: 48.1, longitude_deg: 11.6, altitude_m: 520.0}
+  start_utc: "2024-06-21T10:00:00Z"                     # 12:00 local; sun at 61 deg
+  targets:
+    # Aerodynamic heating (ADR 0075). At 150 m/s the recovery temperature is about 10 K above
+    # ambient -- derived from this speed and the shared weather's own air temperature, not typed.
+    # The `airframe` solver would have put the skin AT ambient, because it assumes a multirotor.
+    - {name: skin, solver: ram_skin, speed_m_s: 150.0}
+
+    # Engine cowling and exhaust nozzle at steady descent power. Both ESTIMATED, and both are the
+    # first numbers a comparison against public aircraft IR imagery should re-fit:
+    #   nacelle  340 K (+41 K over ambient) -- cowl warmed by the core case behind it
+    #   nozzle   450 K (+151 K)             -- exhaust nozzle skin, low-bypass, descent power
+    # Published figures for turbofan nozzle skin run roughly 400-700 K depending on bypass ratio
+    # and power setting; 450 K is the conservative end, chosen so the demo does not rest on the
+    # most flattering number available. docs/physics-model.md section 6.6 lists an automotive
+    # exhaust tip at +80...+250 K, which is the nearest thing the spec has to this.
+    - {name: nacelle, solver: prescribed, schedule_s: [0.0, 60.0], schedule_k: [340.0, 340.0]}
+    - {name: nozzle,  solver: prescribed, schedule_s: [0.0, 60.0], schedule_k: [450.0, 450.0]}

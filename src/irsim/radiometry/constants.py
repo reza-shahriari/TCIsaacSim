@@ -99,3 +99,14 @@ WAVELENGTH_MIN_UM: Final[float] = 0.1
 WAVELENGTH_MAX_UM: Final[float] = 1000.0
 TEMPERATURE_MIN_K: Final[float] = 1.0
 TEMPERATURE_MAX_K: Final[float] = 6000.0
+
+# --- Dry-air gas properties -------------------------------------------------
+# Needed by the aerodynamic-heating model of an airborne skin (§6.6 by extension; ADR 0075):
+# the speed of sound sets the Mach number, and gamma and Pr set the recovery factor.
+# Sources: specific gas constant R = R_universal / M_air = 8.314462618 / 0.0289647 (CIPM 2007
+# standard dry-air molar mass); gamma and Pr are the textbook near-room-temperature dry-air
+# values (e.g. White, *Viscous Fluid Flow*), both weak functions of temperature that are treated
+# as constants over the 200-320 K range this model is used in.
+R_SPECIFIC_AIR: Final[float] = 287.0528  # J kg^-1 K^-1
+GAMMA_AIR: Final[float] = 1.4  # ratio of specific heats, dry air
+PRANDTL_AIR: Final[float] = 0.71
