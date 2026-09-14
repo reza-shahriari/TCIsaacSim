@@ -49,7 +49,15 @@ __all__ = [
 REQUIRED_KEYS: frozenset[str] = frozenset(
     {"temperature_k", "normal_dot_view", "distance_m", "material_id", "sky_view_factor"}
 )
-OPTIONAL_KEYS: frozenset[str] = frozenset({"encoded_t", "motion_px", "semantic_id", "sky_mask"})
+# ``shadow_mask`` and ``sun_cos_incidence`` are the solar pair (M11.3, §5.4). Both are
+# optional, exactly as ``motion_px`` is: a scene that has not asked for sunlight costs
+# nothing and renders identically. ``shadow_mask`` is S in [0, 1] with **1 = lit** -- the
+# same polarity as ``irsim.thermal.solar.solar_loading``, because the two must never
+# disagree about which pixels the sun reaches. ``sun_cos_incidence`` is n·ŝ, which an
+# adapter forms from its normal AOV and the scene's own NOAA sun direction.
+OPTIONAL_KEYS: frozenset[str] = frozenset(
+    {"encoded_t", "motion_px", "semantic_id", "sky_mask", "shadow_mask", "sun_cos_incidence"}
+)
 INTEGER_KEYS: dict[str, type] = {"material_id": np.int32, "semantic_id": np.uint32}
 # Boolean planes: accept bool or an integer 0/1 plane (the adapter may hand a uint8 AOV); floats
 # are refused because a fractional "sky" cannot be given a meaning.
@@ -81,6 +89,8 @@ class GBuffer:
     motion_px: NDArray[np.float32] | None = None
     semantic_id: NDArray[np.uint32] | None = None
     sky_mask: NDArray[np.bool_] | None = None
+    shadow_mask: NDArray[np.float32] | None = None
+    sun_cos_incidence: NDArray[np.float32] | None = None
     extra: dict[str, NDArray[Any]] = field(default_factory=dict)
 
     @property
@@ -166,7 +176,14 @@ class GBuffer:
             "material_id": self.material_id,
             "sky_view_factor": self.sky_view_factor,
         }
-        for key in ("encoded_t", "motion_px", "semantic_id", "sky_mask"):
+        for key in (
+            "encoded_t",
+            "motion_px",
+            "semantic_id",
+            "sky_mask",
+            "shadow_mask",
+            "sun_cos_incidence",
+        ):
             value = getattr(self, key)
             if value is not None:
                 out[key] = value

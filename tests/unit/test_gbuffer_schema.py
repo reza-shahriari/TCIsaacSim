@@ -26,7 +26,17 @@ FROZEN_REQUIRED = {
     "material_id",
     "sky_view_factor",
 }
-FROZEN_OPTIONAL = {"encoded_t", "motion_px", "semantic_id", "sky_mask"}
+# `shadow_mask` and `sun_cos_incidence` joined the contract with the reflected-solar term
+# (M11.3, §5.4). Both are optional, so every fixture and adapter written before them is
+# unchanged; a scene that has not asked for sunlight renders identically.
+FROZEN_OPTIONAL = {
+    "encoded_t",
+    "motion_px",
+    "semantic_id",
+    "sky_mask",
+    "shadow_mask",
+    "sun_cos_incidence",
+}
 FROZEN_DTYPES = {
     "temperature_k": np.float32,
     "encoded_t": np.float32,
@@ -37,6 +47,8 @@ FROZEN_DTYPES = {
     "motion_px": np.float32,
     "semantic_id": np.uint32,
     "sky_mask": np.bool_,
+    "shadow_mask": np.float32,
+    "sun_cos_incidence": np.float32,
 }
 SINGLE_FRAME_FIXTURES = [
     "gbuffer_ramp",

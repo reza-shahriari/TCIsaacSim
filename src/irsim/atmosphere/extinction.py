@@ -23,6 +23,7 @@ from irsim.config.atmosphere import AtmosphereBandCoefficients, AtmospherePreset
 from irsim.radiometry.constants import KOSCHMIEDER
 
 __all__ = [
+    "airmass_kasten_young",
     "FOG_VISIBILITY_M",
     "gamma_aerosol_visible",
     "gamma_aerosol",
@@ -119,6 +120,28 @@ def airmass(zenith_rad: float) -> float:
             "plane-parallel airmass diverges at the horizon (ADR 0051)"
         )
     return 1.0 / math.cos(zenith_rad)
+
+
+def airmass_kasten_young(zenith_rad: float) -> float:
+    """Kasten & Young (1989) relative air mass, finite all the way to the horizon.
+
+    ``airmass`` above is the plane-parallel sec θ ADR 0051 chose for the band-averaged path, and
+    it diverges at the horizon -- which is why it refuses beyond 85°. The *solar beam* needs an
+    answer at low sun (M11.3): a scene at 09:00 is not an error condition, and a camera pointed
+    at a sunlit target does not stop working because the sun is 8° up. This is the standard
+    empirical fit,
+
+        m = 1 / (cos θ + 0.50572 (96.07995 − θ_deg)^-1.6364)
+
+    which reproduces the refracted air mass to better than 1 % from zenith to the horizon
+    (m = 37.9 at θ = 90°) instead of going to infinity. It is used for the direct beam only; the
+    band-averaged slant path keeps sec θ, so nothing that was measured against ADR 0051 moves.
+    """
+    deg = math.degrees(zenith_rad)
+    if not -1e-9 <= deg <= 90.0 + 1e-9:
+        raise ValueError(f"solar zenith angle {deg:.1f}° outside [0, 90°]")
+    deg = min(max(deg, 0.0), 90.0)
+    return float(1.0 / (math.cos(math.radians(deg)) + 0.50572 * (96.07995 - deg) ** -1.6364))
 
 
 def solar_transmittance(preset: AtmospherePreset, band: str, zenith_rad: float) -> float:
