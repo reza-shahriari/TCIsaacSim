@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Rotor veils reach the frame** (ADR 0081, stage 2c). `irsim.pipeline.rotor_veil` composites
+  projected discs onto the k× radiance plane and `run_frame` takes `rotor_veils` alongside
+  `point_targets`; a frame without them is bit-identical to before.
+- It **composites rather than injecting an excess**, and the reason is not efficiency. MS.6's
+  point-target form adds `φ τ (L_t − L_beyond)` because a sub-pixel target occults a *sky column*
+  the plane does not separately carry. A rotor does not: by stage 2c the plane already holds the
+  right background at every pixel — sky beyond the disc over part of it, the aircraft's own arm or
+  motor bell over the rest. So `L = L_plane + α (L_blade,at-sensor − L_plane)` is exact for both at
+  once, where the excess form would subtract a sky column that is not behind the airframe pixels.
+  A test puts one rotor half over cold sky and half over a 300 K arm: the veil **lifts on one side
+  and dips on the other**, from one operator in one pass.
+- The blade takes stage 2's own atmospheric path (`blade_radiance_at_sensor` calls the same
+  `apply_layered_gbuffer` / `apply_atmosphere` on a one-element array), so the veil and the pixels
+  under it cannot disagree. Range pulls the disc **towards ambient**, which is not the same as
+  fainter: against a 230 K sky in 288 K air, a 290 K blade at 3 km reads dimmer than at 20 m and a
+  270 K blade reads brighter. That test was written the first way round only, and corrected.
+- Coverage is built on the ellipse's bounding box — a full-frame float64 map per rotor is 40 MB on
+  a 4× supersampled Boson frame, 160 MB for four — with a test asserting the windowed result is
+  bit-identical to a full-frame composite, not merely close. Flux through the whole chain is
+  conserved with the PSF on and off (23 tests).
+
 - **The sea as a background** (MM.2, MM.3, ADR 0078). `irsim.atmosphere.sea` gives apparent sea
   temperature against depression angle the way `SkyModel` gives it against elevation: Cox–Munk slope
   statistics from the shared weather's wind, and a facet-tilt quadrature in which the emissivity and

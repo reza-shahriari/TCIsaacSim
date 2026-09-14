@@ -179,8 +179,13 @@ and the rasteriser caught it. The disc reaches the focal plane through the **len
 than an `f·R/Z` stand-in — `disc_ellipse` measures both semi-axes from projected rim points, so an
 8 m off-axis barrel lens shrinking the disc 4.3 % and pulling it 17 px inward is seen, not missed;
 the residual (the conic is assumed centred with perpendicular axes) is **measured at 0.079 px** at
-20 m, falling as range². Engine-free and unwired: mounting four on the quadrotor still needs the
-G-buffer occlusion mask and the stage wiring.
+20 m, falling as range². On the frame the veil **composites rather than injects an excess**: MS.6's
+point-target form carries a `sky_beyond` term because a sub-pixel target occults a sky column the
+plane does not separately hold, but by stage 2c the plane already has the right background at every
+pixel — sky over some of the disc, the aircraft's own arm over the rest — so one blend handles both,
+lifting over cold sky and *dipping* over a warm arm in the same pass. Engine-free and unwired:
+`run_frame` takes `rotor_veils` and a frame without them is bit-identical, but mounting four on the
+quadrotor still needs the G-buffer occlusion mask and the stage wiring.
 
 **Targets below one pixel are injected, not rendered.** A 0.35 m quadrotor at 500 m is 0.82 of a
 Boson pixel, and a rasteriser gives a phase-dependent fraction of its flux (ADR 0071), so those

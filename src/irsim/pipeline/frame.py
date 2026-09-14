@@ -38,6 +38,7 @@ from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.point_target import PointTarget, inject_point_targets
 from irsim.pipeline.radiance import band_radiance
+from irsim.pipeline.rotor_veil import RotorVeil, inject_rotor_veils
 
 __all__ = ["Outputs", "run_frame"]
 
@@ -89,6 +90,7 @@ def run_frame(
     config: PipelineConfig,
     state: PipelineState,
     point_targets: Sequence[PointTarget] = (),
+    rotor_veils: Sequence[RotorVeil] = (),
 ) -> Outputs:
     """One frame through stages 1-6 (stage 2 is the identity without an Atmosphere).
     Advances ``state.frame_index``."""
@@ -154,6 +156,12 @@ def run_frame(
             lut,
             q,
             k,
+        )
+    # stage 2c: rotor discs as time-averaged veils (ADR 0081). After the point targets because a
+    # blade can pass in front of one, and before the PSF for the same reason stage 2b is.
+    if rotor_veils:
+        radiance_ss = inject_rotor_veils(
+            radiance_ss, rotor_veils, config.atmosphere, sensor.band.band_id, state.t_s, lut, q
         )
     # The M9 chain owns the thermal nodes and the drift, so it clocks first: stage 3 needs the
     # housing temperature it produces (M9.3), and stage 5 needs the pattern it advanced (M9.4).

@@ -143,10 +143,38 @@ at most 3e-4. Both sit far below the veil's own modelling uncertainty. An exact 
 upgrade if a disc ever has to be *measured* rather than drawn. (The docstring first claimed "under
 a hundredth of a pixel"; the measurement said 0.079, and the measurement is what is recorded.)
 
-**Not wired into a scene yet.** This is the engine-free physics, its projection and their tests.
-Mounting four on the quadrotor still needs the occlusion mask from the G-buffer — which half of the
-airframe stands in front of each disc plane — and the stage wiring, which is glue and a separate
-step.
+**The veil composites; it does not inject an excess.** The obvious reuse was MS.6's point-target
+machinery (`irsim.pipeline.point_target`), which adds `phi tau (L_t − L_beyond)` — and `alpha` *is*
+a per-pixel fill fraction, so the shapes line up. It is the wrong operator here. A sub-pixel target
+occults a **sky column** whose radiance the plane does not carry separately, which is why the
+excess form needs a `sky_beyond` term at all. A rotor disc does not: by stage 2c the plane already
+holds the correctly attenuated background at every pixel — sky beyond the disc over some of it, the
+aircraft's own arm or motor bell over the rest, each having travelled its own path. So the blend
+
+    L = L_plane + alpha (L_blade,at-sensor − L_plane)
+
+is exact for both cases at once and needs no decision about what is behind. The excess form applied
+over a pixel where the blade veils the airframe would subtract a sky column that is not there. A
+test puts one rotor half over cold sky and half over a 300 K arm: the veil lifts on one side and
+*dips* on the other, from one operator in one pass.
+
+The blade's own path is stage 2's, reused rather than re-derived — `blade_radiance_at_sensor` calls
+the same `apply_layered_gbuffer` / `apply_atmosphere` the plane went through, on a one-element
+array — so the veil and the pixels under it cannot disagree about the atmosphere. Range moves the
+disc *towards ambient*, which is not the same as fainter: against a 230 K sky in 288 K air, a 290 K
+blade at 3 km reads dimmer than at 20 m and a 270 K blade reads **brighter**. That test was written
+the first way round and only the first way round.
+
+**Coverage is built on the ellipse's bounding box.** A 4× supersampled Boson frame is 2560 × 2048,
+so a full-frame float64 coverage map per rotor is 40 MB and four rotors would be 160 MB a frame.
+The window is an optimisation, so a test asserts the result is bit-identical to a full-frame
+composite rather than merely close.
+
+**Not wired into a scene yet.** This is the engine-free physics, its projection, the pipeline stage
+and their tests; `run_frame` takes `rotor_veils` alongside `point_targets`, and a frame without
+them is bit-identical to before. Mounting four on the quadrotor still needs the occlusion mask from
+the G-buffer — which half of the airframe stands in front of each disc plane — and the stage
+wiring, which is Isaac glue and a separate step.
 
 ## Revisit when
 
