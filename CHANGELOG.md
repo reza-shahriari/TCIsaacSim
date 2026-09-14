@@ -43,6 +43,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The reflection lobe: near-mirror sky, and solar glint** (M11.7, ADR 0067, §4.3, §5.4).
+  `irsim.materials.lobe` gives §4.3's qualitative claim a model — a GGX microfacet kernel with
+  α = roughness² — and `irsim.pipeline.specular` binds it to the `SkyModel` and to M11.3's solar
+  band irradiance. `roughness_per_band` had been authored in every material YAML since M7.9 and
+  nothing read it, the same shape as M11.5's cold shield.
+- **The specular/diffuse split is explicit because the tidy alternative was tried and measured.**
+  One GGX kernel with no invented weight *should* give the diffuse answer as roughness → 1. It does
+  not: a microfacet lobe never converges to Lambertian, and at α = 1 GGX sits a **total-variation
+  distance of 0.30** from the cosine hemisphere — reading a test sky 1.7 % warm and not improving as
+  α grows. A test measures exactly that, so the decision stays visible instead of becoming folklore.
+  `K = w_s·K_GGX + (1−w_s)·cos θ/π` with `w_s = (1−r)²` conserves energy to **1e-12** at every
+  roughness and makes both endpoints exact: mirror to 1e-6, M7.13's V_s blend to 1e-6.
+- **`(1−r)²` is a modelling choice and its check is §4.3's own prose**, reproduced from the library's
+  authored roughness values without being fitted to them: glass **94 %** specular, painted bodywork
+  **77 %**, asphalt **9 %** — "paint and glass show near-mirror sky reflections in LWIR … asphalt
+  stays near-Lambertian", as numbers.
+- **Centring the specular quadrature on the mirror direction is not an optimisation.** On a grid tied
+  to the normal, α = 1e-4 is a lobe 1° wide that the grid cannot see at all, and a glass windshield
+  came out **0.09 units short** of the exact mirror answer — a bias, in the direction that makes
+  shiny surfaces look less shiny.
+- **The glint is capped at the sun's own radiance, and that is physics rather than a guard.** A
+  microfacet NDF at its peak claims 1/(πα²) sr⁻¹ = **4e5** for glass, enough to render a glint four
+  orders of magnitude brighter than the sun that caused it. MWIR glint against a 300 K scene, ρ = 0.1,
+  60° sun: glass **1.4e4×** (apparent temperature off the top of the LUT), paint **630×** (698 K),
+  roughness 0.3 → 5.6×, and by roughness 0.6 it is **below ambient and invisible**. Glint is a
+  smooth-surface phenomenon and it is gone by roughness 0.3.
+- In LWIR the same model gives the car-roof effect: a ρ = 0.9 flat mirror at 30° elevation under a
+  clear sky reads **more than 30 K below** its own 300 K surface, matching
+  `Lb⁻¹(ε Lb(T_s) + ρ Lb(T_sky(30°)))` to under **0.1 K**.
+- **The incident field is sky *and* ground, and `up` is a separate argument from the normal.** A
+  near-vertical windshield or a ship's flank reflects ground over half its lobe; passing the normal
+  as `up` would give a vertical panel a sky in every direction and render it far too cold. The
+  argument exists to make that mistake explicit, and a test pins it. Not yet wired into `run_frame`:
+  stage 1's reflected term is still the V_s blend, which is exactly this model's roughness → 1 limit,
+  so nothing rendered so far changes (23 tests).
 - **The electron-space noise budget for photon FPAs** (M11.6, ADR 0025 addendum, §10.1, §9.1).
   `irsim.noise.electron` adds `electron_noise(N_e, i_dark, t_int, σ_read, rng)` — one Poisson draw
   over signal + dark + background (the sum of independent Poissons *is* Poisson in the sum, so two
