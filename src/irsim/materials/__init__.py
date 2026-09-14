@@ -25,6 +25,13 @@ from irsim.materials.mapping import (
     audit,
     load_mapping_rules,
 )
+from irsim.materials.nk import (
+    NK_SUBDIR,
+    NKTable,
+    band_directional_emissivity,
+    fresnel_from_table,
+    load_nk_table,
+)
 from irsim.materials.spectra import PropertySpectrum, load_property_spectrum
 from irsim.materials.surface import CLOSURE_TOL as SURFACE_CLOSURE_TOL
 from irsim.materials.surface import surface_radiance
@@ -36,6 +43,11 @@ from irsim.materials.table import (
 )
 
 __all__ = [
+    "NK_SUBDIR",
+    "NKTable",
+    "band_directional_emissivity",
+    "fresnel_from_table",
+    "load_nk_table",
     "directional_emissivity_fresnel",
     "fresnel_reflectance",
     "SURFACE_CLOSURE_TOL",

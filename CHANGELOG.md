@@ -33,6 +33,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   not yet wired to a stage — mounting four needs the pose-to-ellipse projection and an occlusion
   mask (69 tests).
 
+- **Real water optical constants and band-effective Fresnel emissivity** (M7.5 water half, MM.1).
+  `data/nk/water.csv` is Segelstein 1981's complex refractive index, 2.0–15.6 µm, 365 rows, fetched
+  from omlc.org with the citation in the file header. `load_nk_table` treats that header as **data,
+  not lint**: a table with no `# source:` is refused at load, because every radiometric result
+  computed from an unsourced table is uncheckable.
+- `band_directional_emissivity(table, response, cos θ)` reduces Fresnel ε(λ, θ) to the scalar the
+  pipeline uses, through the one sanctioned band-average route. Over the Boson band water reads
+  **0.9879 at nadir, 0.9532 at 60°, 0.6726 at 80°, 0.1085 at 89°**.
+- **The band average earns its keep.** Against Fresnel evaluated at a "representative" 10 µm, the
+  band-effective value differs by 0.004 at nadir and **0.039 at 80°** — worst exactly where a sea
+  surface lives, and worth more than 2 K of apparent temperature against a 60 K sea-to-sky contrast.
+  Over 7.5–13.5 µm water's n runs 1.28 → 1.16 and its k spans an order of magnitude, so no single
+  wavelength represents the band.
+- n and k are interpolated **separately**; a test pins that this differs from interpolating the
+  derived emissivity, so a refactor cannot quietly switch to the sampling-dependent version.
+  Extrapolation raises rather than holding end values.
+- Water's hemispherical emissivity measures 0.945 against a normal 0.988, with §16.2's tabulated
+  0.96 sitting between them — the scalar ambiguity ADR 0043 exists to resolve, now with numbers.
+
+### Changed
+- `data/nk/water.csv` uses **Segelstein 1981, not Hale & Querry 1973**, whose n = 1.218 at 10 µm the
+  physics model quotes and the M7.5 roadmap row originally required. Hale & Querry's n is not freely
+  available as a table (only its absorption coefficient is), and mixing one compilation's n with
+  another's k is worse practice than using one whole dataset. Their k agree to 0.02 %; the n differ
+  by 2 %, worth 0.002 in emissivity — five times under MM.1's tolerance. Recorded in the file header
+  and ADR 0079.
+
 - **Maritime lane planned as phase 1b** (ADR 0078, roadmap milestone **MM**, 8 steps). Sky → sea →
   ground, amending ADR 0003's two-phase split. The sea is an **analytic background**, not displaced
   water geometry: at 3 km a Boson pixel spans 2.6 m and contains thousands of independent wave
