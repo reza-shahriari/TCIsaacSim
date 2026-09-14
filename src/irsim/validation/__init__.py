@@ -55,6 +55,17 @@ from irsim.validation.noise import (
     temporal_psd,
     temporal_shape,
 )
+from irsim.validation.shutter import (
+    MIN_INTERVAL_CLIP_S,
+    Freeze,
+    LineMeans,
+    PatternGrowth,
+    find_freezes,
+    fit_pattern_growth,
+    freeze_intervals_s,
+    line_means,
+    pattern_energy,
+)
 
 __all__ = [
     "AerialScene",
@@ -97,4 +108,13 @@ __all__ = [
     "sheppard_correct",
     "temporal_noise",
     "temporal_std_map",
+    "MIN_INTERVAL_CLIP_S",
+    "Freeze",
+    "LineMeans",
+    "PatternGrowth",
+    "find_freezes",
+    "fit_pattern_growth",
+    "freeze_intervals_s",
+    "line_means",
+    "pattern_energy",
 ]

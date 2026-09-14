@@ -85,6 +85,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   f·tan(δ) to 0.1 %.
 
 ### Added
+- **Reading the shutter off the frames** (ME.3a, ADR 0068). `irsim.validation.shutter` finds the
+  freezes a flat-field correction leaves in the video, reports the interval only from a clip long
+  enough to mean one, and fits what grows between events. Two distinctions carry the module: **a
+  freeze is not an FFC** -- a run of repeated frames is equally a dropped chunk of recording, so
+  every run is reported with `pattern_change`, the step in the time-averaged frame across it in
+  units of what the noise alone would give (a shutter lands at 8-20, a stall at 1); and the
+  between-shutter growth is fitted in the **variance**, `1 - e^(-2t/tau)`, because fitting it with
+  the amplitude's law returns twice the true correlation time and looks perfectly reasonable.
+- ADR 0068 -- the evaluation-data ADR, owed since ME.1a: what the public sets are, and the three
+  gates (licence and signal path, 8-bit canonical form, and an analyser that refuses what its data
+  cannot support) that stand between a public clip and a number the simulator gets tuned to.
 - **What a statistic measured on somebody else's clip is allowed to claim** (ME.2b, ADR 0023
   addendum). `irsim.validation.flat` chooses the windows -- `robust_noise_scale` (MAD of the first
   differences about their own median, so a gradient cancels and striping does not inflate it) is
