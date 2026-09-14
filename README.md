@@ -107,7 +107,9 @@ Two framing decisions in that video are physics, not taste. It is a **time-lapse
 constant, so it is only defensible while the throttle moves slowly against a motor's minutes-scale
 response; every stage is told the truth about the interval, so the FFC fires on its real schedule
 and the noise decorrelates as it really would. And the main video uses a **fixed display span**
-rather than the camera's AGC, because both §11.3 AGC modes rescale from the current frame and
+rather than the camera's AGC -- in the sensor config's own white-hot grayscale, not a false-colour
+palette, because a presentation video that picks its own colours is a second display path that can
+drift from the camera's -- because both §11.3 AGC modes rescale from the current frame and
 cancel exactly the change being filmed -- plateau equalisation additionally gives a sub-1 % target
 almost no display codes, saturating the whole airframe to flat white with the motors
 indistinguishable from the arms. The camera's own AGC output is filmed alongside, because that

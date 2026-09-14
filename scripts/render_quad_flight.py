@@ -58,7 +58,11 @@ parser.add_argument(
     metavar=("LO", "HI"),
     help="fixed apparent-temperature span of the main video, Celsius. Default: air +/- 50",
 )
-parser.add_argument("--palette", default="ironbow", help="palette for the fixed-span video")
+parser.add_argument(
+    "--palette",
+    default=None,
+    help="palette for the fixed-span video. Default: whatever the sensor's ISP is configured with",
+)
 parser.add_argument("--no-overlay", action="store_true", help="no burnt-in readout")
 parser.add_argument("--keep-frames", action="store_true", help="keep the PNG sequence")
 args = parser.parse_args()
@@ -246,10 +250,17 @@ def main() -> int:
         print("--span-c must be increasing", file=sys.stderr)
         return 1
     span_k = (span_c[0] + 273.15, span_c[1] + 273.15)
-    palette = palette_table(args.palette)
+    # The palette comes from the **sensor's own ISP config** unless overridden. A presentation
+    # video that picks its own colours is a second display path that can drift from the camera's,
+    # and then two pictures of one frame disagree for a reason that is nowhere in the physics.
+    # The Boson ships white-hot grayscale and the config says so; the fixed span changes the
+    # mapping from temperature to code, not the mapping from code to colour.
+    palette_name = args.palette or spec.isp.palette
+    palette = palette_table(palette_name)
     print(
-        f"display: fixed span {span_c[0]:.1f} to {span_c[1]:.1f} C ({args.palette}); "
-        f"the camera's own {spec.isp.agc} output is filmed alongside as agc_*"
+        f"display: fixed span {span_c[0]:.1f} to {span_c[1]:.1f} C, {palette_name} palette "
+        f"(from the sensor ISP); the camera's own {spec.isp.agc} output is filmed alongside "
+        f"as agc_*"
     )
     history: list[dict[str, float]] = []
     t_render = time.time()
@@ -285,7 +296,7 @@ def main() -> int:
             frames_dir / f"ir_{index:05d}.png",
             decorate(
                 spanned,
-                f"span {span_c[0]:.0f}-{span_c[1]:.0f}C",
+                f"span {span_c[0]:.0f}-{span_c[1]:.0f}C {palette_name}",
                 t_rel,
                 throttle,
                 temps,
@@ -362,7 +373,7 @@ def main() -> int:
         "motor_peak_at_s": peak["t_rel_s"],
         "motor_swing_k": round(peak["motor_k"] - min(r["motor_k"] for r in history), 3),
         "display_span_c": list(span_c),
-        "palette": args.palette,
+        "palette": palette_name,
         "videos": videos,
         "history": history,
     }

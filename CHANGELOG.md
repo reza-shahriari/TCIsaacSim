@@ -43,6 +43,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   as it would between two captures that far apart.
 - The environment dome and the visible-band looks moved from `aerial_demo` into a shared
   `irsim_isaac.stage`, so a second stage cannot re-derive either and drift from the first.
+- The flight video's palette now comes from the **sensor's own ISP config** instead of being
+  hardcoded. ADR 0074 already said the fixed-span video maps "through the ISP's own palette" and
+  the code did not: it used `ironbow` while `flir_boson_640_lwir.yaml` says `palette: gray`,
+  `polarity: white_hot`, which is how a real Boson ships. A presentation video that picks its own
+  colours is a second display path, and two pictures of one frame then disagree for a reason that
+  is nowhere in the physics. `--palette` still overrides for a one-off.
 
 ### Notes
 - **The video is a time-lapse, and that is a physics decision.** ADR 0072's node law is a
