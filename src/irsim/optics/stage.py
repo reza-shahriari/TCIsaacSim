@@ -25,6 +25,7 @@ from irsim.optics.aperture import aperture_factor, fpa_irradiance
 from irsim.optics.psf import apply_psf
 from irsim.optics.sampling import box_downsample
 from irsim.optics.self_emission import self_emission_power
+from irsim.optics.smear import apply_motion_smear
 from irsim.optics.vignetting import cos4_field
 
 __all__ = ["optics_field", "apply_optics", "invert_optics"]
@@ -56,11 +57,24 @@ def apply_optics(
     lb_housing: float,
     supersample: int | None = None,
     psf: NDArray[np.float64] | None = None,
+    motion_px: NDArray[np.floating] | None = None,
 ) -> NDArray[np.float32]:
-    """Scene band radiance on the k× grid → pixel power Φ (H, W) float32. ``psf`` (a kernel from
-    :func:`irsim.optics.psf.optical_psf` at the same k) is applied first when given."""
+    """Scene band radiance on the k× grid → pixel power Φ (H, W) float32.
+
+    ``psf`` (a kernel from :func:`irsim.optics.psf.optical_psf` at the same k) is applied first
+    when given, then ``motion_px`` -- the within-frame smear of §8.3's ``mtf_motion``, which the
+    cascade has described since M5 and nothing applied. Both are convolutions laid down during the
+    integration and they commute, so the order between them is arbitrary; what is *not* arbitrary
+    is that both come before the box filter, which is the detector sampling the result.
+
+    ``motion_px`` is the supersampled displacement per frame, already scaled by the integration
+    duty (:func:`irsim.optics.smear.smear_duty`) by the caller -- a bolometer integrates the whole
+    frame, a cooled photon detector a fraction of it.
+    """
     k = sensor.optics.supersample_factor if supersample is None else supersample
     blurred = apply_psf(radiance_ss, psf) if psf is not None else radiance_ss
+    if motion_px is not None:
+        blurred = apply_motion_smear(blurred, motion_px, 1.0)
     radiance = box_downsample(blurred, k)
     _check_native(radiance, sensor, "downsampled radiance")
     a_d = sensor.detector_active_area_m2

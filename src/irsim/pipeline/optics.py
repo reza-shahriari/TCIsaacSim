@@ -17,7 +17,10 @@ docs/physics-model.md §8.1-§8.3, §13.4 stage 3
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
+from irsim.config.sensor import SensorSpec
+from irsim.optics.smear import smear_duty
 from irsim.optics.stage import apply_optics
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 
@@ -29,6 +32,29 @@ def housing_band_radiance(config: PipelineConfig, state: PipelineState) -> float
     return float(config.lut.lookup(state.housing_temp_k, config.quantity)[()])
 
 
+def motion_for_integration(planes: Planes, sensor: SensorSpec) -> NDArray[np.float64] | None:
+    """The G-buffer's ``motion_px`` scaled by how much of the frame the detector integrates.
+
+    ``None`` when the plane is absent, which is every scene that has not asked for motion: the
+    G-buffer treats ``motion_px`` as optional (M0.6) and a still scene should cost nothing.
+
+    The duty is where the two detector families part. A bolometer has no integration window --
+    ``integration_time_ms`` is ``None`` for one on purpose -- so it smears over the whole frame
+    period; a cooled photon detector integrates briefly and is idle for the rest, so it smears
+    less and comes out sharper. That is §16's "lateral motion smears LWIR, not cooled MWIR".
+    """
+    motion = planes.get("motion_px")
+    if motion is None:
+        return None
+    duty = smear_duty(
+        1.0 / float(sensor.fpa.frame_rate_hz),
+        None
+        if sensor.fpa.integration_time_ms is None
+        else float(sensor.fpa.integration_time_ms) * 1e-3,
+    )
+    return np.asarray(motion, dtype=np.float64) * duty
+
+
 def optics_stage(planes: Planes, config: PipelineConfig, state: PipelineState) -> Planes:
     """Stage-3 entry point: supersampled ``radiance`` → ``flux`` on the detector grid."""
     return {
@@ -38,6 +64,7 @@ def optics_stage(planes: Planes, config: PipelineConfig, state: PipelineState) -
             housing_band_radiance(config, state),
             supersample=config.supersample,
             psf=config.psf,
+            motion_px=motion_for_integration(planes, config.sensor.sensor),
         )
     }
 

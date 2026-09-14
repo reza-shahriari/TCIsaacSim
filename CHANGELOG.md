@@ -6,6 +6,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Within-frame motion smear** (ADR 0077, §8.3/§9.2). `mtf_motion` — |sinc(v·t_int·ξ)| — has been
+  in the MTF cascade since M5 and **nothing ever called it**, so every frame this simulator has
+  produced was sharp however fast the scene crossed it. The aircraft stage sweeps the boresight at
+  34 °/s at closest approach and a Boson pixel is 0.049°, so the scene crosses **11 pixels in one
+  frame period**. It is also one of the most obvious signatures separating real thermal video of a
+  moving target from synthetic video of one.
+- `irsim.optics.smear.apply_motion_smear` is **spatially varying**, which the scenes here require:
+  under a tracking mount the target is stationary on the focal plane while the sky sweeps past, so
+  a single convolution serves neither. Each pixel is averaged along its own motion vector. Applied
+  between the PSF and the box filter — both are convolutions laid down during the integration, and
+  both must precede the detector sampling the result.
+- **The duty is where the two detector families part.** A microbolometer has no shutter and no
+  integration window — `integration_time_ms` is `None` for one on purpose — so it smears over the
+  whole frame period; a cooled photon detector integrates briefly and comes out sharper. Reading a
+  missing integration time as zero would have made every uncooled camera in the repo sharper than
+  it is, which is the flattering direction. This is §16's "lateral motion smears LWIR, not cooled
+  MWIR", as arithmetic.
+- Verified against the cascade term it implements: `|sinc(s·f)|` over 3–20 px smears and
+  1/48–1/12 cyc/px, worst deviation **0.015**, mostly under 0.006.
+
+### Fixed
+- **The cross-check against sinc caught a real error before it shipped.** Taps placed at the smear
+  segment's *endpoints* look natural and implement a boxcar of length s + s/(N−1): measured MTF
+  0.7182 where sinc said 0.7842, which is exactly the Dirichlet kernel of the longer smear. The
+  operator was self-consistent and describing the wrong smear — the failure mode no amount of
+  "does it look blurred" would have caught. Taps are now at sub-interval midpoints.
+- A test of mine compared picowatt-scale flux with `np.allclose`, whose default `atol` of 1e-8 is
+  larger than the entire signal; it called a 15 % change "close". Now compared relatively.
+
+### Added
 - **Structured cloud in the rendered infrared background** (ADR 0076; MS.3/ADR 0070 into the M10.18
   bridge). For a sky-background sensor the dominant false alarm is not sensor noise, it is a cloud
   edge — a warm, target-sized, high-contrast feature with the *same polarity* as the thing being

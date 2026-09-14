@@ -151,6 +151,17 @@ realisation and **the mean is preserved** (~0.2 % across seeds). Coverage is exa
 not over a frame: one elevation ring measured 0.0195 against a whole-sky 0.0500, which is precisely
 what makes cloud clutter rather than texture.
 
+**Moving targets smear now (ADR 0077).** `mtf_motion` had been in the MTF cascade since M5 and
+**nothing ever called it**, so every frame was sharp however fast the scene crossed it — with the
+aircraft stage sweeping the boresight at 34 °/s against a 0.049° pixel, that is 11 pixels of
+unmodelled blur per frame, and it is one of the clearest tells separating real thermal video of a
+moving target from synthetic. The smear is **spatially varying**, because under a tracking mount
+the target is still on the focal plane while the sky sweeps past and one kernel serves neither.
+The integration duty is where the detector families part: a microbolometer has no integration
+window (`integration_time_ms` is `None` for one) so it smears over the whole frame, while a cooled
+photon detector integrates briefly and is sharper — §16's "lateral motion smears LWIR, not cooled
+MWIR". Held to the cascade term it implements: within **0.015** of `|sinc(s·f)|` across the sweep.
+
 **Targets below one pixel are injected, not rendered.** A 0.35 m quadrotor at 500 m is 0.82 of a
 Boson pixel, and a rasteriser gives a phase-dependent fraction of its flux (ADR 0071), so those
 prims are hidden and MS.6's analytic excess is injected in their place -- one path or the other,
