@@ -51,6 +51,11 @@ parser.add_argument("--rgb", action="store_true", help="also film the companion 
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--no-dome", action="store_true", help="untextured grey dome (ADR 0073)")
 parser.add_argument(
+    "--no-rotors",
+    action="store_true",
+    help="omit the propeller veils (ADR 0081), for the before/after comparison",
+)
+parser.add_argument(
     "--span-c",
     type=float,
     nargs=2,
@@ -213,6 +218,7 @@ def main() -> int:
         capture_rgb=args.rgb,
         strict_materials=False,
         cloud_seed=args.cloud_seed,
+        rotor_mounts=None if args.no_rotors else stage.rotor_mounts(0.0),
         # One capture every `interval_s` of scene time: a time-lapse camera, with every stage
         # told the truth about the gap (ADR 0074).
         frame_period_s=args.interval_s,
@@ -279,6 +285,10 @@ def main() -> int:
         )
         translate_op.Set(Gf.Vec3d(*translate))
         rotate_op.Set(Gf.Vec3f(*rotate))
+        if not args.no_rotors:
+            # The discs turn with the throttle the thermal model is reading, so the rotor a
+            # viewer sees and the motor temperature they see come from one flight.
+            camera.rotor_mounts.update(stage.rotor_mounts(throttle))
 
         outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         temps = camera.bridge.temperatures()

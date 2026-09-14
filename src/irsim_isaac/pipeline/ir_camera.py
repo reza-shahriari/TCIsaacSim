@@ -68,9 +68,11 @@ from irsim.optics.projection import (
     opencv_pinhole_coeffs,
     project_usd,
 )
+from irsim.optics.smear import smear_duty
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.point_target import PointTarget, fill_fraction
+from irsim.pipeline.rotor_veil import RotorVeil
 from irsim.scene import Scene
 from irsim.validation.aerial import AerialTarget, target_leaving_radiance
 from irsim_isaac.pipeline.aerial_bridge import (
@@ -93,6 +95,7 @@ from irsim_isaac.pipeline.material_ids import (
     overlay_unmapped,
     unmapped_mask,
 )
+from irsim_isaac.pipeline.rotor_isaac import RotorMount, build_rotor_veils
 
 __all__ = [
     "DISTORTION_SCHEMA",
@@ -328,6 +331,7 @@ class IrCamera:
         strict_materials: bool = True,
         frame_period_s: float | None = None,
         cloud_seed: int | None = None,
+        rotor_mounts: Mapping[str, Sequence[RotorMount]] | None = None,
         device: str = "cpu",
     ) -> None:
         band = sensor.sensor.band.band_id
@@ -390,6 +394,11 @@ class IrCamera:
         self._last: _Frame | None = None
         self._stage = stage
         self._up_axis = up_axis
+        #: Rotor discs keyed by the prim whose transform carries them (ADR 0081). They author
+        #: nothing: a spinning rotor is a veil the pipeline composites, not geometry.
+        self.rotor_mounts: dict[str, list[RotorMount]] = {
+            path: list(mounts) for path, mounts in (rotor_mounts or {}).items()
+        }
         self._authored: dict[str, Any] = {}
 
     # -- engine set-up --------------------------------------------------------------------
@@ -631,6 +640,92 @@ class IrCamera:
             )
         return out
 
+    def rotor_veils(self) -> list[RotorVeil]:
+        """ADR 0081's veils for this frame: one per mounted disc, projected and occluded.
+
+        **The integration window is the detector's, not the capture interval's.** A time-lapse
+        sets ``frame_period_s`` to seconds of scene time between captures (ADR 0074), and using
+        that here would sweep a 3000 rpm prop through three hundred revolutions and smear it into
+        a perfectly uniform annulus with no banding at all. The detector still integrates for its
+        own frame -- 1/60 s for a bolometer, the integration time for a cooled photon detector --
+        so that is what the sweep is taken over.
+        """
+        if not self.rotor_mounts:
+            return []
+        if self._camera_position is None or self._camera_to_world is None:
+            raise RuntimeError("call open() first (the camera pose comes from the stage)")
+        if self._last is None:
+            return []
+        import omni.usd
+        from pxr import Usd, UsdGeom
+
+        stage = self._stage if self._stage is not None else omni.usd.get_context().get_stage()
+        sensor = self.sensor.sensor
+        detector_period = 1.0 / float(sensor.fpa.frame_rate_hz)
+        integration_s = detector_period * smear_duty(
+            detector_period,
+            None
+            if sensor.fpa.integration_time_ms is None
+            else float(sensor.fpa.integration_time_ms) * 1e-3,
+        )
+        depth = np.asarray(self._last.planes["distance_m"], dtype=np.float64)
+        sky = self._last.planes.get("sky_mask")
+        temperatures = self.bridge.temperatures()
+        t_abs = self.scene.t0_s + self._t_rel_s
+
+        out: list[RotorVeil] = []
+        for path, mounts in self.rotor_mounts.items():
+            prim = stage.GetPrimAtPath(path)
+            if not prim or not prim.IsValid():
+                raise ValueError(f"rotor mount prim {path!r} is not on the stage")
+            local_to_world = np.asarray(
+                UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()),
+                dtype=np.float64,
+            )
+            for mount in mounts:
+                out.extend(
+                    build_rotor_veils(
+                        [mount],
+                        local_to_world,
+                        self._camera_position,
+                        self._camera_to_world,
+                        sensor,
+                        self.config.supersample,
+                        self._blade_radiance(mount, temperatures, t_abs),
+                        integration_s,
+                        distance_m=depth,
+                        sky_mask=sky,
+                    )
+                )
+        return out
+
+    def _blade_radiance(
+        self, mount: RotorMount, temperatures: Mapping[str, Any], t_s: float
+    ) -> float:
+        """eps L_B(T_node) + (1 - eps) L_env for one blade, the same form the airframe uses."""
+        materials = self.config.materials
+        eps = float(
+            materials.emissivity_for(
+                np.array([[materials.id_for(mount.material)]], dtype=np.int32)
+            )[0, 0]
+        )
+        temperature = float(temperatures[mount.thermal_node])
+        sky = self.config.sky
+        if sky is None:
+            return eps * float(
+                self.config.lut.lookup(np.float64(temperature), self.config.quantity)[()]
+            )
+        return target_leaving_radiance(
+            AerialTarget(
+                temperature_k=temperature,
+                emissivity=eps,
+                range_m=1.0,  # unused by the leaving radiance; the atmosphere is stage 2c's
+                sky_view_factor=mount.sky_view_factor,
+            ),
+            sky,
+            t_s,
+        )
+
     def check_no_double_count(self) -> list[str]:
         """Analytic targets whose prims still reached the id plane -- each is counted twice.
 
@@ -653,7 +748,9 @@ class IrCamera:
         """
         planes = self.planes(step=step, rt_subframes=rt_subframes)
         self.state.t_s = self.scene.t0_s + self._t_rel_s
-        outputs = run_frame(planes, self.config, self.state, self.point_targets())
+        outputs = run_frame(
+            planes, self.config, self.state, self.point_targets(), self.rotor_veils()
+        )
         overlay = (
             self.debug_unmapped
             and outputs.display8 is not None

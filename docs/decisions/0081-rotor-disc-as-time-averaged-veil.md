@@ -170,11 +170,76 @@ so a full-frame float64 coverage map per rotor is 40 MB and four rotors would be
 The window is an optimisation, so a test asserts the result is bit-identical to a full-frame
 composite rather than merely close.
 
-**Not wired into a scene yet.** This is the engine-free physics, its projection, the pipeline stage
-and their tests; `run_frame` takes `rotor_veils` alongside `point_targets`, and a frame without
-them is bit-identical to before. Mounting four on the quadrotor still needs the occlusion mask from
-the G-buffer — which half of the airframe stands in front of each disc plane — and the stage
-wiring, which is Isaac glue and a separate step.
+## Mounting them on a stage
+
+`irsim_isaac.pipeline.rotor_isaac` turns a prim's transform into veils, and
+`QuadrotorSpec.rotor_mounts` puts four of them above the motor bells. Four consequences are worth
+recording because each was a decision and two of them were nearly mistakes.
+
+**Nothing is authored.** A mount adds no prim, no mesh and no material to the stage — only a
+position, an axis and an rpm — because a spinning rotor is not geometry. That buys the whole
+sub-pixel and occlusion story for free, and it costs one honest asymmetry: **the discs appear in
+the infrared frame and not in the companion visible frame**, which is rendered by RTX from stage
+geometry. The visible frame therefore shows a quadrotor with no propellers. ADR 0073 made the
+companion frame the human-legible half of the pair, so this is a real gap rather than a cosmetic
+one; option 1(b) (real blade geometry, motion-blurred by the renderer) is what would close it, at
+the cost the options list already rejected.
+
+**Occlusion is a plane intersection, not a range comparison.** Each pixel's ray is intersected with
+the disc *plane* and compared with the depth the renderer reported. Comparing against the disc
+centre's range instead would be wrong by up to a disc radius across the ellipse — 0.36 m at 20 m,
+about 18 pixels of arm drawn on the wrong side of the aircraft. The mask is meaningless outside the
+ellipse (an infinite plane is met kilometres away by a grazing ray) and does not need to be: it is
+only read where the coverage is non-zero. A test asserting otherwise failed on arithmetic that was
+correct, which is recorded in the test rather than papered over.
+
+**The integration window is the detector's, not the capture interval's.** ADR 0074 films this
+scene as a time-lapse, one frame per six seconds of scene time, and `IrCamera.frame_period_s`
+carries that interval so every stage knows the truth about it. Using it here would sweep a
+3000 rpm prop through three hundred revolutions and produce a perfectly uniform annulus with no
+banding at all — a *plausible* picture with the ripple physics quietly deleted. The sweep is taken
+over `1 / frame_rate_hz` scaled by the integration duty instead.
+
+**Rpm follows the throttle by a square root.** A propeller's thrust goes as rpm², and the flight
+profile's `u` is a fraction of maximum *thrust* — it is what ADR 0072's `ΔT_max u²` motor law
+reads. So `rpm = rpm_max √u`, and a hovering aircraft at u = 0.5 turns at 2121 rpm, not the 1500 a
+linear reading would give. That is a 40 % error in the swept angle, which moves which regime the
+discs are filmed in, so it is not a detail.
+
+One input is **ESTIMATED**: the blade's sky-view factor, taken as 0.5 for a blade seen mostly
+edge-on. `propeller_rubber` is ε = 0.95 in LWIR, so the reflected term is a twentieth of what
+leaves the blade and the choice is worth about a kelvin.
+
+### What the first render found, that no unit test did
+
+**Sky carries `distance_m = 0`, not infinity.** `irsim.config.gbuffer` says so in its first
+paragraph, and for a good reason: the sentinel is zero so a consumer that ignores `sky_mask` still
+computes τ = 1. Read as a *distance*, zero is a surface at the camera — nearer than everything —
+and the first `occlusion_mask` duly marked **every pixel of the frame** occluded and erased all
+four discs. The rendered frames were bit-identical with and without rotors.
+
+The unit test that should have caught it used `inf`, which is what the **AOV** reports before the
+adapter translates it. It was a plausible fixture rather than the contract, it passed, and it
+tested the one value that could not fail. It is now parameterised over both, with the zero case
+named as the dangerous one, plus a sky-only frame — the demo's actual configuration, since the
+quadrotor is the only geometry on the stage.
+
+**Measured, with the fix:** 6444 native pixels change, peaking at **+10.1 K** of apparent
+temperature, and occlusion falls from the whole frame to the 15 786 pixels of airframe that really
+are in front of a disc.
+
+**The disc is brightest at its root**, because local solidity `N c(r) / (2 π r)` rises inward as the
+circumference shrinks while the chord does not: 3.2 % at three-quarter radius and 19 % just outside
+the motor bell. That is why the peak lift is 10 K and the median over the disc is 0.02 K — the
+outer annulus is genuinely almost invisible, and the inner one is not.
+
+**And it is invisible at the demo's own display span.** ADR 0074 spans the *target's* nodes, 18 to
+62 °C, so a 273 K disc over a 263 K sky clips to black along with the sky; plateau equalisation
+gives it no codes either. The picture is only wrong if you read the display as the data. At a
+scene-context span (`--span-c -15 40`) the same frames differ by up to **45 display codes** and the
+four annuli are plainly there. This is the AGC lesson again and it is worth stating: **a veil that
+is real in radiance can be absent from the picture**, and which of those you measure decides
+whether you believe the feature works.
 
 ## Revisit when
 
@@ -188,3 +253,12 @@ wiring, which is Isaac glue and a separate step.
   cooled-detector special case.
 * Anything needs the disc's effect on what is behind it beyond occlusion — downwash on a sea
   surface, or the rotor wash warming a wall.
+* The companion visible frame has to show the propellers. Nothing here authors geometry, so RTX has
+  nothing to draw; closing that gap means option 1(b) and the sample count it costs, or compositing
+  the same veil into the RGB frame ourselves — which ADR 0073's option 1(d) already describes, and
+  which would inherit that option's exposure mismatch.
+* Blade aerodynamic heating matters. At 3000 rpm the tip does 112 m/s (M = 0.33), whose recovery
+  temperature is about 5.6 K above ambient, and three-quarter radius about 3.1 K — computable today
+  with `irsim.thermal.aerial.recovery_temperature_k`. The blade currently takes the airframe node's
+  temperature flat, which is the right order but not the right gradient, and the gradient is the
+  same span-wise variation the first item here would carry.

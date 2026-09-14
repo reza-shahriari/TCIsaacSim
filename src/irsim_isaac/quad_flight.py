@@ -25,6 +25,7 @@ import math
 import os
 from dataclasses import dataclass, field
 
+from irsim_isaac.pipeline.rotor_isaac import RotorMount
 from irsim_isaac.quadrotor import HEAVY_LIFT, QuadrotorSpec, author_quadrotor
 from irsim_isaac.stage import DOME_HEIGHT, author_environment, bind_visible_look
 from irsim_isaac.visible_sky import DomeSpec
@@ -65,6 +66,33 @@ class QuadFlightStage:
     def pixels_across(self, ifov_mrad: float) -> dict[str, float]:
         """Native pixels across each part at this range -- the honest scale of the picture."""
         return {p.name: p.pixels_across(self.range_m, ifov_mrad) for p in self.spec.parts()}
+
+    def rotor_mounts(self, throttle: float) -> dict[str, list[RotorMount]]:
+        """The four discs at this throttle, keyed by the prim whose transform carries them.
+
+        Rebuilt per frame rather than held, because the rpm is: :func:`rotor_rpm` reads it off the
+        same throttle the thermal model reads, so the disc a viewer sees and the motor temperature
+        they see cannot come from different flights.
+        """
+        return {self.quad_path: list(self.spec.rotor_mounts(rotor_rpm(throttle)))}
+
+
+#: Rotor rpm at full throttle for a heavy-lift multirotor on 28-inch props. At this diameter the
+#: tip does 112 m/s, which is where props of this class actually live -- much above it and the tip
+#: goes transonic and the noise and losses rise sharply.
+ROTOR_RPM_MAX = 3000.0
+
+
+def rotor_rpm(throttle: float) -> float:
+    """Rotor speed at a normalised throttle, ``rpm_max sqrt(u)``.
+
+    A propeller's thrust goes as rpm squared, so a throttle that means "this fraction of maximum
+    thrust" -- which is what the flight profile's ``u`` means to the thermal model (ADR 0072, where
+    the motor rise is ``Delta T_max u^2``) -- maps to rpm by a square root, not linearly. Taking it
+    as linear would spin a hovering aircraft a third too slowly and shift which regime its discs
+    are filmed in.
+    """
+    return ROTOR_RPM_MAX * math.sqrt(max(0.0, min(1.0, float(throttle))))
 
 
 def tracking_pose(

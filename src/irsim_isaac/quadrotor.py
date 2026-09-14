@@ -16,11 +16,12 @@ the geometry has. There is no licence to track either.
 The layout is engine-free and so are its sizes: :meth:`QuadrotorSpec.parts` is pure arithmetic and
 is unit-tested without Isaac Sim. Only :func:`author_quadrotor` touches USD.
 
-**Propellers are deliberately absent.** A 28-inch prop at flight rpm sweeps its whole disc many
-times within a 60 Hz integration period, so what a thermal camera records is a faint, low-contrast
-annulus, not a solid blade -- and a static disc of the right diameter would be 33 px across at
-20 m and would hide the motors underneath it, which are the entire subject. Modelling the smear
-properly needs the motion path (M10.1b); until then, nothing is more honest than nothing.
+**Propellers are present but are not geometry.** A 28-inch prop at flight rpm sweeps its whole
+disc many times within a 60 Hz integration period, so what a thermal camera records is a faint,
+low-contrast annulus, not a solid blade -- and a static disc of the right diameter would be 41 px
+across at 20 m and would hide the motors underneath it, which are the entire subject. ADR 0074
+therefore left them out; ADR 0081 supplies the model, and :meth:`QuadrotorSpec.rotor_mounts`
+returns the four discs as **veils** the pipeline composites, adding no prim to the stage.
 
 docs/physics-model.md §6.6, §16.2; ADR 0072 (the heat sources), ADR 0074 (this airframe)
 """
@@ -28,14 +29,17 @@ docs/physics-model.md §6.6, §16.2; ADR 0072 (the heat sources), ADR 0074 (this
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from irsim.optics.rotor import RotorDisc
 from irsim_isaac.airframe import Part, author_parts
+from irsim_isaac.pipeline.rotor_isaac import RotorMount
 
 __all__ = [
     "Part",
     "QuadrotorSpec",
+    "RotorMount",
     "HEAVY_LIFT",
     "author_quadrotor",
 ]
@@ -66,6 +70,11 @@ class QuadrotorSpec:
     motor_material: str = "aircraft_aluminium_painted"
     esc_material: str = "painted_composite"
     battery_material: str = "painted_composite"
+    #: A 28-inch two-blade prop. Motors sit 0.9 m from the hub along the diagonal, so adjacent
+    #: discs are 1.27 m apart and a 0.71 m one clears its neighbour with room to spare -- which is
+    #: why real frames of this diagonal carry 28-30 inch props.
+    rotor: RotorDisc = field(default_factory=RotorDisc)
+    rotor_clearance_m: float = 0.02  # hub plane above the top of the motor bell
 
     def __post_init__(self) -> None:
         if self.span_m <= 0.0:
@@ -153,6 +162,34 @@ class QuadrotorSpec:
                 )
             )
         return tuple(out)
+
+    def rotor_mounts(self, rpm: float = 3000.0) -> tuple[RotorMount, ...]:
+        """The four rotor discs in the body frame, as veils rather than prims (ADR 0081).
+
+        Each sits ``rotor_clearance_m`` above its motor bell on the same body axis, with its axis
+        along body +Y, so an airframe that pitches carries its discs with it. Nothing is authored:
+        a spinning rotor is a time-averaged occluder, not geometry, and the disc appears in the
+        infrared because :func:`irsim.pipeline.rotor_veil.inject_rotor_veils` composites it.
+
+        ``rpm`` belongs to the flight rather than the airframe, so it is an argument -- a
+        manoeuvring multirotor does not turn all four at the same rate, and a spec that stored one
+        number would invite a scene to disagree with its own throttle.
+        """
+        offset = self.motor_offset_m()
+        hub_y = 0.5 * self.body_m[1] + self.motor_height_m + self.rotor_clearance_m
+        return tuple(
+            RotorMount(
+                disc=self.rotor,
+                offset_m=(offset * sx, hub_y, offset * sz),
+                axis=(0.0, 1.0, 0.0),
+                rpm=rpm,
+                thermal_node="airframe",
+                # Quarter-turn apart so the resolved-arc case does not draw four identical
+                # pictures; it is cosmetic at bolometer shutter speeds and visible at cooled ones.
+                phase_rad=index * math.pi / 8.0,
+            )
+            for index, (sx, sz) in enumerate(((1, -1), (-1, -1), (-1, 1), (1, 1)))
+        )
 
     def thermal_nodes(self) -> tuple[str, ...]:
         """The solver names a scene has to define for this airframe to have a temperature."""

@@ -6,6 +6,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The quadrotor flies with propellers** (ADR 0081). `irsim_isaac.pipeline.rotor_isaac` turns a
+  prim's transform into veils and `QuadrotorSpec.rotor_mounts` puts four above the motor bells;
+  `scripts/render_quad_flight.py` grows `--no-rotors` for the before/after. **Nothing is authored**
+  — no prim, no mesh, no material — because a spinning rotor is not geometry. That buys the
+  sub-pixel and occlusion story for free and costs one honest asymmetry: the discs are in the
+  infrared frame and *not* in the companion visible frame, which RTX renders from stage geometry
+  there is none of.
+- **Occlusion is a plane intersection, not a range comparison.** Each pixel's ray meets the disc
+  *plane* and is compared with the renderer's depth. Using the disc centre's range would be wrong
+  by up to a disc radius across the ellipse — 0.36 m at 20 m, about 18 px of arm drawn on the wrong
+  side of the aircraft. The mask is meaningless outside the ellipse and does not need to be; a test
+  asserting otherwise failed on arithmetic that was correct, and says so.
+- **Two traps, both of which make a plausible picture out of deleted physics.** The sweep is taken
+  over the *detector's* frame, not the time-lapse's six-second capture interval — that would turn
+  three hundred revolutions into a perfectly uniform annulus with no banding at all. And rpm
+  follows throttle by a **square root**, because thrust goes as rpm² and the profile's `u` is a
+  fraction of maximum thrust (the same `u` ADR 0072's `ΔT_max u²` motor law reads); linearly, a
+  hovering aircraft turns 40 % slow and its discs are filmed in the wrong regime.
+- ESTIMATED: the blade's sky-view factor, taken as 0.5 for a blade seen mostly edge-on.
+  `propeller_rubber` is ε = 0.95 in LWIR, so the reflected term is a twentieth of what leaves the
+  blade and the choice is worth about a kelvin (21 tests).
+- **What the first render found that no unit test did:** sky carries `distance_m = 0` in the
+  G-buffer, not `inf` — the sentinel is zero so a consumer ignoring `sky_mask` still sees τ = 1.
+  Read as a *distance*, zero is a surface at the camera, and the first `occlusion_mask` therefore
+  masked **every pixel of the frame** and erased all four discs; the rendered frames were
+  bit-identical with and without rotors. The test that should have caught it used `inf`, which is
+  what the AOV reports *before* the adapter translates it — a plausible fixture rather than the
+  contract, testing the one value that could not fail. Now parameterised over both, plus a sky-only
+  frame, which is the demo's actual configuration.
+- Measured in sim with the fix: **6444 native pixels change, peaking at +10.1 K**, and occlusion
+  falls from the whole frame to the 15 786 airframe pixels really in front of a disc. The disc is
+  brightest at its **root**, because local solidity `N c(r)/(2πr)` rises inward as the circumference
+  shrinks while the chord does not — 3.2 % at three-quarter radius, 19 % just outside the bell.
+- And it is **invisible at the demo's own display span**: ADR 0074 spans the target's nodes
+  (18–62 °C), so a 273 K disc clips to black along with the 263 K sky, and plateau equalisation
+  gives it no codes either. At `--span-c -15 40` the same frames differ by up to **45 display
+  codes** and the four annuli are plainly there. Real in radiance, absent from the picture — the
+  AGC lesson again, and which one you measure decides whether you believe the feature works.
+
 - **Rotor veils reach the frame** (ADR 0081, stage 2c). `irsim.pipeline.rotor_veil` composites
   projected discs onto the k× radiance plane and `run_frame` takes `rotor_veils` alongside
   `point_targets`; a frame without them is bit-identical to before.
