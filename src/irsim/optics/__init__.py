@@ -1,10 +1,11 @@
-"""Optics: aperture factor, natural vignetting, self-emission, MTF cascade.
+"""Optics: aperture factor, natural vignetting, self-emission, MTF cascade, image-plane motion.
 
 docs/physics-model.md §8
 """
 
 from irsim.optics.aperture import aperture_factor, cone_half_angle, fpa_irradiance, pixel_power
 from irsim.optics.housing import HousingTemperature, HousingTempMode
+from irsim.optics.motion import BACKGROUND_OBJECT_ID, image_plane_motion, transform_points
 from irsim.optics.mtf import (
     cutoff_frequency_cyc_per_mm,
     mtf_detector,
@@ -38,6 +39,9 @@ __all__ = [
     "HousingTemperature",
     "HousingTempMode",
     "aperture_factor",
+    "image_plane_motion",
+    "transform_points",
+    "BACKGROUND_OBJECT_ID",
     "cone_half_angle",
     "fpa_irradiance",
     "pixel_power",

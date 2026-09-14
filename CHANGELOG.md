@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Image-plane motion, synthesised rather than rendered** (roadmap M10.1b, §13.3/§9.2).
+  `irsim.optics.motion.image_plane_motion` computes the G-buffer's `motion_px` plane from rigid
+  per-object transforms and the camera pose instead of from a motion AOV — ADR 0014's addendum
+  measured that this build transports no motion at all (`motion_vectors` sits at a ~6e-5 floor
+  after a 180 px displacement; `Motion2d` returns nothing), which left `motion_px` empty and with
+  it everything that reads it: motion MTF and in-sim bolometer smear.
+- Computing it is *exact* for rigid bodies rather than approximate, so the tests are held to it: a
+  plane translating at 3 px/frame reports 3.0000 with **zero spread** across the frame, a static
+  scene reports exactly 0, and an object and camera moving together report exactly 0 — the last
+  being the case that catches the two transform pairs composed in the wrong order, which the other
+  two cannot see because the camera is identity in both.
+- **The background is treated as being at infinity**, so it does not translate with the camera,
+  only rotate. That is why a tracking mount takes smear off the target and puts it on the sky, and
+  it is now a computed quantity rather than an assertion: a yawing mount sweeps the sky by
+  f·tan(δ) to 0.1 %.
+
+### Added
 - **What a statistic measured on somebody else's clip is allowed to claim** (ME.2b, ADR 0023
   addendum). `irsim.validation.flat` chooses the windows -- `robust_noise_scale` (MAD of the first
   differences about their own median, so a gradient cancels and striping does not inflate it) is
