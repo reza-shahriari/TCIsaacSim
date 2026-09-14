@@ -1,5 +1,10 @@
 """Validation: Tier 2 benches (SITF, NETD, 3-D noise, MTF) and the NumPy-only metric functions.
 
+Also the Tier 4 reading layer that decides what a statistic measured on somebody else's clip is
+allowed to claim: :mod:`~irsim.validation.flat` chooses the windows (no horizon, no cloud, no
+target) and :mod:`~irsim.validation.codec` measures the floor the 8-bit, lossily-coded storage
+path puts under every one of them.
+
 docs/physics-model.md §15
 """
 
@@ -18,15 +23,37 @@ from irsim.validation.aerial_scene import (
     elevation_grid_rad,
 )
 from irsim.validation.bench import SitfResult, measured_netd_k, sitf
+from irsim.validation.codec import (
+    Blockiness,
+    CodecFloor,
+    FlaggedDecomposition,
+    blockiness,
+    codec_floor,
+    flag_codec_limited,
+    quantisation_floor,
+    quantiser_step,
+    sheppard_correct,
+)
+from irsim.validation.flat import (
+    FlatRegion,
+    TemporalNoise,
+    find_flat_regions,
+    representative_frame,
+    robust_noise_scale,
+    temporal_noise,
+    temporal_std_map,
+)
 from irsim.validation.mtf import SlantEdgeResult, slant_edge_mtf
 from irsim.validation.noise import (
     Decomposition3D,
     SpatialPSD,
+    TemporalShape,
     compare_psd,
     decompose_3d,
     estimate_floors,
     spatial_psd,
     temporal_psd,
+    temporal_shape,
 )
 
 __all__ = [
@@ -47,9 +74,27 @@ __all__ = [
     "sitf",
     "Decomposition3D",
     "SpatialPSD",
+    "TemporalShape",
     "compare_psd",
     "decompose_3d",
     "estimate_floors",
     "spatial_psd",
     "temporal_psd",
+    "temporal_shape",
+    "Blockiness",
+    "CodecFloor",
+    "FlaggedDecomposition",
+    "FlatRegion",
+    "TemporalNoise",
+    "blockiness",
+    "codec_floor",
+    "find_flat_regions",
+    "flag_codec_limited",
+    "quantisation_floor",
+    "quantiser_step",
+    "representative_frame",
+    "robust_noise_scale",
+    "sheppard_correct",
+    "temporal_noise",
+    "temporal_std_map",
 ]

@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **What a statistic measured on somebody else's clip is allowed to claim** (ME.2b, ADR 0023
+  addendum). `irsim.validation.flat` chooses the windows -- `robust_noise_scale` (MAD of the first
+  differences about their own median, so a gradient cancels and striping does not inflate it) is
+  the ruler, and flatness is scored against it rather than in DN, so the same thresholds work on a
+  clip whose recorder stretched 16 bits into 8 and on one that did not. Striped windows stay flat
+  on purpose: column noise is the thing being measured. A single-pixel target is caught by the
+  outlier rule alone -- in a 4x4 block average it is a quarter of the block noise -- and on a clip
+  the judgement runs on the temporal median, which deletes a moving target outright.
+- `irsim.validation.codec` -- the floor the storage path puts under every one of those windows.
+  The lattice step is read off the data, the floor is `step/sqrt(12)` (0.289 codes at 8 bits),
+  Sheppard's correction is applied *and reported as limited* within two floors of it, and
+  `flag_codec_limited` marks each of the seven 3-D components measurable or not. On a clip at
+  sigma_TVH = 1.5 codes only the temporal white term survives that test, which is the honest state
+  of the public sets.
+- `irsim.validation.temporal_shape` -- a flat sky's temporal spectrum is flat unless something
+  filtered it. Fits the sampled one-pole whose time constant in frames is exactly tau/dt and
+  recovers the 10 ms membrane at 60 Hz to 1 %; reports drift separately so a wandering clip does
+  not become a longer membrane.
+- `irsim_eval.transcode.h264_round_trip` -- puts a synthetic cube through libx264 to calibrate that
+  floor. Full-range flags are pinned so a CRF 0 round trip is bit-exact; at CRF 18, a *high
+  quality* setting, 95 % of the temporal noise of a Boson-ratio cube is gone and the 8-pixel
+  blocking score barely moves. Lossy sets give lower bounds, not measurements.
 - **An aircraft flying a low pass, filmed in LWIR** (ADR 0075). `scripts/render_aircraft_pass.py`
   flies a light business jet past a ground sensor at 150 m/s and films ten seconds of it in real
   time. The variable is **aspect**, not throttle: the exhaust nozzles are hidden behind their own

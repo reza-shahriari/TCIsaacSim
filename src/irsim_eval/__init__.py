@@ -22,6 +22,7 @@ from irsim_eval.manifest import (
     render_readme,
 )
 from irsim_eval.motion import StaticVerdict, classify_clip, cumulative_shifts, estimate_shift
+from irsim_eval.transcode import h264_round_trip
 
 __all__ = [
     "Box",
@@ -39,4 +40,5 @@ __all__ = [
     "manifest_path",
     "readme_path",
     "render_readme",
+    "h264_round_trip",
 ]

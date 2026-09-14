@@ -61,3 +61,63 @@ and are reported beside the estimate, never subtracted silently.
 Real-data decompositions show non-Gaussian striping (heavy tails) where a variance-based estimator
 misleads, or the GPU comparison needs per-component confidence intervals — then bootstrap CIs join
 the estimator.
+
+## Addendum (ME.2b, 2026-09-14): the codec floor, the flat-region gate, and the temporal shape
+
+The decision above stands unchanged. What ME.2b adds is the half this ADR deferred: *where* a
+statistic may be measured on somebody else's clip, and *how much of the answer is the storage
+path's*. The numbers below are measured, not quoted, all on `irsim.noise`'s own synthesiser so the
+truth is known exactly.
+
+**The floor is `step/sqrt(12)` = 0.289 codes at 8 bits, and the lattice step is measured.** A
+recorder that mapped a Y16 stream onto a narrow 8-bit range leaves the codes on a coarser lattice,
+so `quantiser_step` reads it off the data (the largest step nearly every sample shares a residue
+with) rather than assuming one. Sheppard's correction — subtract `step^2/12` from the variance —
+recovers a known sigma to 0.5 % at 0.5 codes and to 3.5 % at 0.3 codes, and collapses below that
+(at 0.2 codes it under-reads by 50 %: the information is gone, not merely biased).
+
+**A component within `margin = 2` floors is reported as codec-limited, not measured**, whether or
+not the correction happens to land. The consequence is blunt and is the point: on a clip at
+sigma_TVH = 1.5 codes — a plausible stretch for a Y16 stream in 8 bits — *every* other Boson
+component sits inside two floors, so the striping ratios this project cares about cannot be read
+off it at all. Four times noisier and sigma_H, sigma_VH and sigma_TVH come back. `flag_codec_limited`
+attaches the flag and the corrected value to each of the seven components, keeping this ADR's rule
+that a bias is reported beside the estimate and never silently subtracted.
+
+**Lossy coding removes noise; it does not usually make it blocky.** Through x264 (full-range flags
+pinned so a CRF 0 round trip is bit-exact, otherwise the harness itself costs a code), a 320x256x60
+cube of Boson-ratio noise at sigma_TVH = 1.5 codes loses 95 % of its temporal noise at **CRF 18** —
+a high-quality setting — and becomes a constant image at CRF 23; a 2000 kbit/s CBR stream keeps
+75 %, 800 kbit/s keeps 57 %. Meanwhile the 8-pixel blocking z-score reaches only 3.4 at CRF 18 and
+nothing at all at 800 kbit/s. So blockiness is reported as an indicator and is **not** the test: the
+defensible statement about a lossy set is that its noise statistic is a *lower bound*, and ME.5/ME.6
+must carry it as one. (Anti-UAV410 and CST are already excluded from `noise_3d` in the index for
+this reason; this quantifies what that exclusion is worth.)
+
+**The blocking null is built from gap positions, not pixels.** A fixed column pattern makes some
+columns noisier than others in every frame alike, so a pixel-count error bar is far too tight and
+reads blocking where there is none (uncoded Boson-ratio cubes land at |z| ~ 3 that way, and at
+|z| <= 2 on the per-gap null).
+
+**Flatness is judged against the window's own noise, never in DN.** `robust_noise_scale` is the
+ruler: the MAD of the first differences *about their own median*, which cancels a linear gradient
+exactly, taking the smaller of the two axis estimates so that striping (which enters one axis only)
+does not inflate it. A window is then scored on the peak-to-peak of a fitted plane and on the
+standard deviation of the de-ramped residual after block averaging, with the white contribution
+removed in quadrature. Two consequences are deliberate: **striped windows stay flat** (a finder that
+rejected them would make column noise unmeasurable by construction), and **a single-pixel target is
+caught only by the outlier rule** — averaged into a 4x4 block it is a quarter of the block noise, so
+a variance-based finder waves it through. On a clip the judgement runs on the per-pixel temporal
+median, which deletes a moving target outright.
+
+**Temporal shape.** A flat sky's temporal spectrum is flat unless something filtered it, so
+`temporal_shape` reports the low-over-high band ratio against a null built from the bins' own
+scatter, and fits the sampled one-pole response whose time constant in frames is exactly `tau/dt`.
+It recovers the 10 ms membrane at 60 Hz (0.6 frames) to 1 % from a 256-frame cube and separates
+white from a 0.3-frame filter at 28 sigma. Two details are load-bearing: **DC and Nyquist are
+dropped**, because `temporal_psd`'s one-sided convention leaves the Nyquist bin at half the weight
+of its neighbours and keeping it makes white noise read 2 % low-pass — five times the null; and the
+fit starts above `f_fit_min` so a drift does not become a time constant. That defence is partial and
+its cost is stated rather than hidden: a linear ramp of one noise sigma across the clip costs 1.4 %
+on tau and one of five sigma costs 28 %, while `drift_fraction` moves 0.14 → 0.23 → 0.75, so the
+report says "this clip drifted" instead of claiming a longer membrane.

@@ -28,6 +28,14 @@ lines where column and row noise concentrate; ``temporal_psd`` is the pixel-aver
 periodogram along t. ``compare_psd`` returns the maximum ratio of two radial profiles above DC,
 the Tier 4(c) "within a factor of 2" statistic.
 
+**Temporal shape** (ME.2b). White temporal noise has a flat ``temporal_psd``; a first-order filter
+anywhere in the camera -- the bolometer membrane, an in-camera temporal noise filter, or a codec's
+inter-frame prediction -- tilts it. ``temporal_shape`` reports the low-over-high band ratio against
+its own null and fits the sampled one-pole response, whose time constant in frames is exactly
+tau/dt (the IIR blend alpha = 1 - exp(-dt/tau) makes the AR coefficient exp(-dt/tau)). On a flat
+sky region this is the fingerprint that says the clip's per-pixel temporal sigma is not
+independent frame to frame, which every NETD-like number read off it depends on.
+
 docs/physics-model.md §10.2 [R28], §10.3, §15
 """
 
@@ -45,6 +53,8 @@ __all__ = [
     "SpatialPSD",
     "spatial_psd",
     "temporal_psd",
+    "TemporalShape",
+    "temporal_shape",
     "compare_psd",
     "RATIO_ORDER",
 ]
@@ -264,3 +274,116 @@ def estimate_floors(shape: tuple[int, int, int], sigmas: tuple[float, ...]) -> d
                 expected_ms_over_d += sig2[x] / div
         out[y] = float(np.sqrt(2.0 / df) * expected_ms_over_d)
     return out
+
+
+@dataclass(frozen=True)
+class TemporalShape:
+    """Shape of a clip's temporal spectrum: how far it departs from white, and in what direction.
+
+    ``tau_frames`` is meaningful only when ``white_consistent`` is False -- the fit floor on a
+    256-frame cube is about 0.09 frames, so a white cube returns a small positive number, not
+    zero. Read the flag first, then the time constant.
+    """
+
+    frequencies: NDArray[np.float64]
+    power: NDArray[np.float64]
+    low_over_high: float
+    null_sigma: float
+    z: float
+    white_consistent: bool
+    tau_frames: float
+    tau_s: float | None
+    drift_fraction: float
+
+
+def _one_pole(frequency: NDArray[np.float64], a: float) -> NDArray[np.float64]:
+    """|H(f)|^2 of y_n = a y_{n-1} + (1-a) x_n, sampled, normalised to 1 at DC."""
+    return np.asarray(
+        (1.0 - a) ** 2 / (1.0 - 2.0 * a * np.cos(2.0 * np.pi * frequency) + a * a),
+        dtype=np.float64,
+    )
+
+
+def _fit_one_pole(
+    frequency: NDArray[np.float64], power: NDArray[np.float64], grid: NDArray[np.float64]
+) -> float:
+    """Least squares in log power over a grid of tau in frames; the amplitude is analytic."""
+    log_power = np.log(power)
+    best_residual, best_tau = np.inf, 0.0
+    for tau in grid:
+        a = 0.0 if tau <= 0.0 else float(np.exp(-1.0 / tau))
+        model = np.log(_one_pole(frequency, a))
+        residual = float(np.sum((log_power - model - (log_power - model).mean()) ** 2))
+        if residual < best_residual:
+            best_residual, best_tau = residual, float(tau)
+    return best_tau
+
+
+def temporal_shape(
+    cube: object,
+    *,
+    dt_s: float | None = None,
+    f_low: float = 0.1,
+    f_high: float = 0.4,
+    f_fit_min: float = 0.05,
+    z_threshold: float = 3.0,
+) -> TemporalShape:
+    """Is a clip's temporal noise white, and if not, what one-pole filter would explain it?
+
+    ``low_over_high`` is the mean power below ``f_low`` over the mean above ``f_high``, both in
+    cycles per frame; its null standard deviation comes from the scatter of the bins themselves
+    rather than from a white-noise assumption, so spatial correlation and a non-flat spectrum
+    inflate the error bar honestly instead of being read as significance.
+
+    **DC and Nyquist are dropped.** ``temporal_psd`` is one-sided, which leaves the Nyquist bin
+    carrying half the weight of its neighbours; keeping it makes white noise read 2 % low-pass,
+    which is larger than the null and would flag every clip. The fit also drops everything below
+    ``f_fit_min``, where a slow drift lives -- ``drift_fraction`` reports how much power that is,
+    so a drifting clip is visible rather than absorbed into a wrong time constant. White noise sits
+    at ``f_fit_min / 0.5`` (0.1 by default) and a filtered clip a little above it; what matters is
+    the excess.
+
+    Pass ``dt_s`` (the frame interval) to get ``tau_s`` in seconds as well.
+    """
+    frequency, power = temporal_psd(cube)
+    n_frames = np.asarray(cube).shape[0]
+    keep = np.ones(frequency.size, dtype=bool)
+    keep[0] = False
+    if n_frames % 2 == 0:
+        keep[-1] = False
+    frequency, power = frequency[keep], power[keep]
+    if not np.all(power > 0.0):
+        raise ValueError("temporal spectrum has empty bins; the clip has no temporal variation")
+    if not 0.0 < f_low <= f_high < 0.5:
+        raise ValueError(f"need 0 < f_low <= f_high < 0.5, got {f_low} and {f_high}")
+
+    low, high = power[frequency < f_low], power[frequency >= f_high]
+    if low.size < 2 or high.size < 2:
+        raise ValueError(
+            f"{n_frames} frames give too few bins below {f_low} or above {f_high} cycles/frame; "
+            "a shape statistic needs a longer clip"
+        )
+    ratio = float(low.mean() / high.mean())
+    null_sigma = float(
+        ratio
+        * np.hypot(
+            low.std(ddof=1) / np.sqrt(low.size) / low.mean(),
+            high.std(ddof=1) / np.sqrt(high.size) / high.mean(),
+        )
+    )
+    z = (ratio - 1.0) / null_sigma if null_sigma > 0.0 else float("inf")
+
+    fit_band = frequency >= f_fit_min
+    grid = np.concatenate([[0.0], np.geomspace(0.02, 100.0, 400)])
+    tau_frames = _fit_one_pole(frequency[fit_band], power[fit_band], grid)
+    return TemporalShape(
+        frequencies=frequency,
+        power=power,
+        low_over_high=ratio,
+        null_sigma=null_sigma,
+        z=float(z),
+        white_consistent=bool(abs(z) < z_threshold),
+        tau_frames=tau_frames,
+        tau_s=None if dt_s is None else float(tau_frames * dt_s),
+        drift_fraction=float(power[~fit_band].sum() / power.sum()),
+    )
