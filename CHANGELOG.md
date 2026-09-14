@@ -43,6 +43,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The cold shield, and a cooled MWIR camera to need it** (M11.5, ADR 0066, §9.1, spec issue S31).
+  `configs/sensors/example_mwir_insb_640.yaml` is the third configured band and the first camera with
+  `cold_shield_efficiency < 1`. `irsim.detector.cold_shield` supplies the equation §9.1 asks for and
+  does not give: `Ω_admit = min(π, Ω_lens/η_cs)`, `Φ_bg = A_d (Ω_admit − Ω_lens) L_B(T_housing)`.
+- **`optics.cold_shield_efficiency` has been in the schema since M0.9 and nothing read it** — the same
+  shape as ADR 0077's and ADR 0082's findings, closed here while a cooled camera was being added
+  rather than after one had been shipped without it.
+- Three properties asserted rather than argued: η_cs = 1 admits **exactly** 0.0 (a residue would put a
+  spurious Poisson term into every well-shielded camera's budget); Ω_admit is capped at the
+  **projected** hemisphere π, not 2π, because a pixel on a plane cannot receive from behind itself;
+  and at η_cs = 0 the scene cone and the background together close the isothermal-enclosure identity
+  `A_d·π·L_B(T)`, which only holds *because* the cap is π.
+- **τ_opt does not multiply the background, and the signature is the assertion** — `background_power`
+  has no transmittance argument. The flux reaches the pixel without going through the lens, which is
+  exactly what separates it from §8.2's self-emission `A_d Ω_lens (1−τ) L_B`, the lens glowing
+  *inside* the scene cone. The two add; folding one into the other looks right at η_cs = 1 and is
+  wrong everywhere else.
+- **What a mismatch costs is the offset's shot noise, not the offset** — NUC removes offsets. So
+  `NETD(η)/NETD(1) = √((N_signal + N_bg)/N_signal)`, held to **1e-9** against `predict_netd_k` with
+  σ_gaussian = 0 to isolate the shot term, and separately checked to rise monotonically with the
+  camera's real 350 e⁻ read noise. For the InSb example at 300 K (N_signal = 2.49e6 e⁻, 29 % of well):
+  η_cs = 0.95 costs 3 %, **η_cs = 0.90 costs 6 %**, η_cs = 0.50 costs 48 %, and at **η_cs = 0.20 the
+  dewar alone fills 138 % of the well** — the camera saturates on its own structure before it sees the
+  scene. That is why cold-shield matching is a manufacturing specification and not a tuning knob.
+- Every uncooled camera in the repository has η_cs = 1.0, so the term is identically zero for them and
+  **no golden moves**. `scripts/generate_response_curves.py` now generates both `ingaas.csv` (byte-identical
+  to the committed file) and the new `insb.csv`, so the reasoning behind each cut-on and cut-off — a
+  substrate edge, a cold filter, an alloy band gap — lives in one place instead of in a header (21 tests).
 - **Night illumination — airglow and a first-order moon** (M11.4, ADR 0065, §5.5). `irsim.radiometry.night`
   and `irsim.pipeline.night` produce the M11.2 bundle's `l_night` plane,
   `[E_airglow · c(cloud) · v(t) + E_moon · Φ(phase) · sin(el) · τ] / π`. `SolarSpectrum` and

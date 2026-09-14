@@ -1,0 +1,94 @@
+# Generic 640x512 cooled InSb MWIR camera (mixed regime).
+# The third configured band, and the only one that sits on both sides of the solar/thermal
+# crossover at 4.14 um (M11.3): it sees reflected sunlight AND the scene's own emission.
+# Schema: docs/physics-model.md §12.2, §12.1 MWIR row. Roadmap M11.5.
+#
+# Nothing here is a measurement of a specific unit. Every ESTIMATED value is a typical figure from
+# the class of 640x512 15 um cooled InSb cores (FLIR X6900sc, Telops, IRCameras and similar);
+# replace them before relying on results.
+
+sensor:
+  name: example_mwir_insb_640
+  band:
+    lambda_min_um: 3.0
+    lambda_max_um: 5.0
+    spectral_response: spectra/responses/insb.csv   # relative to data/; ESTIMATED (M11.5)
+    regime: mixed                                # emissive | reflective | mixed
+
+  optics:
+    f_number: 2.0                                # ESTIMATED -- F/2 is the usual cooled MWIR lens
+    focal_length_mm: 50.0                        # 11.0 deg HFOV on a 640 x 15 um array
+    transmittance: 0.85                          # ESTIMATED (silicon/germanium train, AR for MWIR)
+    housing_temp_mode: ambient                   # fixed | ambient | coupled
+    housing_self_heating_k: 3.0                  # ESTIMATED -- cooler waste heat into the body
+    cold_shield_efficiency: 0.90                 # ESTIMATED. THE trade-study knob of §9.1: the
+                                                 # cold stop, not the lens, sets the f-number for
+                                                 # background flux, and a mismatch lets the pixel
+                                                 # see warm structure. 1.0 is a perfectly matched
+                                                 # shield and costs nothing; 0.90 is a good real
+                                                 # dewar (ADR 0066)
+    distortion:
+      model: brown_conrady
+      coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]          # ESTIMATED -- calibrate
+    vignetting_cos4: true
+
+  fpa:
+    type: photon
+    width: 640
+    height: 512
+    pitch_um: 15.0
+    fill_factor: 0.95                            # ESTIMATED -- a hybridised array fills well
+    frame_rate_hz: 60
+    bit_depth: 14
+    quantum_efficiency: 0.80                     # ESTIMATED -- InSb plateau QE
+    well_capacity_e: 8.5e6                       # ESTIMATED -- high-gain full well
+    integration_time_ms: 2.0                     # short: a 300 K scene fills the well fast in MWIR
+    dark_current_model: arrhenius
+    read_noise_e: 350.0                          # ESTIMATED -- large-well ROIC
+    fpa_temp_mode: fixed                         # cryocooler-pinned, not ambient-coupled
+    fpa_temp_k: 77.0                             # liquid-nitrogen-equivalent set point
+    dark_current:
+      i_ref_a_per_pixel: 1.0e-17                 # ESTIMATED -- negligible at 77 K, and that is
+                                                 # the whole reason the detector is cooled
+      t_ref_k: 77.0
+      band_gap_ev: 0.23                          # InSb at 77 K
+
+  noise:
+    netd_mk_at_300k: 20.0                        # ESTIMATED -- cooled MWIR is 5-25 mK. Unlike the
+                                                 # SWIR file this IS meaningful: a 300 K scene
+                                                 # genuinely emits in 3-5 um (§12.1 "mixed")
+    ratios_3d:                                   # relative to sigma_TVH; ESTIMATED
+      tvh: 1.00
+      vh:  0.20
+      h:   0.08
+      v:   0.05
+      tv:  0.04
+      th:  0.04
+      t:   0.02
+    fpn_drift_tau_s: 600.0                       # ESTIMATED -- a cold FPA drifts slowly
+    bad_pixel_fraction: 0.0010                   # ESTIMATED
+    bad_pixel_cluster_lambda: 1.5
+
+  nuc:
+    mode: shuttered
+    ffc_interval_s: 300
+    ffc_freeze_ms: 500
+    residual_gain_ppm_per_k: 500                 # ESTIMATED -- better than uncooled
+    residual_offset_mk_per_k: 20                 # ESTIMATED
+
+  isp:
+    agc: plateau_equalization
+    plateau: 0.012
+    clip_percentiles: [0.005, 0.995]
+    gamma: 1.0
+    dde_gain: 0.35
+    polarity: white_hot
+    palette: gray
+
+  outputs:
+    radiance_linear: true
+    apparent_temperature: true                   # meaningful here, unlike SWIR: at 300 K the
+                                                 # in-band signal is mostly self-emission, and
+                                                 # only in full sun does reflection compete
+    dn_16: true
+    display_8: true

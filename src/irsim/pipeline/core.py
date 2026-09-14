@@ -24,6 +24,7 @@ from irsim.config.loader import load_sensor_config
 from irsim.config.sensor import SensorConfig
 from irsim.detector.anchor import anchor_noise
 from irsim.detector.bolometer import MicrobolometerDetector
+from irsim.detector.cold_shield import background_electrons
 from irsim.detector.params import BolometerParams, FpaParams, PhotonParams, fpa_params_from_config
 from irsim.detector.photon import PhotonDetector
 from irsim.detector.response import Detector
@@ -151,7 +152,20 @@ class PipelineConfig:
             fixed = sensor.sensor.optics.housing_temp_k
             t_housing_cal_k = fixed if fixed is not None else 300.0
         calibration = None
-        budget = anchor_noise(sensor.sensor, lut)
+        # §9.1's cold shield (M11.5, ADR 0066): a mismatched shield opens a wider cone than the
+        # lens fills, and the difference is warm dewar structure. Exactly zero at eta_cs = 1, so
+        # every uncooled camera in this repository is unaffected -- and it is the *shot noise* of
+        # this offset that costs NETD, not the offset itself, which NUC removes.
+        background = 0.0
+        eta_cs = sensor.sensor.optics.cold_shield_efficiency
+        if isinstance(fpa, PhotonParams) and eta_cs < 1.0:
+            background = background_electrons(
+                float(lut.lookup(np.float64(t_housing_cal_k), "lb_q")[()]),
+                fpa,
+                sensor.sensor.optics.f_number,
+                eta_cs,
+            )
+        budget = anchor_noise(sensor.sensor, lut, background_electrons=background)
         detector: Detector
         if isinstance(fpa, BolometerParams):
             calibration = RadiometricCalibration.from_scene_range(
