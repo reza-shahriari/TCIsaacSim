@@ -70,6 +70,12 @@ parser.add_argument(
     action="store_true",
     help="skip the camera's flat-field correction, so cos^4 vignetting shows (ME.8 ablation)",
 )
+parser.add_argument(
+    "--cloud-seed",
+    type=int,
+    default=None,
+    help="structured cloud in BOTH bands, from the shared weather's cloud fraction (ADR 0076)",
+)
 parser.add_argument("--no-overlay", action="store_true", help="no burnt-in readout")
 parser.add_argument("--keep-frames", action="store_true", help="keep the PNG sequence")
 args = parser.parse_args()
@@ -86,6 +92,7 @@ def main() -> int:
     import omni.usd
     from pxr import Gf, UsdGeom
 
+    from irsim.atmosphere.cloud import generate_sky_cloud
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
@@ -133,9 +140,22 @@ def main() -> int:
         f"({'real time' if abs(args.interval_s * args.fps - 1.0) < 1e-6 else 'not real time'})"
     )
 
+    # One field, both bands: the infrared background samples it per ray and the dome bakes the
+    # same object into its texture, so the pair cannot show cloud in different parts of the sky.
+    cloud = None
+    if args.cloud_seed is not None and scene.environment is not None:
+        cloud = generate_sky_cloud(
+            scene.environment.clouds.beta,
+            float(scene.weather.at(scene.t0_s).cloud_fraction),
+            int(args.cloud_seed),
+        )
+        print(
+            f"cloud: seed {args.cloud_seed}, covering {cloud.fraction:.1%} of the sky "
+            f"at beta = {cloud.beta} (from the shared weather)"
+        )
     dome = None
     if not args.no_dome:
-        dome = dome_spec_from_scene(scene, heading_deg=args.heading_deg)
+        dome = dome_spec_from_scene(scene, cloud=cloud, heading_deg=args.heading_deg)
         print(
             f"environment: sun {dome.sun_elevation_deg:.1f} deg elevation, "
             f"{dome.sun_azimuth_deg - args.heading_deg:+.1f} deg off boresight, "
@@ -197,6 +217,7 @@ def main() -> int:
         camera_path=stage.camera_path,
         capture_rgb=args.rgb,
         strict_materials=False,
+        cloud_seed=args.cloud_seed,
         frame_period_s=args.interval_s,
     ).open(settle_frames=args.settle)
 

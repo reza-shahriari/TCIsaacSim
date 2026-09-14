@@ -48,7 +48,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from irsim.atmosphere.cloud import SkyFixedCloud, generate_sky_cloud
+from irsim.atmosphere.cloud import SkyFixedCloud, generate_sky_cloud, sky_angles
 from irsim.atmosphere.sky import SkyModel
 from irsim.pipeline.environment import ground_temperature_k
 from irsim.scene import Scene
@@ -93,25 +93,13 @@ def azimuth_from_rays(
 ) -> NDArray[np.float64]:
     """Azimuth of each ray about ``up``, radians in [0, 2pi), measured from ``forward``.
 
-    Only a *stable* azimuth is needed -- the cloud field is sampled by it, so what matters is that
-    the same world direction gives the same angle from frame to frame however the camera is
-    pointed, not that zero lands on any particular compass bearing.
+    Delegates to :func:`irsim.atmosphere.cloud.sky_angles` so that this and the visible dome
+    (which bakes the same cloud field into a texture) cannot drift apart on a convention.
     """
     d = np.asarray(ray_dirs, dtype=np.float64)
     if d.ndim != 3 or d.shape[2] != 3:
         raise ValueError(f"ray_dirs must be (H, W, 3), got {d.shape}")
-    u = np.asarray(up, dtype=np.float64).reshape(3)
-    u = u / np.linalg.norm(u)
-    f = np.asarray(forward, dtype=np.float64).reshape(3)
-    f = f - np.dot(f, u) * u
-    norm = float(np.linalg.norm(f))
-    if norm == 0.0:
-        raise ValueError("forward must not be parallel to up")
-    f = f / norm
-    right = np.cross(f, u)
-    return np.asarray(
-        np.mod(np.arctan2(np.sum(d * right, axis=2), np.sum(d * f, axis=2)), 2 * np.pi)
-    )
+    return sky_angles(d, up, forward)[1]
 
 
 def elevation_from_rays(ray_dirs: Any, up: Any = (0.0, 1.0, 0.0)) -> NDArray[np.float64]:

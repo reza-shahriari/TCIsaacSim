@@ -22,6 +22,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   horizontal stripes, which is worse than no cloud because it looks like a deliberate atmospheric
   layer. A caller without azimuth gets the uniform blend — less detailed, not wrong.
 
+- **The visible dome samples the same field**, through the same `sky_angles` convention — not a
+  second cloud that looks similar, the same object, so the two halves of a frame pair cannot drift.
+  Whether a cloud base reads brighter or darker than the sky beside it is left to the arithmetic:
+  at the midday scene's 61° sun it comes out at ~15 900 cd/m² against a ~10 800 cd/m² sky, i.e.
+  brighter, as a sunlit cumulus is. It need not agree with the infrared, where a cloud base is
+  always the warmer feature — that divergence between bands is a real discriminator, not an
+  artefact.
+- The **continuous field is stored and thresholded after interpolation**, rather than a boolean
+  mask being stored and sampled. A grid cell is 0.5° and a Boson pixel is 0.049°, so sampling a
+  mask nearest-neighbour gave cloud edges that were ten-pixel rectangular steps — which is what
+  the first render looked like, and not cosmetic, since edge sharpness is what a detector keys on.
+  The threshold is estimated on a 2× upsampling because cutting it on the grid covers ~25 % less
+  of a densely sampled sky, a bias that is *flat* across grid resolutions (a 1/fᵝ field is
+  scale-invariant, so bilinear averaging smooths it equally at every scale). Residual: 8 % at
+  c = 0.05, under 3 % by c = 0.2, against an input quantised in oktas.
+- `--cloud-seed` on both flight scripts turns it on in **both bands** at once.
+
 ### Changed
 - **Correction to ADR 0073.** It recorded the infrared background as "the clear-sky profile only".
   That overstated the gap: `SkyModel.radiance` has always applied the uniform blend

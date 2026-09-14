@@ -47,7 +47,24 @@ no azimuth therefore gets the uniform blend, which is merely less detailed rathe
 moved every committed background by a few kelvin with no commit saying so; without a seed the
 background is bit-identical to what it was.
 
-**4. Grid geometry.** Equirectangular in (elevation, azimuth), which stretches structure
+**4. Storing the mask, or the field.** Store the **field** and threshold after interpolating
+(chosen). A grid cell is half a degree and a Boson pixel is 0.049, so sampling a stored boolean
+mask nearest-neighbour gives cloud edges that are ten-pixel rectangular steps. That is what the
+first render looked like, and it is not cosmetic: edge sharpness is precisely what a detector keys
+on, so a blocky edge trains on the wrong thing.
+
+Interpolating brings a bias worth recording. `generate_cloud_field` cuts the mask at the level
+covering exactly *c* of the grid **cells**; sampling between cells averages neighbours, pulling
+values toward the mean, so that same level covers about **25 % less** of a densely sampled sky. It
+does not improve with a finer grid -- measured flat from 0.5° to 0.083° per cell -- because a
+1/f^β field is scale-invariant and bilinear averaging smooths it by the same relative amount at
+every scale. The threshold is therefore estimated on a 2× upsampling, which contains both the
+unsmoothed cell centres and the most-smoothed diagonal midpoints. That leaves a residual largest
+deep in the tail: **8 % at c = 0.05, under 3 % by c = 0.2**. Cloud fraction arrives from a weather
+file in oktas — eighths — so the residual is an order of magnitude inside the precision of the
+number being matched, and tightening it would be fitting to a figure that was never that sharp.
+
+**5. Grid geometry.** Equirectangular in (elevation, azimuth), which stretches structure
 azimuthally toward the zenith — a row spans 360° at every elevation. For a sky-target sensor at
 low to moderate elevation the distortion is small. Generating on the sphere is the right fix and is
 not done here.
@@ -73,7 +90,7 @@ drifted from it, the same sky would have been two different skies depending on w
 asked. The residual is not error but clumping: coverage correlates with elevation, and the clear
 radiance varies with it, so which elevations a realisation happens to cover moves the mean slightly.
 
-**Coverage is exact over the sky, not over a frame.** A camera pointed at a gap sees no cloud and
+**Coverage is exact over the sky, not over a frame** (to the tail residual above). A camera pointed at a gap sees no cloud and
 one pointed at a bank sees only cloud — measured, one elevation ring came out at 0.0195 against a
 whole-sky 0.0500. That is the behaviour that makes cloud a clutter source rather than a texture,
 and it means no single frame can be used to check the cloud fraction.

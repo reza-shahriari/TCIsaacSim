@@ -33,9 +33,12 @@ traceable to a radiometric unit; no part of the sensor chain reads it. Nothing i
 
 Two known absences, both deliberate, both so the pair does not lie to the reader:
 
-* **No cloud.** The infrared background in :class:`~irsim_isaac.pipeline.aerial_bridge` is the
-  clear-sky profile only -- MS.3's cloud field is not wired into it. Painting cloud on the visible
-  dome would show a sky the infrared frame does not have.
+* **Cloud, when the scene has a field.** ADR 0073 originally left cloud off for a good reason --
+  the infrared background did not have it, and a pair that disagrees is worse than a pair that is
+  plain. ADR 0076 put the structured field into the infrared background, so the reason expired and
+  the dome now samples **the same** :class:`~irsim.atmosphere.cloud.SkyFixedCloud`, through the
+  same :func:`~irsim.atmosphere.cloud.sky_angles` convention. Not a second cloud that looks
+  similar: the same object, so the two halves of a frame pair cannot drift.
 * **No sun disc.** The disc is a ``UsdLux.DistantLight`` at the same NOAA direction, so that it
   casts shadows. Preetham's distribution carries the aureole around the sun but not the disc
   itself, so the two do not double-count.
@@ -54,6 +57,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.atmosphere.cloud import SkyFixedCloud, sky_angles
 from irsim.scene import Scene
 from irsim.thermal.solar import sun_position_utc
 
@@ -191,6 +195,14 @@ class DomeSpec:
     visibility_m: float = 23000.0
     ground_albedo: tuple[float, float, float] = (0.16, 0.17, 0.12)
     camera_height_m: float = 2.0
+    #: The scene's cloud field, shared with the infrared background (ADR 0076). ``None`` leaves
+    #: the dome clear, which is what it was before and what a clear-sky scene wants anyway.
+    cloud: SkyFixedCloud | None = None
+    #: Effective reflectance of a cloud **base**, which is the side a ground sensor sees. Not the
+    #: 0.7-0.9 of a sunlit cloud top: a base is lit by light that has already been through the
+    #: cloud, and whether it ends up brighter or darker than the sky beside it is left to the
+    #: arithmetic rather than asserted here. ESTIMATED.
+    cloud_base_albedo: float = 0.55
 
     def sun_zenith_rad(self) -> float:
         return math.radians(90.0 - self.sun_elevation_deg)
@@ -395,10 +407,48 @@ def environment_map(spec: DomeSpec, height: int = 512) -> NDArray[np.float32]:
     scale = _twilight_scale(spec.sun_elevation_deg)
     image = xyy_to_linear_rgb(luminance * scale, cx, cy)
 
+    if spec.cloud is not None:
+        elevation, azimuth = sky_angles(direction)
+        above = up > 0.0
+        covered = np.zeros(up.shape, dtype=bool)
+        covered[above] = spec.cloud.sample(elevation[above], azimuth[above])
+        if covered.any():
+            image[covered] = _cloud_base(spec, image[covered], scale)
+
     below = up < 0.0
     if below.any():
         image[below] = _terrain(spec, -up[below], image[below], scale)
     return np.ascontiguousarray(image, dtype=np.float32)
+
+
+def _cloud_base(
+    spec: DomeSpec, sky_behind: NDArray[np.float64], scale: float
+) -> NDArray[np.float64]:
+    """A Lambertian cloud base under the downwelling irradiance, blended by the cloud's opacity.
+
+    The same shape as :func:`_terrain` and for the same reason: a surface of stated reflectance
+    lit by the irradiance the shared weather already reports, rather than a colour chosen to look
+    like cloud. Neutral grey, because cloud droplets scatter without much spectral preference --
+    which is itself the visible signature, since the sky behind is strongly blue.
+
+    Whether the base comes out brighter or darker than the sky beside it is **not** asserted here;
+    it falls out of the irradiance and the reflectance, and it goes both ways. Measured on the
+    midday scene -- a 61 degree sun, 820 W/m2 of downwelling -- the base is about 15 900 cd/m2
+    against a 10 800 cd/m2 sky, so it is *brighter*, which is what a sunlit cumulus against a blue
+    zenith looks like. At a low sun, or under a base thick enough to cut the transmitted light,
+    the same expression makes it darker.
+
+    None of which need agree with the infrared. In LWIR a cloud base is always *warmer* than a
+    cold clear zenith and therefore always the brighter feature; in the visible it depends on the
+    hour. A frame pair where cloud is bright in one band and dark in the other is not a bug, and
+    that divergence is a real discriminator rather than an artefact.
+    """
+    irradiance = max(
+        spec.dni_w_m2 * math.sin(math.radians(max(spec.sun_elevation_deg, 0.0))) + spec.dhi_w_m2,
+        0.0,
+    )
+    base = spec.cloud_base_albedo * irradiance / math.pi * LUMINOUS_EFFICACY_DAYLIGHT_LM_W * scale
+    return np.asarray(np.full_like(sky_behind, base))
 
 
 def _terrain(
@@ -440,6 +490,7 @@ def dome_spec_from_scene(
     heading_deg: float = 0.0,
     camera_height_m: float = 2.0,
     ground_albedo: tuple[float, float, float] | None = None,
+    cloud: SkyFixedCloud | None = None,
 ) -> DomeSpec:
     """Read the dome's inputs off the scene, so the visible frame cannot describe a different day.
 
@@ -464,6 +515,7 @@ def dome_spec_from_scene(
         dhi_w_m2=weather.dhi_w_m2,
         visibility_m=weather.visibility_m,
         camera_height_m=float(camera_height_m),
+        cloud=cloud,
     )
     return spec if ground_albedo is None else replace(spec, ground_albedo=ground_albedo)
 

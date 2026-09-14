@@ -306,7 +306,8 @@ class IrCamera:
     and the thermal solvers all run on the same time base as a real 60 Hz core would.
     ``frame_period_s`` overrides that period, which turns the object into a time-lapse camera
     (ADR 0074) -- one capture every N seconds of scene time, with every stage told the truth about
-    how much time passed.
+    how much time passed. ``cloud_seed`` puts structured cloud into the background (ADR 0076);
+    pass the same seed to the visible dome and the two bands show the same sky.
     """
 
     def __init__(
@@ -326,6 +327,7 @@ class IrCamera:
         debug_unmapped: bool = True,
         strict_materials: bool = True,
         frame_period_s: float | None = None,
+        cloud_seed: int | None = None,
         device: str = "cpu",
     ) -> None:
         band = sensor.sensor.band.band_id
@@ -363,7 +365,9 @@ class IrCamera:
                 "them (MS.6, ADR 0071)"
             )
         self.state = PipelineState(t_s=scene.t0_s)
-        self.bridge = AerialThermalBridge(scene, prim_to_target, band=band)
+        # `cloud_seed` puts MS.3's structured cloud into the background (ADR 0076). Without one
+        # the background is the uniform blend it has always been, bit for bit.
+        self.bridge = AerialThermalBridge(scene, prim_to_target, band=band, cloud_seed=cloud_seed)
         # How much scene time one capture costs. The sensor's own frame rate by default; an
         # override makes this a **time-lapse camera** -- one frame every N seconds -- which is the
         # honest way to film a process slower than the video that shows it. It is not a speed-up

@@ -35,6 +35,7 @@ __all__ = [
     "ESPY_M_PER_K",
     "SkyFixedCloud",
     "generate_sky_cloud",
+    "sky_angles",
     "lifting_condensation_level_m",
     "cloud_base_temperature_k",
     "CloudField",
@@ -151,6 +152,41 @@ def cloud_radiance(
     return np.asarray(np.where(cov, cloudy, clear), dtype=np.float64)
 
 
+def sky_angles(
+    direction: Any,
+    up: Any = (0.0, 1.0, 0.0),
+    forward: Any = (0.0, 0.0, -1.0),
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """``(elevation, azimuth)`` in radians for ``(..., 3)`` unit directions in stage axes.
+
+    The one definition of these two angles, because **two consumers have to agree exactly**: the
+    infrared background samples the cloud field along each pixel's ray, and the visible dome bakes
+    the same field into a texture. If their conventions differed by so much as a sign the two
+    halves of one frame pair would show cloud in different parts of the sky, each internally
+    consistent and plausible.
+
+    Elevation is measured from the horizon toward ``up``; azimuth runs from ``forward`` toward
+    ``cross(forward, up)`` and wraps into [0, 2pi). Only stability matters for the sampling -- the
+    same world direction must give the same pair every time -- not that zero lands on any
+    particular bearing.
+    """
+    d = np.asarray(direction, dtype=np.float64)
+    if d.shape[-1] != 3:
+        raise ValueError(f"directions must be (..., 3), got {d.shape}")
+    u = np.asarray(up, dtype=np.float64).reshape(3)
+    u = u / np.linalg.norm(u)
+    f = np.asarray(forward, dtype=np.float64).reshape(3)
+    f = f - np.dot(f, u) * u
+    norm = float(np.linalg.norm(f))
+    if norm == 0.0:
+        raise ValueError("forward must not be parallel to up")
+    f = f / norm
+    right = np.cross(f, u)
+    elevation = np.arcsin(np.clip(np.sum(d * u, axis=-1), -1.0, 1.0))
+    azimuth = np.mod(np.arctan2(np.sum(d * right, axis=-1), np.sum(d * f, axis=-1)), 2.0 * np.pi)
+    return np.asarray(elevation), np.asarray(azimuth)
+
+
 @dataclass(frozen=True)
 class SkyFixedCloud:
     """Cloud coverage attached to the **sky**, sampled per ray, not painted on the image plane.
@@ -166,6 +202,13 @@ class SkyFixedCloud:
       the mount sweeps the camera across it and a target crosses cloud edges. That is the geometry
       that makes cloud a clutter source rather than a texture.
 
+    **The continuous field is kept and thresholded after interpolation**, rather than the boolean
+    mask being stored and sampled. A grid cell here is half a degree and a Boson pixel is 0.049,
+    so nearest-neighbour sampling of a mask gives cloud edges that are ten-pixel rectangular
+    steps -- visibly wrong, and wrong in the way that matters most, since edge sharpness is
+    precisely what a detector keys on. Interpolating the underlying 1/f^beta field and thresholding
+    afterwards gives an edge resolved at the *sampling* resolution instead, at no extra storage.
+
     The grid is equirectangular in (elevation, azimuth), which stretches structure azimuthally as
     the zenith is approached -- an ``n_azimuth``-wide row spans 360 degrees at every elevation.
     For a sky-target sensor working at low to moderate elevation the distortion is small; looking
@@ -175,21 +218,39 @@ class SkyFixedCloud:
     modelled: over the seconds a flypast lasts, cloud drift is far below a pixel.
     """
 
-    coverage: NDArray[np.bool_]
+    field: NDArray[np.float64]
+    threshold: float
     beta: float
     fraction: float
     seed: int
 
-    def sample(self, elevation_rad: Any, azimuth_rad: Any) -> NDArray[np.bool_]:
-        """Coverage along each ray. Elevation is clamped to the hemisphere; azimuth wraps."""
-        n_el, n_az = self.coverage.shape
+    def value(self, elevation_rad: Any, azimuth_rad: Any) -> NDArray[np.float64]:
+        """The continuous field along each ray, bilinear over the grid.
+
+        Azimuth wraps, because the grid is a full circle and the last column's neighbour is the
+        first; elevation clamps, because the hemisphere ends. Getting the wrap wrong would leave a
+        seam of discontinuous cloud down one bearing, which reads as a real feature.
+        """
+        n_el, n_az = self.field.shape
         el = np.asarray(elevation_rad, dtype=np.float64)
         az = np.asarray(azimuth_rad, dtype=np.float64)
         if el.shape != az.shape:
             raise ValueError(f"elevation {el.shape} and azimuth {az.shape} must match")
-        row = np.clip((el / (0.5 * math.pi) * n_el).astype(np.int64), 0, n_el - 1)
-        col = np.mod((az / (2.0 * math.pi) * n_az).astype(np.int64), n_az)
-        return np.asarray(self.coverage[row, col])
+        row = np.clip(el / (0.5 * math.pi) * n_el - 0.5, 0.0, n_el - 1.0)
+        col = np.mod(az / (2.0 * math.pi) * n_az - 0.5, n_az)
+        r0 = np.floor(row).astype(np.int64)
+        c0 = np.floor(col).astype(np.int64)
+        fr = row - r0
+        fc = col - c0
+        r1 = np.minimum(r0 + 1, n_el - 1)
+        c1 = np.mod(c0 + 1, n_az)
+        top = self.field[r0, c0] * (1.0 - fc) + self.field[r0, c1] * fc
+        bottom = self.field[r1, c0] * (1.0 - fc) + self.field[r1, c1] * fc
+        return np.asarray(top * (1.0 - fr) + bottom * fr)
+
+    def sample(self, elevation_rad: Any, azimuth_rad: Any) -> NDArray[np.bool_]:
+        """Coverage along each ray: the interpolated field above its own threshold."""
+        return np.asarray(self.value(elevation_rad, azimuth_rad) >= self.threshold)
 
 
 def generate_sky_cloud(
@@ -206,7 +267,41 @@ def generate_sky_cloud(
     a camera pointed at a gap sees no cloud and one pointed at a bank sees only cloud, which is
     what a real sensor does and what makes cloud a false-alarm source worth simulating.
     """
-    field = generate_cloud_field((n_elevation, n_azimuth), beta, cloud_fraction, seed)
+    generated = generate_cloud_field((n_elevation, n_azimuth), beta, cloud_fraction, seed)
+    # The threshold is taken on the **interpolated** field, not on the grid, and that is not a
+    # detail. `generate_cloud_field` cuts at the level covering exactly c of the grid *cells*;
+    # sampling between cells averages neighbours, which pulls values toward the mean, so the same
+    # level covers noticeably less of a densely sampled sky -- measured at 25 % low. It does not
+    # improve with a finer grid, because a 1/f^beta field is scale-invariant and bilinear
+    # averaging therefore smooths it by the same relative amount at every scale. Estimating the
+    # quantile on a 2x upsampling instead -- which contains both the unsmoothed cell centres and
+    # the most-smoothed diagonal midpoints -- puts the realised coverage back on c.
+    field = generated.field
+    upsampled = np.concatenate(
+        [
+            field.ravel(),
+            (0.5 * (field + np.roll(field, -1, axis=1))).ravel(),
+            (0.5 * (field + np.roll(field, -1, axis=0))).ravel(),
+            (
+                0.25
+                * (
+                    field
+                    + np.roll(field, -1, axis=0)
+                    + np.roll(field, -1, axis=1)
+                    + np.roll(np.roll(field, -1, axis=0), -1, axis=1)
+                )
+            ).ravel(),
+        ]
+    )
+    threshold = (
+        float(np.quantile(upsampled, 1.0 - cloud_fraction))
+        if cloud_fraction > 0.0
+        else float(upsampled.max()) + 1.0
+    )
     return SkyFixedCloud(
-        coverage=field.coverage, beta=field.beta, fraction=field.fraction, seed=field.seed
+        field=generated.field,
+        threshold=threshold,
+        beta=generated.beta,
+        fraction=generated.fraction,
+        seed=generated.seed,
     )
