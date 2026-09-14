@@ -153,6 +153,8 @@ def main() -> int:
         extra = {}
         if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
             extra["rgb"] = camera.last_frame.rgb
+        elif args.rgb and camera.rgb_problem:
+            print(f"  RGB not captured: {camera.rgb_problem}", file=sys.stderr)
         record = write_frame(
             out_dir,
             outputs,

@@ -357,6 +357,7 @@ class IrCamera:
         self._render_product: Any = None
         self._camera_position: NDArray[np.float64] | None = None
         self._camera_to_world: NDArray[np.float64] | None = None
+        self._rgb_problem: str | None = None
         self._last: _Frame | None = None
         self._stage = stage
         self._up_axis = up_axis
@@ -392,7 +393,13 @@ class IrCamera:
         # rotation as `vec @ rot.T`, so the transpose of the upper-left 3x3 is what it wants.
         self._camera_to_world = np.asarray(matrix, dtype=np.float64)[:3, :3].T
 
-        configure_renderer()
+        # Capturing the companion visible frame needs the renderer put into `PathTracing`.
+        # Measured on 6.1.0-rc.26: this build defaults to `RealTimePathTracing`, and under it --
+        # and under `RaytracedLighting` -- every *lit* colour AOV comes back all zero (`rgb`,
+        # `LdrColor`) or all NaN (`HdrColor`), while the un-lit `DiffuseAlbedo` delivers. Under
+        # `PathTracing` the colour AOV delivers and every geometry AOV the IR path depends on
+        # still does, which is what makes this safe to switch rather than needing a second pass.
+        configure_renderer({"/rtx/rendermode": "PathTracing"} if self.capture_rgb else None)
         width, height = self.optics.resolution
         self._render_product = rep.create.render_product(self.camera_path, (width, height))
         path = getattr(self._render_product, "path", None) or str(self._render_product)
@@ -610,6 +617,11 @@ class IrCamera:
         self._t_rel_s += self.frame_period_s
         return outputs
 
+    @property
+    def rgb_problem(self) -> str | None:
+        """Why the last frame produced no companion RGB, or None. Never silently a black image."""
+        return self._rgb_problem
+
     def _native_rgb(self, rgb: Any) -> NDArray[np.uint8] | None:
         """The companion visible frame, box-filtered from the k× grid to the detector grid.
 
@@ -618,10 +630,22 @@ class IrCamera:
         for anything that learns from both. It carries **no** infrared information -- it is the
         renderer's tone-mapped colour and nothing in the radiometric chain ever reads it.
         """
+        self._rgb_problem = None
         if rgb is None:
+            if self.capture_rgb:
+                self._rgb_problem = "the colour annotator returned no data on this build"
             return None
         arr = np.asarray(rgb, dtype=np.uint8)
         if arr.ndim != 3:
+            self._rgb_problem = f"the colour annotator returned shape {arr.shape}, not (H, W, C)"
+            return None
+        if not arr.any():
+            # An all-zero colour buffer is the measured failure of the non-PathTracing render
+            # modes. Writing it would put a black PNG on disk that looks like a night scene.
+            self._rgb_problem = (
+                "the colour annotator returned an all-zero buffer; on this build only "
+                "/rtx/rendermode = PathTracing produces a lit colour AOV"
+            )
             return None
         k = self.config.supersample
         if k > 1:

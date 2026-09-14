@@ -154,9 +154,14 @@ def build_aerial_demo(
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     stage.DefinePrim("/World", "Xform")
     stage.DefinePrim("/World/Targets", "Xform")
-    # A light for the *visible* render only. The infrared path never reads a colour AOV, so this
-    # changes nothing about the IR frame; without it the companion RGB capture is a black image.
-    UsdLux.DistantLight.Define(stage, "/World/SunForRgb").CreateIntensityAttr(2000.0)
+    # Lights for the *visible* render only. The infrared path never reads a colour AOV, so these
+    # change nothing about the IR frame -- and neither is geometry, so no ray ever "hits" them:
+    # `instance_id` stays 0 and `DistanceToCameraSD` stays inf on those pixels, which is what lets
+    # the IR background keep coming from the sky model (ADR 0060) while RGB still has a sky to
+    # show. Without them the companion capture is a black frame with a few lit quads in it, which
+    # is what this stage genuinely looks like in visible light: it has no sky dome and no ground.
+    UsdLux.DistantLight.Define(stage, "/World/SunForRgb").CreateIntensityAttr(1200.0)
+    UsdLux.DomeLight.Define(stage, "/World/SkyForRgb").CreateIntensityAttr(900.0)
 
     errors: dict[str, str] = {}
     built: dict[str, DemoTarget] = {}

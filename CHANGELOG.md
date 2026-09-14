@@ -39,8 +39,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   frame from the **same** camera prim, pose and lens, box-filtered onto the IR pixel grid, so an
   RGB/IR pair is registered by construction rather than by calibration. It carries no infrared
   information and nothing in the radiometric chain reads it -- the sidecar's unit string says so.
-  The demo stage gains a distant light for it, which changes nothing about the IR frame because
-  that path never reads a colour AOV.
+- Getting it took a measurement (ADR 0014 addendum). On 6.1.0-rc.26 the **lit** colour AOVs are
+  silent in both render modes a script gets by default: `rgb` and `LdrColor` come back all zero
+  under `RealTimePathTracing` (the build default) and `RaytracedLighting`, `HdrColor` comes back
+  all NaN, and only the un-lit `DiffuseAlbedo` delivers. Under `PathTracing` the colour AOV
+  delivers -- and every geometry AOV the IR chain needs still does, checked rather than assumed,
+  which is what makes switching the mode safe instead of needing a second render pass. The mode is
+  set only when `capture_rgb` is on.
+- An all-zero colour buffer is **rejected with a reason** rather than saved: written to disk it is
+  a black PNG, indistinguishable from a night scene. That is the same trap ADR 0014 already
+  records for `PtWorldNormal` and ambient occlusion.
+- The demo stage gains a distant light and a dome light *for the visible render only*. Neither is
+  geometry, so no ray hits them: `instance_id` stays 0 and `DistanceToCameraSD` stays infinite on
+  those pixels, and the IR background still comes from the sky model. Verified by the IR apparent
+  temperature being identical with the lights present and absent (250.60 K to 291.65 K). The
+  resulting RGB is a uniform grey field, because the stage has no sky texture or terrain -- it has
+  no sky dome on purpose (ADR 0060) -- so the pair is correct and registered, and its visible
+  content is as rich as the stage is.
 - `--no-flat-field` as the ME.8-style ablation, so the artefact can be reproduced deliberately.
 
 ### Added

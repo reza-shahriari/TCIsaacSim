@@ -355,3 +355,39 @@ Nothing else in the repo was wrong, because nothing else had rotated a camera:
 `test_gbuffer_isaac.py`, `test_material_ids_isaac.py` and `test_aerial_bridge_isaac.py` all use
 cameras at the origin looking down −Z, where both readings agree. That is exactly why it survived
 until a scene needed to look *up*.
+
+## Addendum (M10.9a-ii, 2026-09-14): only `PathTracing` yields a lit colour AOV
+
+The companion visible capture (`IrCamera(capture_rgb=True)`) needed one more measurement, and it
+belongs beside this ADR's other colour-AOV findings because it is the same shape of surprise.
+
+Measured on 6.1.0-rc.26, with a lit cube six metres in front of the camera, a distant light and a
+dome light:
+
+| `/rtx/rendermode`             | `rgb` / `LdrColor` | `HdrColor` | `DiffuseAlbedo` |
+|---|---|---|---|
+| `RealTimePathTracing` (the build default) | all zero | all NaN | delivers, half resolution |
+| `RaytracedLighting`           | all zero | — | — |
+| `PathTracing`                 | **delivers** | — | — |
+
+So the *lit* colour AOVs are silent in both of the modes a script gets by default, while the
+un-lit `DiffuseAlbedo` delivers — which is exactly the trap this ADR already records for
+`PtWorldNormal` and the ambient-occlusion channel: an annotator that attaches without complaint
+and returns a buffer full of zeros. Written to disk that is a black PNG, indistinguishable from a
+night scene, so `IrCamera` rejects an all-zero colour buffer and says why rather than saving it.
+
+Switching the mode is safe for the infrared path, and that was checked rather than assumed: under
+`PathTracing` every geometry AOV the IR chain depends on still delivers — `DistanceToCameraSD`
+(finite off the sky), `Camera3dPositionSD`, `normals` and `instance_id_segmentation` all populated.
+So the render mode is set only when `capture_rgb` is on, and no second render pass is needed.
+
+**What the companion RGB can and cannot show.** The phase-1 demo stage has no sky dome and no
+ground plane on purpose (ADR 0060: the IR background is computed from the sky model, and emissive
+geometry would drag it back through a float16 colour AOV). In visible light that background does
+not exist, so the raw RGB is black with a few lit quads. Adding a `DomeLight` and a `DistantLight`
+gives the visible render something to show **without touching the infrared frame at all** -- a
+light is not a Gprim, so no ray hits it, `instance_id` stays 0 and `DistanceToCameraSD` stays
+infinite on those pixels. Verified: the IR apparent-temperature range is identical (250.60 K to
+291.65 K) with the lights present and absent. The resulting RGB is a uniform grey field, because a
+plain dome light is a uniform emitter and this stage has no sky texture or terrain -- the pair is
+correct and registered, and its visible content is as rich as the stage is.
