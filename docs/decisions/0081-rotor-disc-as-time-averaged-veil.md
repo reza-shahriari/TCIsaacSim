@@ -1,0 +1,145 @@
+# ADR 0081 — A spinning rotor as a time-averaged veil, not as geometry
+
+**Status:** Accepted
+**Date:** 2026-09-14
+
+## Context
+
+ADR 0074 built the quadrotor out of primitives and left the propellers off, on the grounds that a
+solid disc of the right diameter is 33 px across at 20 m and hides the motor bells underneath it —
+which are the entire subject of an infrared picture of a multirotor. It deferred them to the motion
+path: *"doing that properly needs M10.1b. Omitted until then: nothing is more honest than a wrong
+thing."*
+
+ADR 0077 then landed within-frame motion smear and, in its own "revisit when", claimed the deferral
+was now discharged: *"a blade at flight rpm sweeps its whole disc within one integration, so the
+annulus it smears into is this operator's job and the reason ADR 0074 left props out."*
+
+**That claim was wrong, and finding out why is the substance of this decision.**
+`apply_motion_smear` averages each pixel along a straight segment with one tap per pixel of travel,
+capped at 65. A blade tip at 3000 rpm on a 28-inch prop travels **112 m/s**, so during a 16.7 ms
+bolometer frame it sweeps 1.86 m of arc — 109 pixels at 20 m through a Boson, on a *circular* path
+that wraps the disc 1.7 times. A 65-tap linear boxcar is not a coarse version of that; it is a
+different operator, and the failure is not mainly the tap count but the shape of the path. The
+smear operator and the rotor diverge exactly where the motion stops being small compared with the
+structure it is moving through.
+
+## Options considered
+
+**1. What to draw.**
+
+  a. **Blade geometry, smeared by ADR 0077's operator.** What ADR 0077 assumed. Needs a few
+     hundreds of taps along an arc the operator does not follow, and the renderer would first have
+     to resolve the blade: its chord at three-quarter radius is 27 mm, which is **1.6 pixels** at
+     20 m, so what would be smeared is itself an aliased sliver. Rejected on both counts.
+  b. **Renderer motion blur with many sub-frame samples.** RTX can do it, and at ~2 revolutions per
+     frame the sample count needed to avoid banding is in the hundreds per frame. It also puts the
+     answer inside the engine, where the physics core cannot test it and the Unreal port would have
+     to reproduce it.
+  c. **A static disc at some nominal transparency.** Cheap, and it throws away the one thing that
+     distinguishes the two detector families here — see the decision below.
+  d. **A time-averaged occluding veil, computed analytically** (chosen). The detector reports the
+     mean over its window, so compute the mean directly and composite it. Engine-free, closed-form,
+     and testable against area identities rather than against a previous render.
+
+**2. What the veil's alpha means.**
+
+  It is **not** a transmittance and the blade is not semi-transparent. It is the fraction of the
+  integration window during which opaque blade material stood between that pixel and the
+  background. The blend is therefore linear in **radiance**, which is what the detector integrates —
+  the same reasoning as CLAUDE.md #3's rule about noise. Blending apparent temperatures instead is
+  a different number: for a 3 % veil of 290 K blade over a 230 K sky, the radiance blend reads
+  233.0 K and the temperature blend 231.9 K, so the naive version under-reports the disc in the
+  direction that would hide it.
+
+**3. How viewing tilt enters.**
+
+  a. A cosine fudge on the coverage. Untestable and would have hidden the result below.
+  b. **The azimuthal mean of the projected area of a pitched plate** (chosen). A blade at azimuth φ
+     has normal `n = cos β z − sin β t(φ)`, so `d · n = A + B sin φ` and the mean of its modulus is
+     closed-form. Face-on it is `cos β`; edge-on it is `(2/π) sin β`.
+
+## Decision
+
+`irsim.optics.rotor` models a spinning rotor as a veil whose coverage is the **running mean of the
+blade-passage pulse train over the angle swept during the integration**, scaled by the projected
+area of a pitched plate:
+
+    alpha(r, psi) = clip( k(tilt, pitch) / cos(tilt) · duty(psi; swept, c(r)/r, N),  0, 1 )
+    L             = alpha · L_blade + (1 − alpha) · L_behind
+
+It lives in `irsim/optics/` beside `smear.py` because it is the same §8.3 within-integration
+average applied to a rotating occluder instead of a translating scene, and it shares that module's
+`smear_duty` reasoning about which window a detector actually integrates over.
+
+**One formula covers both detector families, and the window length alone selects between them.** A
+bolometer has no shutter, so it integrates the whole frame: a 3000 rpm prop sweeps 300° = 1.67
+blade spacings and the picture is a smooth annulus. A cooled photon detector integrating 2 ms
+sweeps 36° = 0.20 spacings and the same expression resolves into two distinct arcs, five times the
+mean brightness. Nothing switches; the window does. This is ADR 0077's LWIR/MWIR split a second
+time, and it is the reason option 2(c)'s static disc was rejected — a fixed transparency cannot
+express it.
+
+## Consequences
+
+**The invariant is mean preservation, not flatness.** A running mean cannot change the mean of a
+periodic function, so the azimuthal mean coverage equals the local solidity for *every* window
+length — verified from a frozen shutter to ten revolutions. The shutter moves the disc's flux
+around; it never changes how much there is. That is what makes the annulus and the arcs
+comparable, and it is the property a brightness fudge would have broken.
+
+**The ripple is real physics, not a numerical artefact.** A window of 1.67 blade spacings crosses
+some azimuths twice and others once, so the annulus is banded in the ratio exactly 2:1 — one whole
+blade pass, not a fraction of one. It flattens only when the window is a whole number of spacings.
+A real prop on real video bands for the same reason.
+
+**Coverage is exactly tilt-invariant until the disc is within `pitch` degrees of edge-on.** The
+blade's projected area and the ellipse's area shrink by the same cosine, so `k/cos(tilt)` is
+`cos(pitch)` throughout, and a banking rotor changes shape without changing brightness. This module
+was first written asserting the opposite — that coverage rises with foreshortening — and the
+rasteriser contradicted it: the peak at 0° and at 45° was the same number to three digits. Only
+past the crossover does the annulus densify, towards the clip at 1.
+
+That crossover is not academic here. The demo stage looks 75° off the disc axis against 18° of
+blade pitch, where the threshold is 72°, so the scene sits just past it and the branch is exercised
+by the geometry it was written for. A **zero-pitch** blade would be invisible edge-on, which is the
+cleanest check that pitch is carrying the projection rather than decorating it.
+
+**The disc is faint, as ADR 0074 predicted.** A two-blade 28-inch prop is 3.2 % solid at
+three-quarter radius. A 290 K blade over a 230 K sky lifts the apparent temperature by **3.1 K** —
+a low-contrast annulus around a hot motor, which is what the phenomenology says and what the solid
+disc of option 2(c) would have buried.
+
+**What is not modelled, stated rather than implied:**
+
+* **Constant rpm through the window.** The ripple pattern assumes it. Spooling a motor within one
+  frame would smear the bands; nothing here does that.
+* **An isothermal blade.** Real blades have a spanwise gradient and warm tips; `L_blade` is one
+  radiance for the whole disc. The thermal model has no rotor node, so there is nothing better to
+  read yet.
+* **Arc width uses the planform chord `c/r`, not the projected `c cos(pitch)/r`,** because the
+  projection is carried entirely by `k` and counting it twice would be worse. The resolved arcs are
+  therefore about 5 % wider in azimuth than they should be at 18° of pitch. **The mean is exact
+  regardless**, so the error is in the shape of a short-exposure picture and not in any flux.
+* **Depth ordering is the caller's.** `veil_radiance` takes an `occluded` mask; the module does not
+  know which half of the airframe is in front of the disc plane. Without that mask a blade would be
+  painted over the motor bell it is bolted to.
+* **No blade-to-airframe or blade-to-sky reflection**, and no downwash. The veil sees only what is
+  directly behind it.
+
+**Not wired into a scene yet.** This commit is the engine-free physics and its tests. Mounting four
+of these on the quadrotor needs the pose-to-ellipse projection and the occlusion mask from the
+G-buffer, which is glue and a separate step.
+
+## Revisit when
+
+* The thermal model grows a rotor node — then `L_blade` should vary along the span, and the veil
+  needs a radiance per radius rather than a scalar.
+* A scene runs a detector whose integration window is short enough to freeze a blade rather than
+  arc it (under roughly 0.1 ms here), where the "which azimuth is the blade at" question becomes a
+  scene-state question rather than a statistical one, and `phase_rad` stops being cosmetic.
+* A helicopter main rotor is modelled: it turns an order of magnitude slower, so a bolometer frame
+  covers well under one blade spacing and the *arcs* become the normal case rather than the
+  cooled-detector special case.
+* Anything needs the disc's effect on what is behind it beyond occlusion — downwash on a sea
+  surface, or the rotor wash warming a wall.

@@ -6,6 +6,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **A spinning rotor as a time-averaged veil** (ADR 0081, §8.3/§9.2). ADR 0074 left propellers off
+  the quadrotor and ADR 0077 claimed the motion-smear operator would be their home. **It is not:**
+  a blade tip at 3000 rpm does 112 m/s, sweeping 109 pixels of *circular* arc per bolometer frame
+  and wrapping the disc 1.7 times, where `apply_motion_smear` averages along a straight segment
+  with at most 65 taps — a different operator, not a coarse one.
+- `irsim.optics.rotor` computes what the detector actually reports: the **time average of an
+  intermittent opaque occluder**, composited in radiance (`α L_blade + (1−α) L_behind`). The blade
+  is not semi-transparent; α is the fraction of the window it stood in the way. Blending apparent
+  temperatures instead reads a 3 % veil of 290 K blade over a 230 K sky as 231.9 K against the
+  radiance blend's 233.1 K — under-reporting the disc in the direction that hides it.
+- **One formula, both detector families, selected by the window alone.** Coverage is a running mean
+  of blade passage over the angle swept during the integration: a shutterless bolometer's whole
+  frame (300° = 1.67 blade spacings) draws a smooth annulus banded exactly 2:1 by one whole blade
+  pass, and a 2 ms cooled integration (36°) resolves two arcs five times as bright. **The totals
+  agree**, because a running mean cannot move the mean of a periodic function — verified from a
+  frozen shutter to ten revolutions. That invariant is what makes the two pictures comparable.
+- Viewing tilt enters only as the azimuthal mean of a pitched plate's projected area (`cos β`
+  face-on, `(2/π) sin β` edge-on), so a feathered blade is invisible edge-on and a coarse-pitch one
+  is not. A consequence worth stating: coverage per unit image area is **exactly tilt-invariant**
+  until the disc is within `pitch` of edge-on. The module was first written asserting the opposite
+  and the rasteriser contradicted it — the peak at 0° and 45° was the same number to three digits.
+  The demo stage sits just past that crossover (75° of tilt against 18° of pitch, threshold 72°).
+- A two-blade 28-inch prop is 3.2 % solid at three-quarter radius, lifting a 230 K sky by 3.1 K:
+  the faint annulus ADR 0074 predicted, and what a solid disc would have buried. Engine-free and
+  not yet wired to a stage — mounting four needs the pose-to-ellipse projection and an occlusion
+  mask (69 tests).
+
 - **Maritime lane planned as phase 1b** (ADR 0078, roadmap milestone **MM**, 8 steps). Sky → sea →
   ground, amending ADR 0003's two-phase split. The sea is an **analytic background**, not displaced
   water geometry: at 3 km a Boson pixel spans 2.6 m and contains thousands of independent wave
