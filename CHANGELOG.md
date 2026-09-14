@@ -17,6 +17,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scene reports exactly 0, and an object and camera moving together report exactly 0 — the last
   being the case that catches the two transform pairs composed in the wrong order, which the other
   two cannot see because the camera is identity in both.
+- `irsim_isaac.pipeline.motion_isaac.MotionTracker` is the USD half: it reads per-prim and camera
+  transforms off the stage each frame and keeps a **stack of 4x4s indexed by instance id**, exactly
+  as the thermal bridge keeps a float32 temperature table indexed the same way — one transport
+  mechanism, two payloads. Motion is a difference, so the first frame of any sequence reports zero
+  rather than a guess, and a prim that is untracked, absent or newly appeared is treated as static.
+  `IrCamera` now keeps the camera-space position plane on its frame record, since re-projecting a
+  surface point needs the position and the G-buffer only carries distance along the ray.
+- In sim, against the renderer rather than made-up transforms: a bar at 3 px/frame reports 3.0
+  within a tenth of a pixel, a static scene reports 0, and a prim moving with the camera reports 0.
+  That last one caught a real mismatch — the position AOV arrives as `(H, W, 4)` with a padded
+  fourth component, where the core wanted exactly three. The rest of the adapter already takes the
+  first N of any float AOV; the core now does too, with a test asserting the padding cannot change
+  the answer.
 - **The background is treated as being at infinity**, so it does not translate with the camera,
   only rotate. That is why a tracking mount takes smear off the target and puts it on the sky, and
   it is now a computed quantity rather than an assertion: a yawing mount sweeps the sky by

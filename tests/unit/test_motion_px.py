@@ -209,8 +209,38 @@ def test_the_plane_matches_the_gbuffer_contract() -> None:
     assert np.all(np.isfinite(motion))
 
 
+def test_a_padded_position_aov_is_accepted() -> None:
+    """The renderer hands positions over as (H, W, 4) with a padded fourth component.
+
+    Measured, not assumed: the in-sim test failed on exactly this before the core learned to take
+    the first three, which is the rule the rest of the Isaac adapter already applies to every
+    float AOV. The padding must not change the answer.
+    """
+    points = frontal_slab()
+    padded = np.concatenate([points, np.ones((SIZE, SIZE, 1))], axis=-1)
+    ids = np.ones((SIZE, SIZE), dtype=np.int64)
+    stacks_prev = np.stack([IDENTITY, translation(dx=-metres_for(3.0))])
+    stacks_cur = np.stack([IDENTITY, IDENTITY])
+    args = (stacks_prev, stacks_cur, IDENTITY, IDENTITY, intrinsics(), pinhole())
+    plain = image_plane_motion(points, ids, *args)
+    with_pad = image_plane_motion(padded, ids, *args)
+    assert np.array_equal(plain, with_pad)
+    assert float(with_pad[..., 0].mean()) == pytest.approx(3.0, abs=1e-9)
+
+
 def test_it_refuses_mismatched_or_wrongly_typed_inputs() -> None:
     stack = np.stack([IDENTITY, IDENTITY])
+    with pytest.raises(ValueError, match=r"\(H, W, >=3\)"):
+        image_plane_motion(
+            np.zeros((SIZE, SIZE, 2)),
+            np.zeros((SIZE, SIZE), dtype=np.int64),
+            stack,
+            stack,
+            IDENTITY,
+            IDENTITY,
+            intrinsics(),
+            pinhole(),
+        )
     with pytest.raises(TypeError, match="integer plane"):
         image_plane_motion(
             frontal_slab(),

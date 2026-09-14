@@ -71,7 +71,10 @@ def image_plane_motion(
     """``motion_px``: (H, W, 2) float32 px/frame, x right and **y down**, per the G-buffer contract.
 
     ``points_camera_usd`` is the per-pixel surface position in **USD camera space** (+Y up, −Z
-    forward) at the current frame -- what ``Camera3dPositionSD`` delivers (ADR 0014 addendum).
+    forward) at the current frame -- what ``Camera3dPositionSD`` delivers (ADR 0014 addendum). It
+    may carry more than three components: on this build the position AOV arrives as ``(H, W, 4)``
+    with a padded fourth, and the first three are taken, which is the same rule the rest of the
+    adapter applies to every float AOV.
     ``object_id`` indexes the two transform stacks, exactly as the instance id indexes the thermal
     bridge's temperature table; index :data:`BACKGROUND_OBJECT_ID` is the background and its entry
     is ignored.
@@ -85,8 +88,9 @@ def image_plane_motion(
     through a convolution and take the whole frame with it.
     """
     p_cam = np.asarray(points_camera_usd, dtype=np.float64)
-    if p_cam.ndim != 3 or p_cam.shape[2] != 3:
-        raise ValueError(f"points must be (H, W, 3), got {p_cam.shape}")
+    if p_cam.ndim != 3 or p_cam.shape[2] < 3:
+        raise ValueError(f"points must be (H, W, >=3), got {p_cam.shape}")
+    p_cam = p_cam[:, :, :3]
     ids = np.asarray(object_id)
     if not np.issubdtype(ids.dtype, np.integer):
         raise TypeError(f"object_id must be an integer plane, got {ids.dtype}")

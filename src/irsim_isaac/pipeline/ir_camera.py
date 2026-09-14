@@ -284,6 +284,11 @@ class _Frame:
     material_id: NDArray[np.int32]
     unmapped: NDArray[np.bool_]
     elevation_rad: NDArray[np.float64]
+    #: The position AOV as delivered, in **camera** space (ADR 0014 addendum). Kept because the
+    #: G-buffer only carries the distance along each ray, and anything that has to re-project a
+    #: surface point -- the synthesised `motion_px` of M10.1b, for one -- needs the position
+    #: itself. Recomputing it from distance and ray direction would be the same number twice.
+    positions_camera: NDArray[np.float64] | None = None
     rgb: NDArray[np.uint8] | None = None
     labels: dict[int, str] = field(default_factory=dict)
 
@@ -538,6 +543,7 @@ class IrCamera:
             material_id=material_id,
             unmapped=unmapped,
             elevation_rad=elevation,
+            positions_camera=np.asarray(aovs.position, dtype=np.float64),
             labels=labels,
         )
         return planes
