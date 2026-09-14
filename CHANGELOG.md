@@ -43,6 +43,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Night illumination — airglow and a first-order moon** (M11.4, ADR 0065, §5.5). `irsim.radiometry.night`
+  and `irsim.pipeline.night` produce the M11.2 bundle's `l_night` plane,
+  `[E_airglow · c(cloud) · v(t) + E_moon · Φ(phase) · sin(el) · τ] / π`. `SolarSpectrum` and
+  `AirglowSpectrum` now share one `SpectralTable` band integral — two sources integrating a band
+  two slightly different ways is how they come to disagree about what a band is.
+- **Airglow has no shadow parameter, and the signature is the assertion.** §5.5 says airglow "is not
+  blocked in the same way as moonlight"; it is emitted at ~87 km across the whole sky, so a wall
+  casts no airglow shadow. `incident_radiance` takes no `shadow` and no sun direction, so a scene
+  *cannot* darken the night sky by geometry. Cloud attenuates it to a floor of 0.10 and never to
+  zero, because cloud scatters airglow rather than absorbing it.
+- **The lunar level is derived, not authored.** m_sun = −26.74 and m_moon = −12.74 give a flux ratio
+  of 3.98e5 and E_full = **3.42e-3 W m⁻²**; the moon borrows the solar spectral shape, so the lunar
+  albedo cancels between shape and level and never has to be invented. Lane & Irvine's phase law is
+  violently non-linear and that is the point: a **quarter moon is 0.091 of a full one**, not half. A
+  model using the illuminated fraction directly would render every quarter-moon scene five times too
+  bright and look entirely reasonable doing it.
+- **The airglow level is defined over the shape file's support, so a band takes its fraction** —
+  not all of it (ADR 0065). The literal "in-band" reading breaks the moment a second band exists: it
+  would hand the LWIR camera 10 nW/cm² of OH emission at 10 µm, making the level a property of the
+  camera rather than of the sky. The fraction is not a detail: the modelled InGaAs camera sees
+  **61 %**, and extending the cut-off from 1.7 µm to 2.5 µm gains **a third more light**, because the
+  strongest OH sequence (Δv = 1) sits at 1.4–2.0 µm. That is a real reason extended-InGaAs parts exist.
+- **§5.5's claim that moonlight and airglow are "comparable" at full moon [R7] is not reproduced, and
+  is recorded rather than tuned away** (spec issue S38). Standard lunar photometry and an OH band
+  model give **12.6×** over 0.9–1.7 µm. Three readings bring it close — §5.5's own *upper* airglow
+  level (3.2×), the **spectral density** at the OH band peaks rather than the band integral (2–5×),
+  and a moon at a realistic elevation. What the models *do* reproduce is the rule of thumb SWIR night
+  imaging is sold on: airglow ≈ a **quarter moon** (1.15×), and that is what the test asserts. The
+  full-moon ratio is pinned to the measured value so the disagreement stays visible (25 tests).
+- `data/spectra/airglow_oh_meinel.csv` from `scripts/generate_airglow_spectrum.py`: OH-Meinel band
+  heads (spectroscopy) with modelled Δv = 1/2/3/4 sequence strengths of 55/27/12/6 %, plus O₂(a¹Δ) at
+  1.27 µm. MODELLED in its first status line, like the solar files, and replaceable by a measured
+  near-infrared sky spectrum with no code change.
 - **The reflected-solar term** (M11.3, ADR 0064, §5.4). `irsim.radiometry.solar` band-integrates a
   spectral irradiance file the same unnormalised way the band LUT integrates Planck, in both energy
   and photon form; `irsim.pipeline.solar` turns it into the M11.2 bundle's `l_sun` plane,

@@ -26,12 +26,12 @@ import hashlib
 import os
 import pathlib
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from irsim.radiometry.constants import C_LIGHT, H_PLANCK
-from irsim.radiometry.spectral_response import SpectralResponse
+from irsim.radiometry.spectral_table import SpectralTable
 
 __all__ = [
     "TRUSTED_MIN_UM",
@@ -58,67 +58,36 @@ def solar_data_dir(data_dir: str | os.PathLike[str] | None = None) -> pathlib.Pa
 
 
 @dataclass(frozen=True)
-class SolarSpectrum:
+class SolarSpectrum(SpectralTable):
     """E(λ) in W m⁻² µm⁻¹ on a strictly increasing micrometre grid."""
 
-    wavelength_um: NDArray[np.float64]
-    irradiance_w_m2_um: NDArray[np.float64]
-    source_path: str
-    sha256: str
-
-    @property
-    def support_um(self) -> tuple[float, float]:
-        return float(self.wavelength_um[0]), float(self.wavelength_um[-1])
-
-    def total_w_m2(self) -> float:
-        """∫E dλ over the whole file: the solar constant for a TOA spectrum."""
-        return float(np.trapezoid(self.irradiance_w_m2_um, self.wavelength_um))
-
-    def _integration_grid(self, response: SpectralResponse) -> NDArray[np.float64]:
-        """Both grids merged over the overlap, so neither file's structure is stepped over.
-
-        The solar file is dense and uniform; a response file has kinks (a band edge, a filter
-        shoulder). Integrating on either alone loses the other's features -- and the response's
-        cut-off is precisely where the integrand is largest in a reflective band.
-        """
-        lo_r, hi_r = response.support_um
-        lo_s, hi_s = self.support_um
-        lo, hi = max(lo_r, lo_s), min(hi_r, hi_s)
-        if not hi > lo:
-            raise ValueError(
-                f"spectral response {lo_r}-{hi_r} um does not overlap the solar spectrum "
-                f"{lo_s}-{hi_s} um"
-            )
+    def _check_overlap(self, response: Any) -> None:
+        lo_r, _ = response.support_um
         if lo_r < TRUSTED_MIN_UM:
             raise ValueError(
                 f"spectral response reaches {lo_r} um, below the {TRUSTED_MIN_UM} um this solar "
                 f"model is trusted to (ADR 0064): the effective-temperature shape is tens of "
                 f"percent wrong in the ultraviolet. Supply a measured ASTM E-490 table instead."
             )
-        if hi_r > hi_s:
-            raise ValueError(
-                f"spectral response reaches {hi_r} um but the solar file stops at {hi_s} um"
-            )
-        grid = np.union1d(
-            self.wavelength_um[(self.wavelength_um >= lo) & (self.wavelength_um <= hi)],
-            response.wavelength_um[(response.wavelength_um >= lo) & (response.wavelength_um <= hi)],
-        )
-        return np.asarray(grid, dtype=np.float64)
 
-    def band_irradiance(self, response: SpectralResponse) -> float:
+    @property
+    def irradiance_w_m2_um(self) -> NDArray[np.float64]:
+        """The table under its physical name."""
+        return self.values
+
+    def total_w_m2(self) -> float:
+        """∫E dλ over the whole file: the solar constant for a TOA spectrum."""
+        return self.integral()
+
+    def band_irradiance(self, response: Any) -> float:
         """E_B = ∫ R(λ) E(λ) dλ, W m⁻². Same unnormalised convention as the band LUT."""
-        grid = self._integration_grid(response)
-        e = np.interp(grid, self.wavelength_um, self.irradiance_w_m2_um)
-        return float(np.trapezoid(response.resampled(grid) * e, grid))
+        return self.band_integral(response, photon=False)
 
-    def band_photon_irradiance(self, response: SpectralResponse) -> float:
+    def band_photon_irradiance(self, response: Any) -> float:
         """E_B,q = ∫ R(λ) E(λ) λ/(hc) dλ, photons s⁻¹ m⁻². The band average, not hc/λ̄."""
-        grid = self._integration_grid(response)
-        e = np.interp(grid, self.wavelength_um, self.irradiance_w_m2_um)
-        per_photon = (grid * 1e-6) / (H_PLANCK * C_LIGHT)
-        return float(np.trapezoid(response.resampled(grid) * e * per_photon, grid))
+        return self.band_integral(response, photon=True)
 
-    def band(self, response: SpectralResponse, quantity: str) -> float:
+    def band(self, response: Any, quantity: str) -> float:
         """Dispatch on the LUT's quantity tag so a caller never picks the unit by hand."""
         if quantity in ("lb", "dlb_dt"):
             return self.band_irradiance(response)
@@ -159,7 +128,7 @@ def load_solar_spectrum(path: str | os.PathLike[str]) -> SolarSpectrum:
         raise ValueError(f"{p}: spectral irradiance must be non-negative")
     return SolarSpectrum(
         wavelength_um=wl,
-        irradiance_w_m2_um=e,
+        values=e,
         source_path=str(p),
         sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
     )
