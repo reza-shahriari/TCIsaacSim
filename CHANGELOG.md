@@ -43,6 +43,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The electron-space noise budget for photon FPAs** (M11.6, ADR 0025 addendum, §10.1, §9.1).
+  `irsim.noise.electron` adds `electron_noise(N_e, i_dark, t_int, σ_read, rng)` — one Poisson draw
+  over signal + dark + background (the sum of independent Poissons *is* Poisson in the sum, so two
+  draws would be wrong rather than safer) plus an additive Gaussian read term — and `electron_budget`,
+  which builds a photon camera's budget from its own datasheet electrons.
+- **This reverses which of NETD and the electron numbers is derived, and M11.1's SWIR camera is why.**
+  NETD is defined against a 300 K blackbody (§9.4), and a 300 K blackbody puts **1.24 photoelectrons
+  per pixel per 16 ms frame** into 0.9–1.7 µm against 120 e⁻ of read noise — so §9.4 evaluated
+  honestly gives **976 K**, and solving `σ² = (NETD·∂S/∂T)² − σ_shot²` against that scales the Gaussian
+  term by about 2e4. The camera's noise would be *invented*, not described. A bolometer keeps ADR
+  0025's anchor unchanged, because NETD is the only usable handle its datasheet gives.
+- Everything ADR 0025 was actually about survives: Poisson terms are **never** rescaled, noise is
+  added in electron space and never in kelvin, and a configuration that cannot reach its own claim
+  **raises**. That last check is skipped — with its reason named in the code — for a **reflective**
+  band, closing the loop M11.1 opened when it wrote 976 K into the SWIR file and said nothing may
+  anchor to it.
+- **Synthetic bench against prediction: 0.16 % for both cameras** (σ of a uniform scene over ∂S/∂T, in
+  electrons, 200 000 samples) — InGaAs 7.86 vs 7.87 mK at 700 K, InSb 18.33 vs 18.36 mK at 300 K. The
+  InGaAs is benched at 700 K rather than 300 K because a NETD bench at 300 K in that band measures the
+  read noise and nothing else. The InSb sits **2.4 % above shot-limited**, which is what a cooled MWIR
+  core is sold on and a real check that the read and dark terms are not overstated. A companion test
+  inflates the read noise 10× and confirms the bench notices — a bench that passes against any budget
+  is measuring the predictor, not the camera.
+- **Dark current as the reason InSb is cryocooled, as a number:** 200 e⁻ per frame for the uncooled
+  InGaAs array against **0.12 e⁻** for the InSb at 77 K, and warming that array to room temperature
+  multiplies its dark count by more than **10⁶**.
+- The aperture factor is re-derived from §9.1's own terms inside the test rather than read back from
+  the helper, so `π/(4F²+1)` being right in one place and wrong here would be caught: at F/1 it is
+  π/5 against π/4, i.e. **20 % less signal derivative**, held to ±0.5 % (15 tests).
 - **The cold shield, and a cooled MWIR camera to need it** (M11.5, ADR 0066, §9.1, spec issue S31).
   `configs/sensors/example_mwir_insb_640.yaml` is the third configured band and the first camera with
   `cold_shield_efficiency < 1`. `irsim.detector.cold_shield` supplies the equation §9.1 asks for and
