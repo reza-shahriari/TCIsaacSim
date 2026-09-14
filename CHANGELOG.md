@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Rotor discs reach the focal plane through the lens oracle** (ADR 0081).
+  `irsim.optics.rotor.disc_ellipse` projects a disc pose to its image ellipse by projecting rim
+  points with `irsim.optics.projection.project`, so the authored distortion and the off-axis scale
+  come from the forward model ADR 0015 already calls the oracle — a barrel lens 8 m off axis at
+  20 m shrinks the disc 4.3 % and pulls it 17 px back towards the axis, which an `f·R/Z` stand-in
+  sees as nothing. The major axis is taken along `axis × view`, the only diameter square to the
+  line of sight and therefore unforeshortened.
+- The residual is **measured, not argued**: the projected conic is assumed centred with
+  perpendicular axes, which is exact only orthographically, and a 0.71 m rotor seen 75° off its
+  axis at 20 m has rim points up to 0.079 px off the ellipse — falling quadratically to 0.013 px at
+  50 m, with the axis ratio within 3e-4 of `cos(tilt)`. The docstring first claimed "under a
+  hundredth of a pixel"; the measurement said 0.079 and the measurement is what is recorded.
+
 - **A spinning rotor as a time-averaged veil** (ADR 0081, §8.3/§9.2). ADR 0074 left propellers off
   the quadrotor and ADR 0077 claimed the motion-smear operator would be their home. **It is not:**
   a blade tip at 3000 rpm does 112 m/s, sweeping 109 pixels of *circular* arc per bolometer frame

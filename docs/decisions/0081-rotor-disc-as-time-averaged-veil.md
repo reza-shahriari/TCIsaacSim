@@ -127,9 +127,26 @@ disc of option 2(c) would have buried.
 * **No blade-to-airframe or blade-to-sky reflection**, and no downwash. The veil sees only what is
   directly behind it.
 
-**Not wired into a scene yet.** This commit is the engine-free physics and its tests. Mounting four
-of these on the quadrotor needs the pose-to-ellipse projection and the occlusion mask from the
-G-buffer, which is glue and a separate step.
+**The disc is projected through the lens oracle, not by `f R / Z`.** `disc_ellipse` measures both
+semi-axes by projecting rim points with `irsim.optics.projection.project`, so the authored
+distortion model and the off-axis scale come from the same forward model ADR 0015 already calls the
+oracle for the lens the engine is handed. A barrel lens 8 m off axis at 20 m shrinks the disc by
+4.3 % and pulls it 17 px back towards the axis; an `f R / Z` stand-in sees neither. The major axis
+is taken along `axis x view` — the one diameter in the disc plane square to the line of sight, and
+therefore the only one that is not foreshortened.
+
+That leaves one approximation, stated as a measurement: the projected conic is assumed centred on
+the projected centre with perpendicular axes, which is exact only for an orthographic camera. A
+0.71 m rotor seen 75° off its axis at 20 m has rim points up to **0.079 px** off the fitted
+ellipse, falling quadratically to 0.013 px at 50 m, and the axis ratio differs from `cos(tilt)` by
+at most 3e-4. Both sit far below the veil's own modelling uncertainty. An exact conic fit is the
+upgrade if a disc ever has to be *measured* rather than drawn. (The docstring first claimed "under
+a hundredth of a pixel"; the measurement said 0.079, and the measurement is what is recorded.)
+
+**Not wired into a scene yet.** This is the engine-free physics, its projection and their tests.
+Mounting four on the quadrotor still needs the occlusion mask from the G-buffer — which half of the
+airframe stands in front of each disc plane — and the stage wiring, which is glue and a separate
+step.
 
 ## Revisit when
 

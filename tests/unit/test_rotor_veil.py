@@ -24,10 +24,13 @@ import math
 import numpy as np
 import pytest
 
+from irsim.config.sensor import DistortionSpec
+from irsim.optics.projection import Intrinsics, project
 from irsim.optics.rotor import (
     RotorDisc,
     azimuthal_duty,
     coverage_map,
+    disc_ellipse,
     projection_factor,
     swept_angle_rad,
     veil_radiance,
@@ -424,3 +427,128 @@ def test_a_bolometer_draws_an_annulus_and_a_cooled_detector_draws_arcs() -> None
     lit_cooled = np.count_nonzero(cooled > 0.0)
     assert lit_cooled < 0.35 * lit_bolo
     assert cooled.max() > 3.0 * bolometer.max()
+
+
+# --------------------------------------------------------------------------------------------
+# Projecting the disc to its image ellipse
+# --------------------------------------------------------------------------------------------
+
+PINHOLE = DistortionSpec(model="brown_conrady", coeffs=[0.0] * 5)
+BARREL = DistortionSpec(model="brown_conrady", coeffs=[-0.28, 0.09, 0.0, 0.0, 0.0])
+INTR = Intrinsics(fx_px=1000.0, fy_px=1000.0, cx_px=320.0, cy_px=256.0, width=640, height=512)
+
+
+def test_a_face_on_disc_projects_to_a_circle_of_the_textbook_size() -> None:
+    """Axis along the line of sight: no foreshortening, and the radius is ``f R / Z``."""
+    e = disc_ellipse([0.0, 0.0, 20.0], [0.0, 0.0, 1.0], DISC.radius_m, INTR, PINHOLE)
+    assert e is not None
+    assert e.semi_major_px == pytest.approx(1000.0 * DISC.radius_m / 20.0, rel=1e-9)
+    assert e.semi_minor_px == pytest.approx(e.semi_major_px, rel=1e-9)
+    assert e.tilt_rad == pytest.approx(0.0, abs=1e-9)
+    assert e.centre_px == pytest.approx((320.0, 256.0))
+
+
+@pytest.mark.parametrize("tilt_deg", [0.0, 15.0, 45.0, 75.0, 89.0])
+def test_the_minor_axis_is_the_major_axis_foreshortened(tilt_deg: float) -> None:
+    """The axis ratio *is* the cosine of the tilt, which is what ``coverage_map`` reads it as."""
+    tilt = math.radians(tilt_deg)
+    axis = [0.0, math.sin(tilt), math.cos(tilt)]
+    e = disc_ellipse([0.0, 0.0, 20.0], axis, DISC.radius_m, INTR, PINHOLE)
+    assert e is not None
+    # Not exact: the two minor-axis rim points sit at different depths, so perspective
+    # stretches the near half. Measured worst case 3.2e-4, at 89 degrees.
+    assert e.cos_tilt == pytest.approx(math.cos(tilt), rel=1e-3)
+    assert e.tilt_rad == pytest.approx(tilt, abs=1e-3)
+
+
+def test_the_ellipse_matches_the_projected_rim() -> None:
+    """Bound the approximation: project 256 rim points and measure how far they miss the ellipse.
+
+    The ellipse is built from four rim points and assumes the projected conic is centred on the
+    projected centre with perpendicular axes. Both are exact only for an orthographic camera, so
+    the error is stated in pixels rather than argued away.
+    """
+    centre = np.array([0.0, 0.0, 20.0])
+    tilt = math.radians(DEMO_TILT_DEG)
+    axis = np.array([0.0, math.sin(tilt), math.cos(tilt)])
+    e = disc_ellipse(centre, axis, DISC.radius_m, INTR, PINHOLE)
+    assert e is not None
+
+    view = centre / np.linalg.norm(centre)
+    major = np.cross(axis, view)
+    major /= np.linalg.norm(major)
+    minor = np.cross(axis, major)
+    phi = np.linspace(0.0, 2.0 * np.pi, 256, endpoint=False)
+    rim = centre + DISC.radius_m * (np.outer(np.cos(phi), major) + np.outer(np.sin(phi), minor))
+    u, v = project(rim, INTR, PINHOLE)
+
+    rot = math.radians(e.rotation_deg)
+    du, dv = u - e.centre_px[0], v - e.centre_px[1]
+    p = (du * math.cos(rot) + dv * math.sin(rot)) / e.semi_major_px
+    q = (-du * math.sin(rot) + dv * math.cos(rot)) / e.semi_minor_px
+    # Radial miss in pixels, worst case around the rim.
+    miss = np.abs(np.hypot(p, q) - 1.0) * e.semi_minor_px
+    assert float(miss.max()) < 0.09  # measured 0.079 px on a 4.6 px semi-minor axis
+
+
+def test_the_ellipse_follows_the_distortion_the_lens_was_authored_with() -> None:
+    """A barrel lens shrinks an off-axis disc; the oracle must see that, not an ideal pinhole."""
+    off_axis = [8.0, 0.0, 20.0]
+    ideal = disc_ellipse(off_axis, [0.0, 0.0, 1.0], DISC.radius_m, INTR, PINHOLE)
+    barrel = disc_ellipse(off_axis, [0.0, 0.0, 1.0], DISC.radius_m, INTR, BARREL)
+    assert ideal is not None and barrel is not None
+    assert barrel.semi_major_px == pytest.approx(0.9574 * ideal.semi_major_px, rel=1e-3)
+    # and the disc is pulled 17 px back towards the axis, which a pinhole oracle would miss
+    assert ideal.centre_px[0] - barrel.centre_px[0] == pytest.approx(17.0, abs=0.5)
+
+
+def test_the_major_axis_turns_with_the_disc() -> None:
+    """Tilting about x puts the long axis across the frame; about y, up and down it."""
+    tilt = math.radians(60.0)
+    about_x = disc_ellipse(
+        [0.0, 0.0, 20.0], [0.0, math.sin(tilt), math.cos(tilt)], DISC.radius_m, INTR, PINHOLE
+    )
+    about_y = disc_ellipse(
+        [0.0, 0.0, 20.0], [math.sin(tilt), 0.0, math.cos(tilt)], DISC.radius_m, INTR, PINHOLE
+    )
+    assert about_x is not None and about_y is not None
+    assert abs(about_x.rotation_deg) % 180.0 == pytest.approx(0.0, abs=1e-6)
+    assert abs(about_y.rotation_deg) % 180.0 == pytest.approx(90.0, abs=1e-6)
+
+
+def test_a_disc_behind_the_camera_has_no_ellipse() -> None:
+    assert disc_ellipse([0.0, 0.0, -20.0], [0.0, 0.0, 1.0], DISC.radius_m, INTR, PINHOLE) is None
+    assert disc_ellipse([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], DISC.radius_m, INTR, PINHOLE) is None
+    # straddling the camera plane: no single ellipse describes it
+    assert disc_ellipse([0.0, 0.0, 0.2], [0.0, 1.0, 0.0], DISC.radius_m, INTR, PINHOLE) is None
+
+
+def test_a_degenerate_disc_is_refused() -> None:
+    with pytest.raises(ValueError):
+        disc_ellipse([0.0, 0.0, 20.0], [0.0, 0.0, 1.0], 0.0, INTR, PINHOLE)
+    with pytest.raises(ValueError):
+        disc_ellipse([0.0, 0.0, 20.0], [0.0, 0.0, 0.0], DISC.radius_m, INTR, PINHOLE)
+
+
+def test_the_demo_rotor_is_forty_pixels_across_and_a_quarter_as_tall() -> None:
+    """The quadrotor stage, end to end: 20 m, 15 degrees of camera tilt, a Boson-class lens.
+
+    A 28-inch rotor lands as a 41 x 11 px ellipse -- resolved enough to read as a disc, thin
+    enough that generating the coverage on the native grid would alias it into a dashed line,
+    which is why ``coverage_map`` is documented as a supersampled-grid operator.
+    """
+    boson = Intrinsics(
+        fx_px=1.0 / ((1.8 / 20.0) / 105.0),  # the stage's own scale: 1.8 m span = 105 px at 20 m
+        fy_px=1.0 / ((1.8 / 20.0) / 105.0),
+        cx_px=320.0,
+        cy_px=256.0,
+        width=640,
+        height=512,
+    )
+    tilt = math.radians(DEMO_TILT_DEG)
+    e = disc_ellipse(
+        [0.0, 0.0, 20.0], [0.0, math.sin(tilt), math.cos(tilt)], DISC.radius_m, boson, PINHOLE
+    )
+    assert e is not None
+    assert 2.0 * e.semi_major_px == pytest.approx(41.0, abs=1.0)
+    assert 2.0 * e.semi_minor_px == pytest.approx(10.7, abs=0.5)

@@ -56,8 +56,13 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.config.sensor import DistortionSpec
+from irsim.optics.projection import Intrinsics, project
+
 __all__ = [
     "RotorDisc",
+    "DiscEllipse",
+    "disc_ellipse",
     "swept_angle_rad",
     "projection_factor",
     "azimuthal_duty",
@@ -309,3 +314,104 @@ def veil_radiance(
         a = np.where(mask, 0.0, a)
     blade = np.asarray(blade_radiance, dtype=np.float64)
     return np.asarray(a * blade + (1.0 - a) * bg)
+
+
+@dataclass(frozen=True)
+class DiscEllipse:
+    """Where a rotor disc lands on the focal plane, ready for :func:`coverage_map`."""
+
+    centre_px: tuple[float, float]
+    semi_major_px: float
+    semi_minor_px: float
+    rotation_deg: float
+    tilt_rad: float
+
+    @property
+    def cos_tilt(self) -> float:
+        return self.semi_minor_px / self.semi_major_px if self.semi_major_px > 0.0 else 0.0
+
+
+def disc_ellipse(
+    centre_cv: Any,
+    axis_cv: Any,
+    radius_m: float,
+    intrinsics: Intrinsics,
+    distortion: DistortionSpec,
+) -> DiscEllipse | None:
+    """Project a rotor disc to its image ellipse, through the lens the engine was handed.
+
+    ``centre_cv`` is the disc centre and ``axis_cv`` its normal, both in **OpenCV camera space**
+    (+Z forward, +Y down) -- :func:`irsim.optics.projection.usd_camera_to_opencv` converts from a
+    USD camera. Returns ``None`` when the disc is behind the camera.
+
+    Both semi-axes are measured by **projecting rim points**, not by scaling ``f R / Z``, so the
+    distortion model and the off-axis scale come out of the same forward model the lens is
+    authored with (ADR 0015's oracle) rather than a small-angle stand-in. The major axis is taken
+    along ``axis x d``, which lies in the disc plane and perpendicular to the line of sight and is
+    therefore the one diameter that is *not* foreshortened; the minor axis is its in-plane
+    complement.
+
+    The remaining approximation is that the projected conic is centred on the projected centre and
+    that its axes are perpendicular in the image. Both are exact for an orthographic camera and
+    second order in the disc's angular size otherwise. **Measured, not assumed**
+    (``test_the_ellipse_matches_the_projected_rim``): a 0.71 m rotor seen 75 degrees off its axis at
+    20 m has rim points up to **0.079 px** off this ellipse, falling quadratically with range to
+    0.013 px at 50 m. The same term makes the axis ratio differ from ``cos(tilt)`` by 3e-4 at worst.
+    Both are far below the veil's own modelling uncertainty; an exact conic fit is the upgrade if
+    a disc ever has to be measured rather than drawn.
+    """
+    centre = np.asarray(centre_cv, dtype=np.float64).reshape(3)
+    axis = np.asarray(axis_cv, dtype=np.float64).reshape(3)
+    if radius_m <= 0.0:
+        raise ValueError("radius_m must be positive")
+    norm = float(np.linalg.norm(axis))
+    if norm == 0.0:
+        raise ValueError("axis_cv must be a non-zero vector")
+    axis = axis / norm
+    if centre[2] <= 0.0:
+        return None  # behind the camera, or in its plane
+
+    view = centre / float(np.linalg.norm(centre))
+    cos_tilt = abs(float(np.dot(axis, view)))
+
+    # The un-foreshortened diameter: in the disc plane and square to the line of sight.
+    major = np.cross(axis, view)
+    if float(np.linalg.norm(major)) < 1e-12:
+        # Exactly face-on: every diameter is equivalent, so pick one deterministically.
+        fallback = np.array([1.0, 0.0, 0.0]) if abs(axis[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        major = np.cross(axis, fallback)
+    major = major / float(np.linalg.norm(major))
+    minor = np.cross(axis, major)
+
+    rim = np.stack(
+        [
+            centre + radius_m * major,
+            centre - radius_m * major,
+            centre + radius_m * minor,
+            centre - radius_m * minor,
+        ]
+    )
+    if np.any(rim[:, 2] <= 0.0):
+        return None  # the disc straddles the camera plane; no single ellipse describes it
+    u, v = project(rim, intrinsics, distortion)
+    if not np.all(np.isfinite(u)) or not np.all(np.isfinite(v)):
+        return None
+    cu, cv = project(centre.reshape(1, 3), intrinsics, distortion)
+    centre_px = (float(cu[0]), float(cv[0]))
+
+    semi_major = 0.5 * float(np.hypot(u[0] - u[1], v[0] - v[1]))
+    semi_minor = 0.5 * float(np.hypot(u[2] - u[3], v[2] - v[3]))
+    rotation = math.degrees(math.atan2(v[0] - v[1], u[0] - u[1]))
+    if semi_minor > semi_major:
+        # A disc seen within a whisker of face-on can round the wrong way; naming the longer axis
+        # "major" and turning the frame by a right angle says the same thing without breaking
+        # coverage_map's contract that the minor axis is the foreshortened one.
+        semi_major, semi_minor = semi_minor, semi_major
+        rotation += 90.0
+    return DiscEllipse(
+        centre_px=centre_px,
+        semi_major_px=semi_major,
+        semi_minor_px=semi_minor,
+        rotation_deg=(rotation + 180.0) % 360.0 - 180.0,
+        tilt_rad=math.acos(min(1.0, cos_tilt)),
+    )
