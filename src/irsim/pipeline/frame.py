@@ -37,9 +37,8 @@ from irsim.optics.stage import apply_optics, invert_optics
 from irsim.pipeline.atmosphere import apply_atmosphere_gbuffer, apply_layered_gbuffer
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes
 from irsim.pipeline.detector import bolometer_lag, lag_interval_s
-from irsim.pipeline.environment import environment_radiance
 from irsim.pipeline.point_target import PointTarget, inject_point_targets
-from irsim.pipeline.radiance import band_radiance
+from irsim.pipeline.radiance import band_radiance, stage_illumination
 from irsim.pipeline.rotor_veil import RotorVeil, inject_rotor_veils
 
 __all__ = ["Outputs", "run_frame"]
@@ -128,12 +127,7 @@ def run_frame(
             "set optics.supersample_factor to match the render"
         )
 
-    # stage 1 (k× grid): emission + the reflected environment when a SkyModel is configured
-    l_env = None
-    if config.sky is not None:
-        l_env = environment_radiance(
-            config.sky, lut, state.t_s, np.asarray(planes["sky_view_factor"]), q
-        )
+    # stage 1 (k× grid): emission, always, plus whatever the band's regime lets illuminate it
     radiance_ss = band_radiance(
         t,
         planes["material_id"],
@@ -141,8 +135,8 @@ def run_frame(
         lut,
         q,
         sky_mask=planes.get("sky_mask"),
-        l_env=l_env,
         l_behind=planes.get("radiance_behind"),
+        illumination=stage_illumination(planes, config, state),
     )
     # stage 2 (k× grid): per-ray atmosphere; sky pixels pass through (ADR 0050)
     if isinstance(config.atmosphere, LayeredAtmosphere):

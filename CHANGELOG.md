@@ -43,6 +43,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The band-agnostic shading core** (M11.2, ADR 0063, §5.2). Stage 1 now takes an `Illumination`
+  bundle: three **incident** band radiances — the thermal environment, the direct beam as an
+  equivalent isotropic radiance `E_B τ_sun cos θ_s S / π`, and the isotropic night sources —
+  summed once and reflected once. Dividing the solar irradiance by π here rather than carrying
+  §5.4's combined `(ρ_B/π) E_B τ cos θ_s S` makes the Lambertian identity ρ = 1 → E_B/π an identity
+  *of the code*, and stops a caller applying ρ twice.
+- **§5.2's compile-time flag is a runtime switch on `band.regime`** (spec issue S17). A
+  compile-time flag cannot be set by a YAML file that did not exist when the binary was built, and
+  M11.1's guard would reject the `if band == "swir"` alternative on sight. The regime is consulted
+  in exactly one place, `Illumination.for_regime`, and every consumer downstream receives a bundle
+  that has already been gated.
+- A gated term is dropped to `None`, **not zeroed**, so an LWIR frame with a solar plane attached
+  takes the same branch as one without and comes out **bit-identical** rather than equal to within
+  rounding. That is the difference between a test that can fail and one that cannot.
+- **Self-emission is never culled**, and this is the part that would have produced a plausible
+  wrong picture. "Reflective" is a statement about a 300 K scene, not about a band. Against §5.5's
+  10 nW/cm² airglow a ρ = 0.1 surface in 0.9–1.7 µm crosses over at **330 K**: reflection wins by
+  15.3× at 300 K, emission wins by **11 235×** at 500 K. A jet exhaust, a flare or a brake disc is
+  a self-luminous object in night SWIR with no sun and no airglow at all, and a core that culled
+  ε·L_B in a reflective band would render it invisible with nothing looking broken.
+- **The units tag is checked at kernel entry.** `lb` and `lb_q` differ by ~1e19 at these
+  wavelengths, and a solar spectrum integrated in W m⁻² handed to a photon-unit kernel does not
+  raise, does not produce NaN and does not look wrong after AGC — it produces a scene that is
+  uniformly, invisibly mis-scaled. It is the one error in the illumination path no picture reveals.
+- The photon path is pinned to be the energy path divided by a **band average**, not by hc/λ at one
+  wavelength: the two kernels' ε = 1 outputs differ by an independently quadratured mean photon
+  energy to 1e-6, and that mean is **19.3 %** from the centre-wavelength shortcut at 300 K, so a
+  single-λ implementation could not pass. A uniform (0-d) environment is now broadcast — isotropic
+  airglow over a whole frame is the common case — but only 0-d, since general broadcasting would
+  let a `(H, 1)` column pass as a plane, which is what the shape check exists to catch (19 tests).
 - **A second band, added as data** (M11.1, §12.1, §12.2). `configs/sensors/example_swir_ingaas_640.yaml`
   and `data/spectra/responses/ingaas.csv` put a 640×512 uncooled InGaAs SWIR camera beside the LWIR
   Boson. It loads, classifies by overlap, hashes and tabulates a float32 LUT through the same

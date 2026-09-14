@@ -22,9 +22,15 @@ from irsim.materials.surface import surface_radiance
 from irsim.materials.table import MaterialTable
 from irsim.pipeline.core import PipelineConfig, PipelineState, Planes, require_fp32_or_better
 from irsim.pipeline.environment import environment_radiance
+from irsim.pipeline.illumination import Illumination, illumination_from_planes
 from irsim.radiometry.lut import BandLUT, Quantity
 
-__all__ = ["band_radiance", "band_radiance_stage", "BandRadianceStage"]
+__all__ = [
+    "band_radiance",
+    "band_radiance_stage",
+    "stage_illumination",
+    "BandRadianceStage",
+]
 
 
 def band_radiance(
@@ -36,6 +42,7 @@ def band_radiance(
     sky_mask: NDArray[np.bool_] | None = None,
     l_env: NDArray[np.floating] | None = None,
     l_behind: NDArray[np.floating] | None = None,
+    illumination: Illumination | None = None,
 ) -> NDArray[np.float32]:
     """ε₀ L_B(T) + ρ L_env + τ L_behind as float32 (``lb_q`` for photon FPAs).
 
@@ -44,7 +51,23 @@ def band_radiance(
     emission only (the M3 form). ``l_behind`` is what a second ray through a semi-transparent
     material returns (M7.15); without it L_behind = L_env (ADR 0046), which collapses the three
     terms back to the ε L_B + (1 − ε) L_env of M7.13 exactly, so an opaque scene is unaffected.
+
+    ``illumination`` is the M11.2 bundle and is the general form of ``l_env``: the environment
+    plus whatever solar and night sources the band's regime lets through, already gated and
+    carrying its own units tag, which is checked here (ADR 0063). It is mutually exclusive with
+    ``l_env`` -- two ways to say the same thing is how the two drift apart.
+
+    **ε L_B(T) is evaluated whatever the regime.** A reflective band is a statement about a 300 K
+    scene, not about the band: a 500 K exhaust glows in SWIR at night with no illumination at all.
     """
+    if illumination is not None:
+        if l_env is not None:
+            raise ValueError(
+                "pass either l_env or illumination, not both: the bundle already carries the "
+                "environment term as l_env (ADR 0063)"
+            )
+        illumination.require_quantity(quantity, "band_radiance")
+        l_env = illumination.total_incident()
     t = require_fp32_or_better(np.asarray(temperature_k), "temperature_k")
     ids = np.asarray(material_id)
     if ids.shape != t.shape:
@@ -60,7 +83,11 @@ def band_radiance(
             )
         return np.asarray(materials.emissivity_for(ids, sky_mask) * lb, dtype=np.float32)
     env = require_fp32_or_better(np.asarray(l_env), "l_env")
-    if env.shape != t.shape:
+    # A 0-d environment is a *uniform* one -- isotropic airglow over the whole frame, a fixed
+    # overcast -- and broadcasting it is unambiguous. Anything else must match the grid exactly:
+    # general broadcasting would let a (H, 1) column through as if it were a full plane, which is
+    # the misalignment this check exists to catch.
+    if env.ndim != 0 and env.shape != t.shape:
         raise ValueError(f"l_env shape {env.shape} != temperature shape {t.shape}")
     behind = None
     if l_behind is not None:
@@ -72,8 +99,15 @@ def band_radiance(
     return np.asarray(out, dtype=np.float32)
 
 
-def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineState) -> Planes:
-    """Stage-1 entry point on the plane dict: adds ``radiance`` (float32, W m⁻² sr⁻¹)."""
+def stage_illumination(
+    planes: Planes, config: PipelineConfig, state: PipelineState
+) -> Illumination:
+    """The M11.2 bundle for this frame: environment + the regime-gated solar and night planes.
+
+    One function so that ``run_frame`` and ``band_radiance_stage`` cannot end up illuminating
+    the scene differently -- they did diverge once already, which is how the stage and the frame
+    path came to hold two copies of the environment lookup.
+    """
     l_env = None
     if config.sky is not None:
         l_env = environment_radiance(
@@ -83,6 +117,13 @@ def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineS
             np.asarray(planes["sky_view_factor"]),
             config.quantity,
         )
+    return illumination_from_planes(
+        config.sensor.sensor.band.regime, config.quantity, planes, l_env=l_env
+    )
+
+
+def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineState) -> Planes:
+    """Stage-1 entry point on the plane dict: adds ``radiance`` (float32, W m⁻² sr⁻¹)."""
     out = band_radiance(
         planes["temperature_k"],
         planes["material_id"],
@@ -90,8 +131,8 @@ def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineS
         config.lut,
         config.quantity,
         sky_mask=planes.get("sky_mask"),
-        l_env=l_env,
         l_behind=planes.get("radiance_behind"),
+        illumination=stage_illumination(planes, config, state),
     )
     return {"radiance": out}
 
