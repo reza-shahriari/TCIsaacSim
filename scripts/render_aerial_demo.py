@@ -6,9 +6,15 @@ the Boson configuration, the scene's one WeatherSeries feeding the atmosphere, t
 the target solvers, the whole sensor chain, and four outputs per frame on disk in physical units
 (M10.10a). It is the thing to run when the question is "what does the camera see".
 
-There is no sky dome in the stage. Background rays take T_sky(theta) from the sky model at their
-own elevation, or T_ground below the horizon, because every colour AOV on this build is float16
-and would quantise the sky to ~100 mK against a 50 mK NETD (ADR 0014, ADR 0060).
+There is no sky *geometry* in the stage. Infrared background rays take T_sky(theta) from the sky
+model at their own elevation, or T_ground below the horizon, because every colour AOV on this
+build is float16 and would quantise the sky to ~100 mK against a 50 mK NETD (ADR 0014, ADR 0060).
+
+With --rgb the companion visible frame is rendered against a generated environment dome (ADR
+0073): a Preetham daylight sky plus a hazed Lambertian terrain, from the scene's own NOAA sun
+position and the shared weather's visibility and irradiance, with a distant light for the solar
+disc. It is a light, not geometry, so it changes no infrared pixel -- run --no-dome to see that
+for yourself, and to see how little of the visible frame geometry alone carries.
 
 Run with the Isaac interpreter (docs/decisions/0002), after `make luts`:
     python.sh scripts/render_aerial_demo.py --frames 8 --out outputs/aerial_demo
@@ -38,6 +44,21 @@ parser.add_argument(
     "--rgb",
     action="store_true",
     help="also capture the visible-light frame from the same camera (registered RGB/IR pair)",
+)
+parser.add_argument(
+    "--heading-deg",
+    type=float,
+    default=0.0,
+    help="compass bearing the camera looks along; 0 is north. Places the sun in the visible frame",
+)
+parser.add_argument(
+    "--camera-height-m",
+    type=float,
+    default=2.0,
+    help="height above the terrain painted on the dome; sets how wide the horizon haze band is",
+)
+parser.add_argument(
+    "--no-dome", action="store_true", help="untextured grey dome (ADR 0073 ablation)"
 )
 parser.add_argument(
     "--no-flat-field",
@@ -72,6 +93,7 @@ def main() -> int:
     from irsim_isaac.aerial_demo import analytic_targets, build_aerial_demo, describe
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
+    from irsim_isaac.visible_sky import dome_spec_from_scene
 
     out_dir = pathlib.Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +103,23 @@ def main() -> int:
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
     scene = Scene.from_file(args.scene, {spec.band.band_id: lut})
 
-    demo = build_aerial_demo(camera_tilt_deg=args.tilt_deg)
+    # The dome reads the sun, the visibility and the irradiance off the scene, so the companion
+    # frame cannot end up showing a different hour of a different day than the infrared one.
+    dome = None
+    if not args.no_dome:
+        dome = dome_spec_from_scene(
+            scene, heading_deg=args.heading_deg, camera_height_m=args.camera_height_m
+        )
+        print(
+            f"\nenvironment dome: sun at {dome.sun_elevation_deg:.1f} deg elevation, "
+            f"{dome.sun_azimuth_deg:.1f} deg azimuth "
+            f"({dome.sun_azimuth_deg - args.heading_deg:+.1f} deg from boresight); "
+            f"turbidity {dome.turbidity:.2f} at {dome.visibility_m / 1e3:.0f} km visibility; "
+            f"DNI {dome.dni_w_m2:.0f} W/m2, DHI {dome.dhi_w_m2:.0f} W/m2"
+        )
+    demo = build_aerial_demo(
+        camera_tilt_deg=args.tilt_deg, dome=dome, dome_texture_path=out_dir / "env_dome.exr"
+    )
     if demo.errors:
         print(f"stage errors: {demo.errors}", file=sys.stderr)
 
@@ -169,6 +207,7 @@ def main() -> int:
             extra_metadata={
                 "scene": pathlib.Path(args.scene).name,
                 "camera_tilt_deg": demo.camera_tilt_deg,
+                "camera_heading_deg": args.heading_deg,
                 "targets": rows,
                 "analytic_targets": sorted(injected),
             },
@@ -191,6 +230,17 @@ def main() -> int:
         "resolution": [spec.fpa.width, spec.fpa.height],
         "supersample": spec.optics.supersample_factor,
         "ifov_mrad": round(ifov_mrad, 4),
+        "dome": None
+        if dome is None
+        else {
+            "sun_elevation_deg": round(dome.sun_elevation_deg, 3),
+            "sun_azimuth_deg": round(dome.sun_azimuth_deg, 3),
+            "heading_deg": args.heading_deg,
+            "turbidity": round(dome.turbidity, 3),
+            "visibility_m": dome.visibility_m,
+            "dni_w_m2": round(dome.dni_w_m2, 2),
+            "dhi_w_m2": round(dome.dhi_w_m2, 2),
+        },
         "targets": rows,
         "analytic": sorted(injected),
         "files": [str(p.name) for r in written for p in r.files.values()],

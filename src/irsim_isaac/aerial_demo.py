@@ -3,14 +3,22 @@
 docs/physics-model.md §15 T3; roadmap M10.19 (the stage half); ADR 0003 (aerial first),
 ADR 0044/MS.2 (the sky profile), ADR 0060 (the thermal bridge), ADR 0014 (ids are the transport).
 
-**There is no sky dome, and no ground plane.** That looks like an omission and is the design. A
-ray that hits no geometry takes its apparent temperature from the sky model at its own elevation,
-or ``T_ground`` below the horizon (:mod:`irsim_isaac.pipeline.aerial_bridge`), so the background
-is computed rather than rendered. Modelling it as an emissive dome instead would push the sky
-through a colour AOV -- every one of which is float16 on this build, quantising to ~100 mK against
-a 50 mK NETD (ADR 0014) -- and would be worst exactly at the horizon, where the elevation gradient
-is steepest and where the targets of interest are. Geometry in this stage is therefore *only* the
-things that have a surface: the targets.
+**There is no sky *geometry*, and no ground plane.** That looks like an omission and is the
+design. A ray that hits no geometry takes its apparent temperature from the sky model at its own
+elevation, or ``T_ground`` below the horizon (:mod:`irsim_isaac.pipeline.aerial_bridge`), so the
+infrared background is computed rather than rendered. Modelling it as emissive dome geometry
+instead would push the sky through a colour AOV -- every one of which is float16 on this build,
+quantising to ~100 mK against a 50 mK NETD (ADR 0014) -- and would be worst exactly at the
+horizon, where the elevation gradient is steepest and where the targets of interest are. Geometry
+in this stage is therefore *only* the things that have a surface: the targets.
+
+What the stage *does* carry is a textured ``UsdLux.DomeLight`` and a ``UsdLux.DistantLight`` for
+the sun (:mod:`irsim_isaac.visible_sky`, ADR 0073). Neither is geometry, so neither is visible to
+the infrared path at all -- a ray that sees them still reports instance id 0 and an infinite
+``DistanceToCameraSD`` -- but together they give the companion visible frame a real sky, a real
+sun and a horizon, generated from the scene's own NOAA sun position and the shared weather's
+visibility and irradiance. Before them the visible frame was a flat grey void with a few grey
+squares in it, which said nothing about where the camera was pointing or what time it was.
 
 The camera is tilted **up**, so the horizon sits near the bottom of the frame and most of the
 image is the sky gradient a real anti-UAV camera spends its time looking at. Targets are placed in
@@ -27,8 +35,12 @@ that regime (:attr:`DemoTarget.subpixel_at`) rather than leaving it to be discov
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any
+
+from irsim_isaac.stage import DOME_HEIGHT, author_environment, bind_visible_look
+from irsim_isaac.visible_sky import DomeSpec
 
 __all__ = [
     "DemoTarget",
@@ -136,16 +148,26 @@ def build_aerial_demo(
     camera_path: str = "/World/IrCamera",
     camera_tilt_deg: float = 8.0,
     targets: tuple[tuple[str, float, float, float, float, str, str], ...] = DEMO_TARGETS,
+    dome: DomeSpec | None = None,
+    dome_texture_path: str | os.PathLike[str] | None = None,
+    dome_height: int = DOME_HEIGHT,
 ) -> AerialDemoScene:
-    """Author the stage: a tilted camera and the target prims. No sky dome, no ground plane.
+    """Author the stage: a tilted camera, the target prims, and the lights the visible frame needs.
 
     Each target is a front-parallel quad facing the camera. A quad rather than a mesh of a real
     airframe because what this stage exists to exercise is range, size, material and the sky
     behind them; a detailed model would add silhouette structure the radiometry does not yet
     distinguish and would make the expected contrast impossible to state in a test.
+
+    ``dome`` is the environment the *visible* companion frame is rendered against
+    (:func:`irsim_isaac.visible_sky.dome_spec_from_scene` builds one from the scene, so that the
+    two frames describe the same hour of the same day). Passing ``None`` leaves the stage with the
+    untextured grey dome it had before ADR 0073, which is the ablation: it shows how little of the
+    visible frame is actually carried by geometry. Either way the infrared path is identical --
+    a light is not geometry and never reaches the temperature plane.
     """
     import omni.usd
-    from pxr import Gf, Sdf, UsdGeom, UsdLux
+    from pxr import Gf, Sdf, UsdGeom
 
     ctx = omni.usd.get_context()
     ctx.new_stage()
@@ -154,16 +176,21 @@ def build_aerial_demo(
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     stage.DefinePrim("/World", "Xform")
     stage.DefinePrim("/World/Targets", "Xform")
+    stage.DefinePrim("/World/Looks", "Scope")
+
+    errors: dict[str, str] = {}
     # Lights for the *visible* render only. The infrared path never reads a colour AOV, so these
     # change nothing about the IR frame -- and neither is geometry, so no ray ever "hits" them:
     # `instance_id` stays 0 and `DistanceToCameraSD` stays inf on those pixels, which is what lets
-    # the IR background keep coming from the sky model (ADR 0060) while RGB still has a sky to
-    # show. Without them the companion capture is a black frame with a few lit quads in it, which
-    # is what this stage genuinely looks like in visible light: it has no sky dome and no ground.
-    UsdLux.DistantLight.Define(stage, "/World/SunForRgb").CreateIntensityAttr(1200.0)
-    UsdLux.DomeLight.Define(stage, "/World/SkyForRgb").CreateIntensityAttr(900.0)
+    # the IR background keep coming from the sky model (ADR 0060) while the companion frame still
+    # has a sky, a horizon and a sun to show. Authored before the targets so that a failure here
+    # is recorded and the stage still builds: a dark companion frame is a nuisance, a missing
+    # infrared frame is not.
+    try:
+        author_environment(stage, dome, dome_texture_path, dome_height)
+    except Exception as exc:  # noqa: BLE001 - a dark companion frame must not stop the IR render
+        errors["environment"] = f"{type(exc).__name__}: {exc}"
 
-    errors: dict[str, str] = {}
     built: dict[str, DemoTarget] = {}
     for name, range_m, size_m, az, el, material, node in targets:
         path = f"/World/Targets/{name}"
@@ -191,6 +218,10 @@ def build_aerial_demo(
             attr.Set(material)
         except Exception as exc:  # noqa: BLE001 - a failed override is data, not a crash
             errors[f"{name}:override"] = f"{type(exc).__name__}: {exc}"
+        try:
+            bind_visible_look(stage, mesh, material)
+        except Exception as exc:  # noqa: BLE001 - appearance only; never fail the IR render
+            errors[f"{name}:look"] = f"{type(exc).__name__}: {exc}"
 
         built[name] = DemoTarget(
             name=name,

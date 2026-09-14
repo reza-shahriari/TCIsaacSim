@@ -46,28 +46,35 @@ TILT_DEG = 8.0
 HORIZON_TOLERANCE_PX = 3.0
 
 
-@pytest.fixture(scope="module")
-def demo_camera(simulation_app: Any, tophat_lwir_lut: Any) -> Any:
-    """`IrCamera` on the aerial demo stage, at a small format so the render is quick."""
-    del simulation_app
+def _demo_sensor() -> Any:
     from irsim.config.sensor import SensorConfig
-    from irsim.materials.library import MaterialLibrary
-    from irsim.materials.mapping import MaterialResolver, load_mapping_rules
-    from irsim.materials.table import MaterialTable
-    from irsim.pipeline.core import PipelineConfig
-    from irsim.scene import Scene
-    from irsim_isaac.aerial_demo import build_aerial_demo
-    from irsim_isaac.pipeline.ir_camera import IrCamera
-    from irsim_isaac.pipeline.materials_usd import prim_records
 
     raw = copy.deepcopy(yaml.safe_load(BOSON_YAML.read_text()))
     raw["sensor"]["fpa"].update(width=WIDTH, height=HEIGHT)
     raw["sensor"]["optics"]["focal_length_mm"] = FOCAL_MM
     raw["sensor"]["optics"]["supersample_factor"] = SUPERSAMPLE
-    sensor = SensorConfig.model_validate(raw)
+    return SensorConfig.model_validate(raw)
 
-    scene = Scene.from_file(SCENE_YAML, {"lwir": tophat_lwir_lut})
-    demo = build_aerial_demo(camera_tilt_deg=TILT_DEG)
+
+def _demo_scene(tophat_lwir_lut: Any) -> Any:
+    from irsim.scene import Scene
+
+    return Scene.from_file(SCENE_YAML, {"lwir": tophat_lwir_lut})
+
+
+def _build_demo_camera(tophat_lwir_lut: Any, *, dome: Any = None, capture_rgb: bool = False) -> Any:
+    """`IrCamera` on the aerial demo stage, at a small format so the render is quick."""
+    from irsim.materials.library import MaterialLibrary
+    from irsim.materials.mapping import MaterialResolver, load_mapping_rules
+    from irsim.materials.table import MaterialTable
+    from irsim.pipeline.core import PipelineConfig
+    from irsim_isaac.aerial_demo import build_aerial_demo
+    from irsim_isaac.pipeline.ir_camera import IrCamera
+    from irsim_isaac.pipeline.materials_usd import prim_records
+
+    sensor = _demo_sensor()
+    scene = _demo_scene(tophat_lwir_lut)
+    demo = build_aerial_demo(camera_tilt_deg=TILT_DEG, dome=dome)
     assert demo.errors == {}, demo.errors
 
     table = MaterialTable.from_library(MaterialLibrary.load(), "lwir")
@@ -84,9 +91,27 @@ def demo_camera(simulation_app: Any, tophat_lwir_lut: Any) -> Any:
         prim_to_target=demo.prim_to_target,
         resolutions=resolutions,
         camera_path=demo.camera_path,
+        capture_rgb=capture_rgb,
         strict_materials=False,
     ).open(settle_frames=16)
     camera.demo = demo  # type: ignore[attr-defined]
+    return camera
+
+
+@pytest.fixture(scope="module")
+def demo_camera(simulation_app: Any, tophat_lwir_lut: Any) -> Any:
+    """The infrared claims below are made against the stage with its environment dome authored.
+
+    Deliberately *with* the dome rather than without: every assertion about the sky profile, the
+    horizon and the target contrast then doubles as evidence that a light in the stage leaves the
+    infrared path alone. ``test_the_dome_does_not_touch_one_infrared_pixel`` makes that explicit.
+    """
+    del simulation_app
+    from irsim_isaac.visible_sky import dome_spec_from_scene
+
+    camera = _build_demo_camera(
+        tophat_lwir_lut, dome=dome_spec_from_scene(_demo_scene(tophat_lwir_lut), heading_deg=0.0)
+    )
     yield camera
     camera.close()
 
@@ -293,3 +318,95 @@ def test_the_four_outputs_come_back_at_the_declared_dtypes(frame: Any) -> None:
     assert out.display8 is not None and out.display8.dtype == np.uint8
     assert out.display8.shape == (HEIGHT, WIDTH, 4)
     assert np.all(np.isfinite(out.apparent_t))
+
+
+# --- the companion visible frame and its environment dome (ADR 0073) ------------------------
+
+
+def test_the_dome_does_not_touch_one_infrared_pixel(
+    simulation_app: Any, tophat_lwir_lut: Any
+) -> None:
+    """The whole safety argument for ADR 0073, as an equality: same stage, dome or no dome.
+
+    A ``UsdLux.DomeLight`` is a light and not geometry, so a ray that sees it still reports
+    instance id 0 and an infinite ``DistanceToCameraSD`` and the infrared background keeps coming
+    from the sky model (ADR 0060). That is the *reason* it is safe; this is the *evidence*. Bit
+    equality rather than a tolerance, because there is no mechanism by which a light could shift
+    the answer slightly -- either it is out of the infrared path entirely or the design is wrong.
+    """
+    del simulation_app
+    from irsim_isaac.visible_sky import dome_spec_from_scene
+
+    frames = {}
+    for label in ("dome", "no dome"):
+        camera = _build_demo_camera(
+            tophat_lwir_lut,
+            dome=None
+            if label == "no dome"
+            else dome_spec_from_scene(_demo_scene(tophat_lwir_lut), heading_deg=0.0),
+        )
+        try:
+            out = camera.get_outputs()
+            frames[label] = (
+                np.asarray(out.radiance, dtype=np.float32).copy(),
+                np.asarray(out.apparent_t, dtype=np.float32).copy(),
+            )
+        finally:
+            camera.close()
+
+    for index, quantity in enumerate(("radiance", "apparent temperature")):
+        with_dome, without = frames["dome"][index], frames["no dome"][index]
+        assert np.array_equal(with_dome, without), (
+            f"the environment dome changed the {quantity} plane by up to "
+            f"{float(np.abs(with_dome - without).max()):.3g}"
+        )
+
+
+def test_the_sun_renders_where_noaa_puts_it(simulation_app: Any, tophat_lwir_lut: Any) -> None:
+    """Point the camera down the sun's own azimuth; the disc must land on the predicted pixel.
+
+    This is the end-to-end check on the half of ADR 0073 that cannot be verified engine-free: the
+    lat-long pole axis the RTX dome light samples with, and the orientation of the distant light
+    that carries the solar disc. Both are conventions of a renderer whose documentation does not
+    settle them, and both fail *silently* -- the sky still renders, it is simply a different part
+    of the sky, and the first version of this module filled the entire frame with ground because
+    of it.
+
+    The expected pixel has no free parameters: with the camera's boresight at ``TILT_DEG`` and the
+    sun at NOAA's elevation, the disc sits ``f_px tan(tilt - elevation)`` below the frame centre,
+    and on the centre column because the camera was pointed along the sun's azimuth.
+    """
+    del simulation_app
+    from irsim.thermal.solar import sun_position_utc
+    from irsim_isaac.visible_sky import dome_spec_from_scene
+
+    scene = _demo_scene(tophat_lwir_lut)
+    site = scene.spec.site
+    sun = sun_position_utc(site.latitude_deg, site.longitude_deg, scene.spec.start_utc)
+    elevation = float(sun.elevation_deg)
+    assert elevation > 1.0, "this check needs the sun above the horizon at the scene's start"
+
+    camera = _build_demo_camera(
+        tophat_lwir_lut,
+        dome=dome_spec_from_scene(scene, heading_deg=float(sun.azimuth_deg)),
+        capture_rgb=True,
+    )
+    try:
+        camera.get_outputs()
+        rgb = camera.last_frame.rgb
+        assert rgb is not None, f"no companion frame: {camera.rgb_problem}"
+        luminance = np.asarray(rgb, dtype=np.float64)[..., :3].sum(axis=-1)
+        row, col = np.unravel_index(int(np.argmax(luminance)), luminance.shape)
+    finally:
+        camera.close()
+
+    f_px = FOCAL_MM / 0.012
+    expected_row = HEIGHT / 2.0 + f_px * math.tan(math.radians(TILT_DEG - elevation))
+    assert abs(float(col) - WIDTH / 2.0) < 8.0, (
+        f"the sun should be on the centre column when the camera looks down its azimuth, "
+        f"not column {col} of {WIDTH}"
+    )
+    assert abs(float(row) - expected_row) < 8.0, (
+        f"the solar disc is at row {row}; NOAA's {elevation:.2f} deg elevation and an "
+        f"{FOCAL_MM} mm lens put it at {expected_row:.1f}"
+    )

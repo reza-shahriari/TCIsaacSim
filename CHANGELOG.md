@@ -5,6 +5,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **A real sky for the companion visible frame** (ADR 0073). `--rgb` on the aerial demo used to
+  write a flat grey void with six grey squares in it: no sky, no horizon, no sun, nothing a reader
+  could use to check where the camera was pointing or what hour it was. Since the infrared frame
+  cannot be eyeballed for correctness at all, the visible frame is the only half of the pair a
+  human can apply ordinary judgement to, and it was not doing that job.
+- `irsim_isaac.visible_sky` generates a float32 lat-long environment map -- a Preetham-Shirley-Smits
+  (SIGGRAPH 1999) analytic daylight sky above the horizon, a Lambertian terrain faded into the
+  horizon sky by Koschmieder's contrast transmittance below it -- and `aerial_demo` binds it to the
+  stage's dome light with a 0.53° distant light for the solar disc.
+- Every input is the scene's own, so the two frames cannot describe different days: NOAA sun
+  position at the scene's site and clock, DNI/DHI from the shared `WeatherSeries` (CLAUDE.md #6),
+  and turbidity derived from that weather's visibility against the atmosphere preset's visible
+  Rayleigh coefficient. Turbidity is a ratio of **column** optical depths -- taking the
+  ground-level ratio instead gives T = 14.2 on a clear 23 km day, a dense industrial haze, where
+  the column ratio gives 2.98.
+- **The infrared path is untouched, asserted rather than argued.** A `UsdLux.DomeLight` is a light
+  and not geometry, so a ray that sees it still reports instance id 0 and an infinite
+  `DistanceToCameraSD` and the background keeps coming from the sky model (ADR 0060). The radiance
+  and apparent-temperature planes come out **bit-identical** with the dome and without it, which is
+  an integration test and not a remark.
+- **The renderer's lat-long convention had to be measured.** On this build the RTX dome light
+  samples the texture with its polar axis on the stage's **+Z** and its azimuth running from +X
+  toward -Y -- not the stage up axis, and not what the USD documentation implies. The first
+  implementation authored the map in elevation and azimuth and rendered a frame filled entirely
+  with ground, because the whole camera field fell inside one texture pole. The map is now authored
+  in direction space, `DOME_POLE_AXIS` records the measurement, and an integration test re-measures
+  it: pointed down the sun's own azimuth, the solar disc must land within 8 px of
+  `f_px·tan(tilt − elevation)`.
+- Targets get a `UsdPreviewSurface` in the visible band, so the companion frame shows a white
+  airframe and a black carbon one rather than six identical grey squares. Appearance only -- the
+  infrared properties still come from the material library through the `thermal:material` override,
+  and the looks live under `/World/Looks` so they never reach the material resolver's prim walk.
+- Two absences are deliberate, so the pair does not show what the infrared frame does not have:
+  **no cloud** on the dome (MS.3's cloud field is not wired into `aerial_bridge` yet) and **no
+  solar disc in the sky texture** (Preetham carries the aureole, the distant light carries the
+  disc, so the two do not double-count).
+- The dome light's `intensity` carries an **auto-exposure** on the median daylight sky, because the
+  sky's absolute level moves by two decades between dawn and noon. That is a display choice and is
+  why the visible frame carries no absolute brightness information; only its *geometry* is a
+  calibrated claim. The twilight fade is divided back out of the reference, so a night scene still
+  renders dark instead of being exposed up to look like noon.
+- `scripts/render_aerial_demo.py` gains `--heading-deg` (the compass bearing the camera looks
+  along, which is what places the sun in the frame), `--camera-height-m` and `--no-dome`.
+
 ### Fixed
 - **The camera's flat-field correction was never applied** (roadmap M9.12). `irsim.isp.TwoPointNuc`
   has existed since M5 with its own tests, and nothing in `irsim.pipeline` referenced it -- so the
