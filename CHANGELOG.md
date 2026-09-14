@@ -6,6 +6,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **A resolved quadrotor flying a mission, filmed in LWIR** (ADR 0074). `scripts/render_quad_flight.py`
+  puts one heavy-lift multirotor at 20 m -- 105 px across the span, 6 px per motor bell -- against
+  sky and flies a 30-minute profile while ADR 0072's heat sources take the motors from ambient to
+  +45 K and back. The four hot bells, the warm speed controllers and the warm battery are separate
+  objects in the image, which is what a thermal sensor actually keys on in a drone.
+- `irsim_isaac.quadrotor` builds the airframe **parametrically from primitives** rather than
+  importing a mesh. Every part is separate by construction, so the thermal nodes attach
+  themselves; its dimensions are stated rather than measured off a bounding box, which is what
+  lets a test assert an angular size; and there is no licence or unit-scale bug to carry. Motor
+  bells default to a high-emissivity anodised material -- **bare aluminium is ε = 0.09 in this
+  library** and would render a 70 °C motor as barely above the reflected sky.
+- **Propellers are deliberately absent.** A 28-inch prop modelled as a solid disc is 33 px across
+  at 20 m and hides the motors, which are the subject; physically a prop at flight rpm smears into
+  a faint annulus within a 60 Hz integration period. Doing that properly needs the motion path
+  (M10.1b).
+- `irsim_isaac.quad_flight` is the stage. The camera tracks the aircraft, because a drone on a
+  30-minute mission covers kilometres and nothing that flies realistically stays in a 33° field;
+  attitude is driven by the **same throttle** the thermal model reads, so the picture and the
+  physics cannot disagree about what the aircraft is doing.
+
+### Changed
+- **Scene schema v2 → v3: `heat_source` and `airframe` target solvers.** §6.6's aerial node model
+  (ADR 0072) has existed since M6.6 and was reachable *only from its own unit tests* -- no scene
+  could ask for a motor, because `irsim.config.scene` had no solver kind that named one. A scene
+  now names a **throttle profile** and the temperature is derived through ΔT = ΔT_max·u^n, refined
+  until piecewise-linear interpolation reproduces the law to 1 mK. Authoring a temperature
+  schedule alongside a throttle is refused: two answers and no way to pick. `configs/scenes/
+  sky_target_clear_day.yaml` is migrated in the same commit.
+- An `airframe` node's schedule spans the whole weather file, so its solver is explicitly advanced
+  to the scene start; without that its first reading is the air temperature hours earlier -- here
+  the difference between a 26 °C midday and an 18 °C dawn, and plausible either way.
+- `IrCamera` takes an optional `frame_period_s`, which makes it a **time-lapse camera**. Not a
+  fast-forward: every stage is told the truth about the interval, so the FFC fires on its real
+  schedule, the fixed pattern drifts by a real amount, and the temporal noise decorrelates exactly
+  as it would between two captures that far apart.
+- The environment dome and the visible-band looks moved from `aerial_demo` into a shared
+  `irsim_isaac.stage`, so a second stage cannot re-derive either and drift from the first.
+
+### Notes
+- **The video is a time-lapse, and that is a physics decision.** ADR 0072's node law is a
+  *steady-state* relation -- T = T_air + ΔT_max·u², with no thermal time constant -- so it is only
+  defensible while the throttle moves slowly against a real motor's minutes-scale response. The
+  flight is authored over 1800 s and captured one frame every 6 s. Running the same profile at
+  60 Hz would look smoother and would show 45 K of swing no metal could follow. Every transient in
+  the video is a *throttle* transient.
+- **The main video is a fixed display span, not the camera's AGC.** Both §11.3 AGC modes rescale
+  from the current frame's own histogram, which cancels exactly the change the video exists to
+  show; plateau equalisation additionally allocates display codes by population, so an aircraft
+  covering under 1 % of the frame saturates to flat white with the motors indistinguishable from
+  the arms. That is measured, not predicted -- it is what the first render looked like. The
+  camera's own AGC output is filmed alongside as a second video, because the difference is the
+  lesson.
+- ΔT_max stays **ESTIMATED** (45 / 30 / 15 K for motor / ESC / battery, ADR 0072). The ordering is
+  the defensible part; the magnitudes are what a Tier 4 fit against public aerial IR should move
+  first.
+
+### Added
 - **A real sky for the companion visible frame** (ADR 0073). `--rgb` on the aerial demo used to
   write a flat grey void with six grey squares in it: no sky, no horizon, no sun, nothing a reader
   could use to check where the camera was pointing or what hour it was. Since the infrared frame

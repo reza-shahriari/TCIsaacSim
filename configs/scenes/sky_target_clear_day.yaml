@@ -2,7 +2,7 @@
 # Schema: irsim.config.scene (M6.17). The weather FILE is named here and nowhere else: the
 # Scene loads it once and injects the one WeatherSeries into the atmosphere and the targets.
 
-schema_version: 2
+schema_version: 3
 scene:
   name: sky_target_clear_day
   description: "Prescribed-temperature aerial target, clear day, US Standard atmosphere"

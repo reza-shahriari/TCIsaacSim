@@ -30,6 +30,7 @@ from irsim.config.environment import EnvironmentSpec, load_environment_preset
 from irsim.config.loader import resolve_data_dir
 from irsim.config.scene import SceneConfig, SceneSpec, TargetSpec, load_scene_config
 from irsim.radiometry.lut import BandLUT, Quantity
+from irsim.thermal.aerial import AERIAL_HEAT_SOURCES, airframe_solver, heat_source_solver
 from irsim.thermal.solvers import NewtonCoolingSolver, PrescribedSolver, TemperatureSolver
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 from irsim.thermal.weather_io import load_weather_csv
@@ -38,10 +39,35 @@ __all__ = ["Scene", "build_target"]
 
 
 def build_target(spec: TargetSpec, weather: WeatherSeries, t0_s: float) -> TemperatureSolver:
-    """A solver for one target spec; Newton nodes relax toward the shared weather's T_air."""
+    """A solver for one target spec, on the scene's one shared ``WeatherSeries`` (CLAUDE.md #6).
+
+    ``heat_source`` and ``airframe`` are §6.6's aerial nodes (ADR 0072). They come back as
+    ``PrescribedSolver``s like everything else -- the difference is only that their schedule is
+    *derived* from the throttle profile and the shared weather, refined until piecewise-linear
+    interpolation reproduces the analytic law to 1 mK, rather than typed into the config.
+    """
     if spec.solver == "newton":
         assert spec.t0_k is not None and spec.tau_s is not None
         return NewtonCoolingSolver(spec.t0_k, spec.tau_s, weather, t0_s=t0_s)
+    if spec.solver in ("airframe", "heat_source"):
+        if spec.solver == "airframe":
+            derived = airframe_solver(weather, offset_k=spec.offset_k or 0.0)
+        else:
+            assert spec.source is not None and spec.throttle_s is not None
+            assert spec.throttle is not None
+            # The profile is written in seconds after the *scene start*; the solvers live on the
+            # weather's absolute axis, so it is offset here and nowhere else.
+            derived = heat_source_solver(
+                AERIAL_HEAT_SOURCES[spec.source],
+                weather,
+                t0_s + np.asarray(spec.throttle_s, dtype=np.float64),
+                spec.throttle,
+            )
+        # Neither constructor takes t0_s, and an airframe node's schedule spans the whole weather
+        # file, so without this its initial reading is the temperature at the *file's* start
+        # rather than the scene's -- hours out, and perfectly plausible.
+        derived.advance(t0_s, 0.0)
+        return derived
     assert spec.schedule_s is not None and spec.schedule_k is not None
     times = t0_s + np.asarray(spec.schedule_s, dtype=np.float64)
     return PrescribedSolver(times, np.asarray(spec.schedule_k, dtype=np.float64), t0_s=t0_s)

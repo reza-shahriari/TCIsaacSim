@@ -1,0 +1,53 @@
+# A heavy-lift quadrotor flying a 30-minute mission on a clear midday. Schema: irsim.config.scene
+# (v3). The weather FILE is named here and nowhere else: the Scene loads it once and injects the
+# one WeatherSeries into the atmosphere, the sky and every target node (CLAUDE.md #6).
+#
+# Midday rather than the dawn of sky_target_clear_day: at a 61 deg sun the sky the camera actually
+# sees (7-33 deg elevation at this tilt) is blue, where at a 6 deg sun every elevation in frame is
+# orange. It also means a 26 C air temperature, so the whole thermal picture differs -- that is the
+# shared weather doing its job, not a side effect.
+#
+# The mission is authored as **throttle**, not as temperature. ADR 0072's law
+# T = T_air(t) + dT_max * u(t)^2 then derives each node, so the motors, the speed controllers and
+# the pack stay in their physical ordering automatically and a change to the flight is a change to
+# what the pilot did. NOTE the law is a *steady-state* relation with no thermal time constant, so
+# this profile is deliberately slow -- minutes per phase, against a real motor's minutes-scale
+# response. Do not shorten it to make a snappier video; see ADR 0074.
+
+schema_version: 3
+scene:
+  name: quad_flight_clear_noon
+  description: "Heavy-lift quadrotor, 30 min mission, clear midday, US Standard atmosphere"
+  weather_file: weather/clear_midlat_summer_48h.csv     # relative to the data root
+  atmosphere_preset: us_standard_clear                  # configs/atmospheres/
+  environment_preset: clear_dry                         # configs/environments/ (sky, ground, solar)
+  site: {latitude_deg: 48.1, longitude_deg: 11.6, altitude_m: 520.0}
+  start_utc: "2024-06-21T10:00:00Z"                     # 12:00 local; sun at 61 deg
+  targets:
+    # Unpowered carbon skin: forced convection at flight speed pins it to the air it flies through.
+    - {name: airframe, solver: airframe, offset_k: 0.0}
+
+    # Motors, speed controllers and the pack all read the same throttle history. dT_max differs
+    # per source (45 / 30 / 15 K at full throttle, ADR 0072, ESTIMATED), so one profile gives the
+    # three-level signature a thermal camera actually sees.
+    #   0-120 s    idle on the ground, rotors turning
+    #   120-300 s  takeoff and climb at high power
+    #   300-900 s  cruise
+    #   900-1200 s a hard climb: the hottest part of the mission
+    #   1200-1560 s descent, power backed off
+    #   1560-1800 s landed, idling down to cold
+    - name: motor
+      solver: heat_source
+      source: motor
+      throttle_s: [0.0, 120.0, 300.0, 600.0, 900.0, 1080.0, 1200.0, 1440.0, 1560.0, 1800.0]
+      throttle:   [0.15,  0.18,  0.85,  0.62,  0.66,   0.98,   0.95,   0.35,   0.20,   0.05]
+    - name: esc
+      solver: heat_source
+      source: esc
+      throttle_s: [0.0, 120.0, 300.0, 600.0, 900.0, 1080.0, 1200.0, 1440.0, 1560.0, 1800.0]
+      throttle:   [0.15,  0.18,  0.85,  0.62,  0.66,   0.98,   0.95,   0.35,   0.20,   0.05]
+    - name: battery
+      solver: heat_source
+      source: battery
+      throttle_s: [0.0, 120.0, 300.0, 600.0, 900.0, 1080.0, 1200.0, 1440.0, 1560.0, 1800.0]
+      throttle:   [0.15,  0.18,  0.85,  0.62,  0.66,   0.98,   0.95,   0.35,   0.20,   0.05]

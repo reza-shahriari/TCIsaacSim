@@ -295,6 +295,9 @@ class IrCamera:
     to one ``WeatherSeries``; ``prim_to_target`` says which prim is which thermal node. The camera
     advances its own clock by one frame period per capture, so the FFC schedule, the pattern drift
     and the thermal solvers all run on the same time base as a real 60 Hz core would.
+    ``frame_period_s`` overrides that period, which turns the object into a time-lapse camera
+    (ADR 0074) -- one capture every N seconds of scene time, with every stage told the truth about
+    how much time passed.
     """
 
     def __init__(
@@ -313,6 +316,7 @@ class IrCamera:
         capture_rgb: bool = False,
         debug_unmapped: bool = True,
         strict_materials: bool = True,
+        frame_period_s: float | None = None,
         device: str = "cpu",
     ) -> None:
         band = sensor.sensor.band.band_id
@@ -351,7 +355,19 @@ class IrCamera:
             )
         self.state = PipelineState(t_s=scene.t0_s)
         self.bridge = AerialThermalBridge(scene, prim_to_target, band=band)
-        self.frame_period_s = 1.0 / float(sensor.sensor.fpa.frame_rate_hz)
+        # How much scene time one capture costs. The sensor's own frame rate by default; an
+        # override makes this a **time-lapse camera** -- one frame every N seconds -- which is the
+        # honest way to film a process slower than the video that shows it. It is not a speed-up
+        # knob: the whole chain is told that N seconds really passed, so the FFC fires on its real
+        # schedule, the fixed pattern drifts by a real amount and the temporal noise decorrelates
+        # exactly as it would between two frames that far apart (ADR 0074).
+        if frame_period_s is not None and not frame_period_s > 0.0:
+            raise ValueError("frame_period_s must be positive")
+        self.frame_period_s = (
+            1.0 / float(sensor.sensor.fpa.frame_rate_hz)
+            if frame_period_s is None
+            else float(frame_period_s)
+        )
         self._t_rel_s = 0.0
         self._reader: AovReader | None = None
         self._render_product: Any = None
