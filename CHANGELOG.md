@@ -43,6 +43,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Tier 3 multi-band phenomenology, and the architecture claim** (M11.8, §15 T3, §5.2, §16.4 step 10).
+  `tests/unit/test_tier3_multiband.py` runs LWIR, SWIR and MWIR against one prescribed facet scene
+  (M6's solver is a later step, so the noon and 03:00 temperatures are authored inputs; the tests
+  assert *orderings*, which are properties of the radiometry, and say so where a number could have
+  set the answer).
+- **The architecture assertion, as a fact rather than a claim:** three bands are configured and
+  `planck.py`, `band_integration.py`, `band_average.py`, `lut.py`, `lut_files.py`, `encoding.py` and
+  `band.py` have **not changed since M1.11**, when LWIR was the only band there was. The two
+  exclusions are named and separately tested rather than quietly globbed out: `constants.py` grew
+  constants, which CLAUDE.md directs, and `spectral_response.py` took exactly one change, from M5's
+  MTF cascade.
+- **⚠️ The roadmap's "MWIR glass saturates at noon while LWIR does not" is true of a scene and false
+  of a mirror, and both are now recorded.** At *exact* specular alignment **every** band saturates —
+  LWIR by 8× — because a mirror shows you the sun and the sun is a 5778 K blackbody in LWIR too
+  (E_B/Ω_sun = 2.8e4 W m⁻² sr⁻¹). What separates the bands is the **angular window** in which the
+  glint saturates: **0.51° in LWIR, 3.72° in MWIR, 18.6° in SWIR** — a 36× spread, and the
+  operational quantity, since it says how much of a real scene one reflection ruins. At a realistic
+  2° off-specular geometry MWIR sits at 7.0× full scale and LWIR at 0.17 of it.
+- At 03:00 with the sun below the horizon, MWIR and LWIR **agree** about which facet is hotter —
+  Spearman rank correlation > 0.9 across six materials — because both are reading self-emission.
+  Two companion tests keep that from being vacuous: the scene spans more than 5 K in both bands, and
+  the noon ranking is *not* the night ranking.
+- In SWIR at night the scene is lit rather than glowing: the signal is linear in the airglow level
+  across §5.5's whole 3.5–39 nW/cm² range (r > 0.999), is exactly zero without it, and is more than
+  10× the same surface's own 300 K emission.
+- **⚠️ The example SWIR camera does not reach "SNR > 5 from airglow": it reaches 0.32**, and that is
+  not a modelling failure — it is what a 60 Hz, 120 e⁻, F/1.4 uncooled InGaAs core gives on a
+  moonless night, which is why night-capable SWIR parts are specified differently. The test builds
+  the camera that *does* reach 5 and names the four changes it takes: 16 → 33 ms integration,
+  15 → 20 µm pixels, 120 → 25 e⁻ read noise and F/1.4 → F/1.0. Every one is needed (20 tests).
 - **The reflection lobe: near-mirror sky, and solar glint** (M11.7, ADR 0067, §4.3, §5.4).
   `irsim.materials.lobe` gives §4.3's qualitative claim a model — a GGX microfacet kernel with
   α = roughness² — and `irsim.pipeline.specular` binds it to the `SkyModel` and to M11.3's solar
