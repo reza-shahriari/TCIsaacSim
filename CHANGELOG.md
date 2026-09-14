@@ -43,6 +43,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **A second band, added as data** (M11.1, §12.1, §12.2). `configs/sensors/example_swir_ingaas_640.yaml`
+  and `data/spectra/responses/ingaas.csv` put a 640×512 uncooled InGaAs SWIR camera beside the LWIR
+  Boson. It loads, classifies by overlap, hashes and tabulates a float32 LUT through the same
+  `make luts` — **no kernel changed, and none was touched.**
+- `tests/unit/test_band_scalability.py` (32 tests) is what keeps that true, in two halves. The
+  dynamic half parametrises over *every* YAML in `configs/sensors/`, so a third band is tested the
+  moment it is added. The static half walks the ASTs of
+  `irsim/{radiometry,optics,detector,noise,isp,pipeline}` and refuses a band name in a string **or
+  an identifier** (`SWIR_CUTOFF` is `if band == "swir"` wearing different clothes), and a nominal
+  band edge written as a wavelength — the numeric form of the same coupling. The core is clean of
+  all of them today. The numeric guard only fires on a name that reads as a wavelength, because 1.0
+  and 3 are the most ordinary numbers in the repository and a blanket scan would cry wolf 300 times.
+- The known answer that makes `regime: reflective` a fact rather than a label: a 300 K blackbody's
+  self-emission in 0.9–1.7 µm is **3.3e-9** of its LWIR emission, taken through the *photon* table
+  and converted back with the band-mean photon energy so the photon path is exercised, not bypassed.
+  The converse is asserted too — between 300 K and 900 K SWIR self-emission rises by more than 10⁶
+  while LWIR rises by under 10², which is why M11.2 must not cull emission in a reflective band.
+- **The SWIR file exposes where the schema is still emissive-shaped, and says so rather than lying.**
+  `noise.netd_mk_at_300k` is mandatory, and NETD is defined against a 300 K blackbody — which puts
+  **1.24 photoelectrons per pixel per 16 ms frame** into this band, against 120 e⁻ of read noise.
+  Evaluating §9.4 honestly on the camera's own numbers gives **976 K**, so that is what the field
+  records. It is the correct physics and a useless noise anchor; nothing in the SWIR path may use
+  it until M11.6 replaces it with an electron-space budget. `outputs.apparent_temperature` is
+  `false` for the same reason: inverting Lb is a temperature only where the signal is self-emission.
 - **ROI-weighted and locally-adaptive AGC** (M9.10, §11.3). Every histogram in `irsim.isp.agc` now
   takes per-pixel `weights`, and `agc_plateau_local` tiles the frame, equalises each tile's own
   histogram and blends the four nearest mappings bilinearly (the CLAHE construction). The config
