@@ -30,7 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.config.sensor import IspSpec
-from irsim.isp.agc import agc_linear, agc_plateau
+from irsim.isp.agc import agc_linear, agc_plateau, agc_plateau_local
 from irsim.isp.dde import dde
 from irsim.isp.palette import to_display8
 
@@ -78,6 +78,8 @@ def run_display_branch(dn16: object, isp: IspSpec, bit_depth: int) -> DisplayOut
         y = agc_linear(dn, isp.clip_percentiles[0], isp.clip_percentiles[1], 1.0, bit_depth)  # R1
     elif isp.agc == "plateau_equalization":
         y = agc_plateau(dn, isp.plateau, bit_depth)  # R1
+    elif isp.agc == "plateau_local":
+        y = agc_plateau_local(dn, isp.plateau, isp.agc_tiles, bit_depth)  # M9.10
     elif isp.agc == "none":
         y = agc_none(dn, bit_depth)
     else:  # pragma: no cover - the schema restricts the literal

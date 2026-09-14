@@ -65,7 +65,7 @@ HousingTempMode = Literal["fixed", "ambient", "coupled"]
 FpaTempMode = Literal["fixed", "ambient", "coupled"]
 DistortionModel = Literal["brown_conrady", "kannala_brandt", "ftheta"]
 NucMode = Literal["shuttered", "shutterless", "ideal"]
-AgcMode = Literal["linear", "plateau_equalization", "none"]
+AgcMode = Literal["linear", "plateau_equalization", "plateau_local", "none"]
 Polarity = Literal["white_hot", "black_hot"]
 # §11.4 lists ironbow/rainbow/lava/arctic and §12.2 gray/ironbow/rainbow/lava: both accepted (S27).
 Palette = Literal["gray", "ironbow", "rainbow", "lava", "arctic"]
@@ -401,6 +401,9 @@ class IspSpec(_Frozen):
     dde_gain: float = Field(ge=0)
     polarity: Polarity
     palette: Palette
+    # Tiling for `agc: plateau_local` (M9.10); ignored by the global modes. (1, 1) is the global
+    # operator exactly, which is the identity the local path is tested against.
+    agc_tiles: tuple[int, int] = (8, 8)
 
     @model_validator(mode="after")
     def _clip(self) -> IspSpec:
@@ -409,6 +412,8 @@ class IspSpec(_Frozen):
             raise ValueError(
                 f"clip_percentiles must be ordered fractions in [0, 1], got {lo}, {hi}"
             )
+        if min(self.agc_tiles) < 1:
+            raise ValueError(f"agc_tiles must be at least 1 in each axis, got {self.agc_tiles}")
         return self
 
 

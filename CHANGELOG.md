@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **ROI-weighted and locally-adaptive AGC** (M9.10, §11.3). Every histogram in `irsim.isp.agc` now
+  takes per-pixel `weights`, and `agc_plateau_local` tiles the frame, equalises each tile's own
+  histogram and blends the four nearest mappings bilinearly (the CLAHE construction). The config
+  enum gains `plateau_local` with `agc_tiles`; **the global modes stay the default**, because a real
+  core is global and §15 Tier 5 needs the simulator to be too.
+- Both additions are held to **identities, not tolerances**: uniform weights reproduce the global
+  operator bit for bit, and so does a single tile. An approximation in either would mean the new
+  code path had quietly become a second, slightly different AGC — which is exactly the failure a
+  config-hashed display branch exists to prevent.
+- The number this was built for. One hot object sets the stretch for every pixel, and on a broad
+  exhaust plume a global *linear* stretch keeps **8 %** of the background's contrast and a global
+  plateau stretch **61 %**, where `plateau_local` keeps **93 %** — the difference between a target
+  that reads as one flat white shape and one whose motors and wings stay separable. Stated cost:
+  display level no longer means one thing across the frame, and none of it touches the radiometric
+  branch.
+- Tile seams are the obvious failure mode, and the test has a guard rather than a threshold: on a
+  ramp the blended boundary is no bigger a step than any other column, while assigning each pixel
+  its own tile's mapping with no blending puts a **255-code** cliff there (28 tests).
+- **Goldens regenerated, values unchanged.** Adding `agc_tiles` to `IspSpec` changes `config_hash`
+  for every camera, so all 12 golden sidecars went stale. Verified before regenerating rather than
+  after: **0 of 14 stored arrays changed**, and every changed line in the sidecars is the
+  `config_hash` field. The staleness was the hashing working, not a physics change.
+
 - **The quadrotor flies with propellers** (ADR 0081). `irsim_isaac.pipeline.rotor_isaac` turns a
   prim's transform into veils and `QuadrotorSpec.rotor_mounts` puts four above the motor bells;
   `scripts/render_quad_flight.py` grows `--no-rotors` for the before/after. **Nothing is authored**
