@@ -3,6 +3,10 @@
 docs/physics-model.md §4, §12.3
 """
 
+from irsim.materials.fresnel import (
+    directional_emissivity_fresnel,
+    fresnel_reflectance,
+)
 from irsim.materials.library import (
     CLOSURE_TOL,
     MATERIAL_DIR,
@@ -32,6 +36,8 @@ from irsim.materials.table import (
 )
 
 __all__ = [
+    "directional_emissivity_fresnel",
+    "fresnel_reflectance",
     "SURFACE_CLOSURE_TOL",
     "surface_radiance",
     "CLOSURE_TOL",

@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Branch-safe complex Fresnel reflectance** (M7.4, §4.2 Level A [R1]).
+  `irsim.materials.fresnel_reflectance(n, k, cos θ) → (R, R⊥, R∥)` and
+  `directional_emissivity_fresnel = 1 − R`, written with the §4.2 A/B reparameterisation rather
+  than a complex `sqrt`. The branch is not cosmetic: the rejected root of the same Z returns
+  R > 1 — a test asserts exactly that — and picking it produces reflectance discontinuities
+  across wavelength and instability near grazing incidence, which in the IR is not a corner case
+  because k is large for many materials.
+- Water at 10 µm (n = 1.218, k = 0.0508) reproduces the [R1] validation numbers: R(0) = 0.010180
+  (published 0.01018), ε(60°) = 0.9612, ε(80°) = 0.6972. **That 0.26 collapse between 60° and 80°
+  is the physics a sea surface is made of** — a Level C constant emissivity reports 0.99 at both,
+  and §4.2 refuses Level C for water by name. It is the first step of the maritime lane.
+- Confirms [R1]'s counter-intuitive result along both axes: with k > 0 there is **no total
+  internal reflection knee** at any angle (R < 1 − 1e-4 for n = 0.5, k = 0.5, bounded slope), and
+  an index sweep across the lossless critical angle is a square-root cusp, not a jump — tested by
+  grid refinement, since a fixed tolerance there either fails on real physics or is too loose to
+  catch a real discontinuity.
+
 - **Within-frame motion smear** (ADR 0077, §8.3/§9.2). `mtf_motion` — |sinc(v·t_int·ξ)| — has been
   in the MTF cascade since M5 and **nothing ever called it**, so every frame this simulator has
   produced was sharp however fast the scene crossed it. The aircraft stage sweeps the boresight at
