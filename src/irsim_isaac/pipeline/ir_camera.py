@@ -73,7 +73,11 @@ from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.point_target import PointTarget, fill_fraction
 from irsim.scene import Scene
 from irsim.validation.aerial import AerialTarget, target_leaving_radiance
-from irsim_isaac.pipeline.aerial_bridge import AerialThermalBridge, elevation_from_rays
+from irsim_isaac.pipeline.aerial_bridge import (
+    AerialThermalBridge,
+    azimuth_from_rays,
+    elevation_from_rays,
+)
 from irsim_isaac.pipeline.gbuffer_isaac import (
     AOV_NAMES,
     UP_AXIS_VECTOR,
@@ -514,7 +518,10 @@ class IrCamera:
         material_id = material_id_plane(
             instance_id, labels, self.resolutions, strict=self.strict_materials
         )
-        elevation = elevation_from_rays(rays, up=UP_AXIS_VECTOR[self._up_axis or "Y"])
+        up_vector = UP_AXIS_VECTOR[self._up_axis or "Y"]
+        elevation = elevation_from_rays(rays, up=up_vector)
+        # Only used when the bridge carries a cloud field (ADR 0076); cheap enough not to branch.
+        azimuth = azimuth_from_rays(rays, up=up_vector)
 
         self.bridge.advance_to(self._t_rel_s)
         temperature = self.bridge.temperature_plane(
@@ -522,6 +529,7 @@ class IrCamera:
             labels,
             sky_mask=geometry.sky_mask,
             elevation_rad=elevation,
+            azimuth_rad=azimuth,
             strict=self.strict_materials,
         )
         # `to_gbuffer` validates the M0.6 contract; the stages consume the plane dict.

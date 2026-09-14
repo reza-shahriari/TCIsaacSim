@@ -6,6 +6,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Structured cloud in the rendered infrared background** (ADR 0076; MS.3/ADR 0070 into the M10.18
+  bridge). For a sky-background sensor the dominant false alarm is not sensor noise, it is a cloud
+  edge — a warm, target-sized, high-contrast feature with the *same polarity* as the thing being
+  looked for, since a drone and a cloud base both read warmer than a cold clear zenith. The field
+  has existed since M7 and was reachable only from the engine-free scene generator; nothing that
+  rendered used it. `AerialThermalBridge` now takes a `cloud_seed`.
+- **The field is fixed to the sky, not to the image plane.** A per-frame field flickers; an
+  image-plane field is stable and *travels with the sensor*, so a slewing mount carries its clouds
+  along and a tracked target never crosses an edge — removing the clutter the field exists to
+  provide. A sky-fixed field is stable and stationary in the world, so slewing sweeps across it.
+  `SkyFixedCloud` samples an (elevation, azimuth) grid per ray, with `azimuth_from_rays` supplying
+  the second coordinate.
+- Sampling by elevation alone is refused rather than approximated: it would band the sky in
+  horizontal stripes, which is worse than no cloud because it looks like a deliberate atmospheric
+  layer. A caller without azimuth gets the uniform blend — less detailed, not wrong.
+
+### Changed
+- **Correction to ADR 0073.** It recorded the infrared background as "the clear-sky profile only".
+  That overstated the gap: `SkyModel.radiance` has always applied the uniform blend
+  (1 − cε)·L_clear + cε·L_base, which is the *expectation* over the structured field. The mean
+  cloud effect was in every rendered frame; only the structure was missing. So this replaces a mean
+  with a realisation — and **the mean is preserved**, measured at ~0.2 % across seeds against a 1 %
+  bound, which is what keeps the rendered background consistent with the elevation LUT, the tilt
+  integral and ADR 0045's reflected term.
+- Coverage is exact over the *sky*, not over any frame: one elevation ring measured 0.0195 against
+  a whole-sky 0.0500. A camera pointed at a gap sees no cloud and one pointed at a bank sees only
+  cloud, which is what makes cloud clutter rather than texture — and means no single frame can be
+  used to check the cloud fraction.
+- Opt-in by seed: without one the background is bit-identical to before, so no committed frame or
+  golden moves silently.
+
+### Added
 - **Image-plane motion, synthesised rather than rendered** (roadmap M10.1b, §13.3/§9.2).
   `irsim.optics.motion.image_plane_motion` computes the G-buffer's `motion_px` plane from rigid
   per-object transforms and the camera pose instead of from a motion AOV — ADR 0014's addendum

@@ -139,6 +139,18 @@ which `IrCamera.refresh_pose()` is not optional — the pose behind every pixel'
 `open()`, so without it the geometry follows the new aim while the sky stays at the old one, across
 a pass whose true elevation sweeps 11° → 37° → 11°.
 
+**Cloud is in the rendered background now (ADR 0076).** Against a sky background the dominant
+false alarm is a cloud edge, not sensor noise — warm, target-sized, and the *same polarity* as a
+drone, since both read warmer than a cold clear zenith. MS.3's field has existed since M7 and only
+the engine-free scene generator used it. The bridge now takes a `cloud_seed`, and the field is
+fixed to the **sky** rather than the image plane: an image-plane field travels with the sensor, so
+a slewing mount carries its clouds along and a tracked target never crosses an edge. It also
+corrects ADR 0073, which called the background "clear-sky only" — `SkyModel.radiance` always
+carried the uniform blend, the *expectation* over the field, so this replaces a mean with a
+realisation and **the mean is preserved** (~0.2 % across seeds). Coverage is exact over the sky and
+not over a frame: one elevation ring measured 0.0195 against a whole-sky 0.0500, which is precisely
+what makes cloud clutter rather than texture.
+
 **Targets below one pixel are injected, not rendered.** A 0.35 m quadrotor at 500 m is 0.82 of a
 Boson pixel, and a rasteriser gives a phase-dependent fraction of its flux (ADR 0071), so those
 prims are hidden and MS.6's analytic excess is injected in their place -- one path or the other,

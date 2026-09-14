@@ -111,9 +111,12 @@ own azimuth, the solar disc must land at `f_px tan(tilt - elevation)` below the 
 
 **Two absences are deliberate**, so the pair does not lie to the reader:
 
-* **No cloud on the dome.** The infrared background in `aerial_bridge` is the clear-sky profile
-  only — MS.3's cloud field is not wired into it. Painting cloud on the visible dome would show a
-  sky the infrared frame does not have.
+* **No cloud on the dome.** MS.3's structured cloud field is not wired into the infrared
+  background, so painting cloud on the visible dome would show a sky the infrared frame does not
+  have. *(Correction, ADR 0076: "the clear-sky profile only" overstated it. `SkyModel.radiance`
+  has always applied the uniform blend (1 − cε) L_clear + cε L_base — the mean cloud effect was
+  there all along; only the structure was missing. The structure is wired in as of ADR 0076, and
+  the dome should follow.)*
 * **No solar disc in the texture.** Preetham's distribution carries the aureole around the sun but
   not the disc itself; the disc is the distant light. The two therefore do not double-count.
 

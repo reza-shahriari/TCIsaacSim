@@ -26,6 +26,15 @@ avoid, and would be wrong at the horizon where the elevation gradient is steepes
 pointing *below* the horizon is not sky at all; it takes the environment preset's ground
 temperature instead (see :meth:`AerialThermalBridge.background_temperature_k`).
 
+**Cloud, when a seed is given.** MS.3's structured cloud (ADR 0070) has existed since M7 and was
+reachable only from the engine-free scene generator; a rendered frame got the clear-sky profile and
+nothing else. That matters for this application specifically: against a sky background the dominant
+false alarm is not sensor noise, it is cloud edge. Passing ``cloud_seed`` attaches a
+:class:`~irsim.atmosphere.cloud.SkyFixedCloud` -- fixed to the *sky*, so a slewing mount sweeps
+across it and a target crosses in front of it, where an image-plane field would travel with the
+camera and never be crossed at all. Without a seed the background stays clear sky and every
+existing frame is bit-identical.
+
 Phase 2's full :mod:`thermal_bridge` (M10.3) replaces the per-prim solver map with a ThermalField
 over a facet mesh; this module deliberately does less.
 """
@@ -39,6 +48,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.atmosphere.cloud import SkyFixedCloud, generate_sky_cloud
 from irsim.atmosphere.sky import SkyModel
 from irsim.pipeline.environment import ground_temperature_k
 from irsim.scene import Scene
@@ -49,6 +59,7 @@ __all__ = [
     "TickBracket",
     "AerialThermalBridge",
     "elevation_from_rays",
+    "azimuth_from_rays",
 ]
 
 #: Thermal tick rate. Surface temperature is a minutes-scale quantity; 1 Hz is already far finer
@@ -75,6 +86,32 @@ class TickBracket:
             name: self.prev_k[name] + frac * (self.next_k[name] - self.prev_k[name])
             for name in self.next_k
         }
+
+
+def azimuth_from_rays(
+    ray_dirs: Any, up: Any = (0.0, 1.0, 0.0), forward: Any = (0.0, 0.0, -1.0)
+) -> NDArray[np.float64]:
+    """Azimuth of each ray about ``up``, radians in [0, 2pi), measured from ``forward``.
+
+    Only a *stable* azimuth is needed -- the cloud field is sampled by it, so what matters is that
+    the same world direction gives the same angle from frame to frame however the camera is
+    pointed, not that zero lands on any particular compass bearing.
+    """
+    d = np.asarray(ray_dirs, dtype=np.float64)
+    if d.ndim != 3 or d.shape[2] != 3:
+        raise ValueError(f"ray_dirs must be (H, W, 3), got {d.shape}")
+    u = np.asarray(up, dtype=np.float64).reshape(3)
+    u = u / np.linalg.norm(u)
+    f = np.asarray(forward, dtype=np.float64).reshape(3)
+    f = f - np.dot(f, u) * u
+    norm = float(np.linalg.norm(f))
+    if norm == 0.0:
+        raise ValueError("forward must not be parallel to up")
+    f = f / norm
+    right = np.cross(f, u)
+    return np.asarray(
+        np.mod(np.arctan2(np.sum(d * right, axis=2), np.sum(d * f, axis=2)), 2 * np.pi)
+    )
 
 
 def elevation_from_rays(ray_dirs: Any, up: Any = (0.0, 1.0, 0.0)) -> NDArray[np.float64]:
@@ -113,6 +150,7 @@ class AerialThermalBridge:
         band: str | None = None,
         sky: SkyModel | None = None,
         tick_hz: float = DEFAULT_TICK_HZ,
+        cloud_seed: int | None = None,
     ) -> None:
         unknown = set(prim_to_target.values()) - set(scene.targets)
         if unknown:
@@ -138,6 +176,20 @@ class AerialThermalBridge:
         self.band = band
         self.tick_s = 1.0 / float(tick_hz)
         self._t_rel_s = 0.0
+        # Built once and never regenerated: a cloud field that changed with time would flicker,
+        # and the weather's cloud *fraction* moves on the hour, not on the frame.
+        self.cloud: SkyFixedCloud | None = None
+        if cloud_seed is not None:
+            if sky is None:
+                raise ValueError(
+                    "cloud needs a sky model: the covered pixels read eps L_B(T_base) + tau "
+                    "L_clear, and both terms come from it (MS.3, ADR 0070)"
+                )
+            environment = scene.environment
+            beta = 1.8 if environment is None else environment.clouds.beta
+            self.cloud = generate_sky_cloud(
+                beta, float(scene.weather.at(scene.t0_s).cloud_fraction), int(cloud_seed)
+            )
 
         initial = {name: float(s.temperature()) for name, s in scene.targets.items()}
         self._bracket = TickBracket(0.0, 0.0, dict(initial), dict(initial))
@@ -247,6 +299,7 @@ class AerialThermalBridge:
         *,
         sky_mask: Any | None = None,
         elevation_rad: Any | None = None,
+        azimuth_rad: Any | None = None,
         fill_k: float = 0.0,
         strict: bool = True,
     ) -> NDArray[np.float32]:
@@ -268,12 +321,14 @@ class AerialThermalBridge:
             mask = ids == BACKGROUND_INSTANCE_ID
         if mask.any() and self.sky is not None and elevation_rad is not None:
             plane = np.asarray(
-                np.where(mask, self.background_temperature_k(elevation_rad), plane),
+                np.where(mask, self.background_temperature_k(elevation_rad, azimuth_rad), plane),
                 dtype=np.float32,
             )
         return plane
 
-    def background_temperature_k(self, elevation_rad: Any) -> NDArray[np.float64]:
+    def background_temperature_k(
+        self, elevation_rad: Any, azimuth_rad: Any = None
+    ) -> NDArray[np.float64]:
         """Apparent temperature of a pixel that hit no geometry, split at the horizon.
 
         A ray with positive elevation that hits nothing is looking at sky, and takes MS.2's
@@ -283,6 +338,11 @@ class AerialThermalBridge:
         contrast of anything silhouetted against it. Those pixels take ``T_ground`` from the
         environment preset's ground mode, the same quantity ADR 0045's reflected term uses -- one
         temperature for the whole ground, which is all phase 1 claims.
+
+        With a cloud field attached *and* ``azimuth_rad`` supplied, the above-horizon pixels go
+        through MS.3's structured form instead. Azimuth is required rather than optional for that
+        path: without it the field could only be sampled by elevation, which would band the sky in
+        horizontal stripes -- a worse picture than no cloud at all, and one that looks deliberate.
         """
         if self.sky is None:
             raise ValueError("this bridge has no sky model; pass band= or sky= at construction")
@@ -290,7 +350,13 @@ class AerialThermalBridge:
         elev = np.asarray(elevation_rad, dtype=np.float64)
         out = np.full(elev.shape, float(ground_temperature_k(self.sky, t_abs)), dtype=np.float64)
         above = elev >= 0.0
-        if above.any():
+        if not above.any():
+            return out
+        if self.cloud is not None and azimuth_rad is not None:
+            azim = np.asarray(azimuth_rad, dtype=np.float64)
+            coverage = self.cloud.sample(elev[above], azim[above])
+            out[above] = self.sky.apparent_temperature_field(t_abs, elev[above], coverage)
+        else:
             out[above] = self.sky.apparent_temperature_k(t_abs, elev[above])
         return out
 

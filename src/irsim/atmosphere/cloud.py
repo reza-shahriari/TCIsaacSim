@@ -22,6 +22,7 @@ docs/physics-model.md §5.3(a); ADR 0070
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +33,8 @@ from irsim.atmosphere.humidity import dew_point_k
 
 __all__ = [
     "ESPY_M_PER_K",
+    "SkyFixedCloud",
+    "generate_sky_cloud",
     "lifting_condensation_level_m",
     "cloud_base_temperature_k",
     "CloudField",
@@ -146,3 +149,64 @@ def cloud_radiance(
         raise ValueError("coverage mask and clear radiance must have the same shape")
     cloudy = (1.0 - tau_cloud) * l_base + tau_cloud * clear
     return np.asarray(np.where(cov, cloudy, clear), dtype=np.float64)
+
+
+@dataclass(frozen=True)
+class SkyFixedCloud:
+    """Cloud coverage attached to the **sky**, sampled per ray, not painted on the image plane.
+
+    Which frame the field lives in is the whole of the physics here, and only one of the three
+    obvious choices behaves:
+
+    * A field regenerated per frame **flickers** -- every frame is a different sky.
+    * A field fixed to the **image plane** is stable, and moves with the sensor: a slewing mount
+      carries its clouds along with it, so a tracked target never passes in front of one and the
+      background never changes. Exactly backwards.
+    * A field fixed to the **sky** (this one) is stable *and* stationary in the world, so slewing
+      the mount sweeps the camera across it and a target crosses cloud edges. That is the geometry
+      that makes cloud a clutter source rather than a texture.
+
+    The grid is equirectangular in (elevation, azimuth), which stretches structure azimuthally as
+    the zenith is approached -- an ``n_azimuth``-wide row spans 360 degrees at every elevation.
+    For a sky-target sensor working at low to moderate elevation the distortion is small; looking
+    near the zenith it is not, and a proper treatment would generate on the sphere.
+
+    The field does not move. Wind advection is a rotation of the azimuth axis over time and is not
+    modelled: over the seconds a flypast lasts, cloud drift is far below a pixel.
+    """
+
+    coverage: NDArray[np.bool_]
+    beta: float
+    fraction: float
+    seed: int
+
+    def sample(self, elevation_rad: Any, azimuth_rad: Any) -> NDArray[np.bool_]:
+        """Coverage along each ray. Elevation is clamped to the hemisphere; azimuth wraps."""
+        n_el, n_az = self.coverage.shape
+        el = np.asarray(elevation_rad, dtype=np.float64)
+        az = np.asarray(azimuth_rad, dtype=np.float64)
+        if el.shape != az.shape:
+            raise ValueError(f"elevation {el.shape} and azimuth {az.shape} must match")
+        row = np.clip((el / (0.5 * math.pi) * n_el).astype(np.int64), 0, n_el - 1)
+        col = np.mod((az / (2.0 * math.pi) * n_az).astype(np.int64), n_az)
+        return np.asarray(self.coverage[row, col])
+
+
+def generate_sky_cloud(
+    beta: float,
+    cloud_fraction: float,
+    seed: int,
+    *,
+    n_elevation: int = 180,
+    n_azimuth: int = 720,
+) -> SkyFixedCloud:
+    """A :class:`SkyFixedCloud` over the whole visible hemisphere at half-degree resolution.
+
+    The coverage fraction is exact over the *grid*, which is the sky, not over any one frame --
+    a camera pointed at a gap sees no cloud and one pointed at a bank sees only cloud, which is
+    what a real sensor does and what makes cloud a false-alarm source worth simulating.
+    """
+    field = generate_cloud_field((n_elevation, n_azimuth), beta, cloud_fraction, seed)
+    return SkyFixedCloud(
+        coverage=field.coverage, beta=field.beta, fraction=field.fraction, seed=field.seed
+    )
