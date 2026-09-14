@@ -6,6 +6,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The sea as a background** (MM.2, MM.3, ADR 0078). `irsim.atmosphere.sea` gives apparent sea
+  temperature against depression angle the way `SkyModel` gives it against elevation: Cox–Munk slope
+  statistics from the shared weather's wind, and a facet-tilt quadrature in which the emissivity and
+  the reflected sky elevation move **together** — a tilted facet both presents less grazing incidence
+  and swings the reflected ray.
+- **The isothermal identity is exact (0 mK)** across depression 0.15–90°, wind 0–20 m/s and SST
+  275–305 K. It holds for any emissivity, so it is the one test that catches a mis-weighted
+  reflection — the failure a plausible-looking gradient would hide.
+- Horizon geometry is spherical, not flat-earth: at 20 m the horizon is 0.1436° down and the range
+  to it is **twice** what `h/sin δ` gives at the same angle. That factor of two lands directly on the
+  atmospheric path length to every long-range maritime target.
+
+### Fixed
+- **Two predictions written into the roadmap for MM.3 were wrong, and the model disproved them.**
+  (a) The sea profile is **not** a monotone ramp from SST at nadir to sky at the horizon. Emissivity
+  rising with depression and the reflected sky cooling with elevation pull in opposite directions, so
+  the surface radiance turns over at an **interior minimum 2–15° below the horizon** — 283.7 K against
+  289.5 K at nadir for a 290 K sea. The cold band, not a ramp, is what a maritime target is seen
+  against. (b) Nadir reads 0.53 K under SST, not the predicted 0.2 K, and that offset checks out
+  against (1−ε)(Lb(T_sea) − L_sky(90°))/dLb_dT.
+- The atmospheric path then pulls the far field back toward air temperature — at 0.3° depression
+  (4.1 km) the observed sea is over 1.5 K warmer than its own surface radiance. So **range, not angle
+  alone, sets maritime background contrast**, and the profile cannot be tabulated against angle for a
+  moving camera. The roadmap row and the Tier 3 checklist entry are corrected rather than quietly
+  re-scoped.
+- The phenomenology-checklist claim that overcast collapses the sea gradient below 20 % of clear was
+  also wrong: it closes only ~30 %, bounded by how far the cloud base sits below the SST. An overcast
+  sea is not an overcast ground scene.
+- Cox & Munk's component slope fits sum to 3.0e-3 + 5.08e-3 U, not their separately fitted isotropic
+  total 3.0e-3 + 5.12e-3 U — two independent regressions on the same data, 0.8 % apart. A test pins
+  the gap so nobody later "fixes" the components to add up and silently substitutes an isotropic
+  assumption for the measured anisotropy.
+
 - **Rotor discs reach the focal plane through the lens oracle** (ADR 0081).
   `irsim.optics.rotor.disc_ellipse` projects a disc pose to its image ellipse by projecting rim
   points with `irsim.optics.projection.project`, so the authored distortion and the off-axis scale

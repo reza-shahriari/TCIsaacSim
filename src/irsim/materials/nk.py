@@ -188,10 +188,10 @@ def band_directional_emissivity(
             f"spectral response spans [{r_lo:.4g}, {r_hi:.4g}] µm but the {table.name} n/k table "
             f"only covers [{lo:.4g}, {hi:.4g}] µm; extend the table rather than extrapolating it"
         )
-    mu = np.atleast_1d(np.asarray(cos_theta, dtype=np.float64))
+    shape = np.shape(cos_theta)
+    mu = np.atleast_1d(np.asarray(cos_theta, dtype=np.float64)).ravel()
     out = np.array(
         [band_average(response, table.emissivity_spectrum(float(c)), t_ref_k, form) for c in mu],
         dtype=np.float64,
     )
-    shape = np.shape(cos_theta)
     return np.asarray(out.reshape(shape) if shape else out[0], dtype=np.float64)

@@ -38,6 +38,13 @@ from irsim.atmosphere.layered import (
 )
 from irsim.atmosphere.library import available_presets, load_atmosphere_preset, preset_hash
 from irsim.atmosphere.model import Atmosphere, AtmosphereState
+from irsim.atmosphere.sea import (
+    COX_MUNK,
+    SeaModel,
+    horizon_depression_rad,
+    slant_range_m,
+    slope_variance,
+)
 from irsim.atmosphere.sky import CosQFit, SkyModel
 from irsim.atmosphere.spectral import (
     band_transmittance_spectral,
@@ -73,6 +80,11 @@ __all__ = [
     "regime_for_visibility",
     "transmittance_per_band",
     "available_presets",
+    "COX_MUNK",
+    "SeaModel",
+    "horizon_depression_rad",
+    "slant_range_m",
+    "slope_variance",
     "load_atmosphere_preset",
     "preset_hash",
     "CosQFit",
