@@ -85,6 +85,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   f·tan(δ) to 0.1 %.
 
 ### Added
+- **What the ISP left in the picture** (ME.3b, ADR 0068 addendum). `irsim.validation.display_signature`
+  reads the AGC's fingerprint, DDE's ringing and the camera's replaced pixels off finished frames.
+  The recorder conversion is a **required argument** of the first two, so a Y16-derived set is
+  refused inside the function and not only in the dataset index -- a histogram measured on a
+  recorder's own 16-to-8-bit conversion describes the recorder. Plateau equalisation separates from
+  a linear stretch by twenty times on every sky-like frame, and a scene whose histogram is already
+  uniform is reported `indeterminate` rather than guessed at. DDE overshoot is the analytic
+  `gain/3` of a 3x3 unsharp mask, so the gain reads straight off a picture. A replaced pixel is the
+  mean of its four neighbours, so its Laplacian vanishes: 69 of 69 injected ones found on float
+  frames, 93 % on 8-bit codes, no false positives -- and none at all through a codec, which takes
+  the signature away entirely and is reported as "not measurable here" rather than as zero defects.
 - **Reading the shutter off the frames** (ME.3a, ADR 0068). `irsim.validation.shutter` finds the
   freezes a flat-field correction leaves in the video, reports the interval only from a clip long
   enough to mean one, and fits what grows between events. Two distinctions carry the module: **a

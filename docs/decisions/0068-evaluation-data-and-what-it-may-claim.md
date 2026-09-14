@@ -109,3 +109,55 @@ A radiometric (16-bit, documented-sensor) public set appears, or a camera arrive
 absolute targets testable and turns most of these gates off. Also revisit if a licence status
 changes: the fetch script's `unstated` refusal is the only thing standing between an experiment and
 an unlicensed redistribution.
+
+## Addendum (ME.3b, 2026-09-14): the display-output extractors and what each one can say
+
+Three more extractors, and a third gate. The pattern is the same as above: the analyser is told what
+the frames are and refuses what they cannot support.
+
+**The signal-path gate is now code.** `require_display_output` takes the set's recorder conversion
+(`display` / `linear` / `min_max` / `unknown`) as a **required argument** of `agc_signature` and
+`edge_overshoot`, and raises on anything but `display`. Halmstad is the case it exists for: its
+frames are a recorder's 16→8-bit conversion of a Y16 stream and the rule is itself unverified, so a
+histogram measured there describes the recorder. The index already excludes `agc_signature` and
+`dde_overshoot` on that set; this is the second lock on the same door, and it is the one that
+travels with the function rather than with the dataset entry.
+
+**The AGC's fingerprint is `cdf_deviation`, and it is a property of the scene as much as the ISP.**
+Plateau equalisation integrates a clipped histogram into a CDF, so its output is near-uniform over
+the codes it occupies; a linear stretch reproduces the scene's own distribution. The Kolmogorov
+distance between the output's cumulative histogram and the uniform line separates them by more than
+twenty times on every sky-like frame measured through the project's own `agc_plateau`/`agc_linear`
+(plateau 0.003–0.007 against linear 0.15 flat sky, 0.15 gentle gradient, 0.19 with cloud and a
+target, 0.50 across a horizon). **But a scene whose histogram is already uniform cannot be read**: a
+strong ramp filling the frame gives 0.032 under a *linear* stretch, because a linear stretch of a
+uniform scene is equalisation as far as any histogram statistic can tell. Hence three verdicts —
+`equalised` below 0.02, `stretched` above 0.05, and `indeterminate` between — rather than a boolean
+that would be confidently wrong on ramped scenes. `entropy_bits` and `occupied_fraction` are
+reported alongside as corroboration (equalising a discrete histogram stretches sparse regions and
+leaves output codes unused: 0.79 occupied against linear's 1.00 on flat sky).
+
+**DDE's fingerprint is a known answer, not a fixture.** A 3×3 box at the pixel beside a step reads
+two thirds of the way across it, so an unsharp mask of gain g overshoots by exactly **g/3** of the
+step height, one pixel wide on each side. `edge_overshoot` measures that ratio and
+`implied_box3_gain` inverts it, recovering 0.3/0.6/0.9 to 1e-6 on clean frames and to 10 % on a
+noisy 8-bit one. One detail is load-bearing: the ringing either side of a step is *itself* a
+difference above the edge threshold, so a candidate must be the largest difference in its own
+neighbourhood — without that rule the detector measures from the overshoot and puts the real step
+inside its own ring window.
+
+**A replaced pixel is the mean of its four neighbours, so its Laplacian vanishes.** §10.4 asks for
+the replacement to be simulated because the smoothed footprint is what a detector sees; the same
+fact makes it findable. `replaced_pixel_map` scores each pixel by its median |4x − Σ neighbours|
+over the clip, normalised by the array's own median so a smooth *scene* raises numerator and
+denominator alike and produces no detections. Measured against `replace_bad_pixels` on 69 interior
+defects: **every one found on float frames, 93 % after rounding to 8-bit codes, no false positives
+in either case**; the handful that are not identically zero are cluster rims, filled while the
+inside was still invalid, and they remain far smoother than a good pixel.
+
+**And the codec takes this one away completely.** Through x264 at CRF 12, recall of that same
+footprint falls from 1.0 to **0.0 with the false-positive rate still 0**: the block transform moves a
+replaced pixel off the exact mean of its neighbours while flattening everyone else's Laplacian
+toward it, so nothing stands out from the median. The estimator goes silent rather than wrong, which
+is the behaviour to want — but it means an empty result on a lossy set is "not measurable here", and
+ME.5 must print it beside that set's codec floor rather than as a bad-pixel count of zero.

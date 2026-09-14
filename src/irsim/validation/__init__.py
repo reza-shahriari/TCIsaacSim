@@ -34,6 +34,17 @@ from irsim.validation.codec import (
     quantiser_step,
     sheppard_correct,
 )
+from irsim.validation.display_signature import (
+    AgcSignature,
+    AgcVerdict,
+    EdgeOvershoot,
+    RecorderConversion,
+    ReplacedPixels,
+    agc_signature,
+    edge_overshoot,
+    replaced_pixel_map,
+    require_display_output,
+)
 from irsim.validation.flat import (
     FlatRegion,
     TemporalNoise,
@@ -117,4 +128,13 @@ __all__ = [
     "freeze_intervals_s",
     "line_means",
     "pattern_energy",
+    "AgcSignature",
+    "AgcVerdict",
+    "EdgeOvershoot",
+    "RecorderConversion",
+    "ReplacedPixels",
+    "agc_signature",
+    "edge_overshoot",
+    "replaced_pixel_map",
+    "require_display_output",
 ]
