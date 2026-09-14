@@ -1,0 +1,26 @@
+# Environment preset: clear sky over open water (docs/physics-model.md section 5.3-5.5, ADR 0078).
+# Illumination-model settings only; cloud, humidity, temperature and WIND come from the
+# WeatherSeries (CLAUDE.md #6) -- the wind is what roughens the sea, so authoring it here would be
+# the exact split-brain non-negotiable #6 exists to prevent.
+#
+# The only thing that differs from clear_dry is the ground: below the horizon this is sea, which is
+# not one temperature. `bulk_sst_k` is the measured bulk SST the sea model starts from; the surface
+# skin is derived from it (MM.4), and the apparent temperature is a function of depression angle.
+schema_version: 2
+environment:
+  name: sea_clear_day
+  description: "Clear sky over open water: sea surface below the horizon, specular solar glint"
+  regime: clear
+  sky:
+    delta_t_clear_k: {lwir: 62.0, mwir: 15.0, swir: 0.0, nir: 0.0}
+    q: 0.75
+  ground:
+    mode: sea
+    bulk_sst_k: 290.0      # 17 C: a temperate open-sea summer value. ESTIMATED, not measured.
+  solar: {enabled: true, glint_model: specular}
+  night:
+    airglow_irradiance_nw_cm2: 10.0
+    airglow_shape_file: null
+    k_cloud: 0.5
+    moon: {enabled: true, phase_fraction: 0.5}
+  clouds: {tau: 0.0, beta: 1.8}

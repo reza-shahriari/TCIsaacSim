@@ -49,6 +49,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.atmosphere.cloud import SkyFixedCloud, generate_sky_cloud, sky_angles
+from irsim.atmosphere.sea import SeaModel
 from irsim.atmosphere.sky import SkyModel
 from irsim.pipeline.environment import ground_temperature_k
 from irsim.scene import Scene
@@ -139,6 +140,7 @@ class AerialThermalBridge:
         sky: SkyModel | None = None,
         tick_hz: float = DEFAULT_TICK_HZ,
         cloud_seed: int | None = None,
+        sea: SeaModel | None = None,
     ) -> None:
         unknown = set(prim_to_target.values()) - set(scene.targets)
         if unknown:
@@ -158,9 +160,22 @@ class AerialThermalBridge:
                 "summer weather in the target solvers and winter weather in the sky"
             )
 
+        if sea is not None:
+            if sky is None:
+                raise ValueError(
+                    "a sea needs a sky model: the sea is mostly reflected sky, and the two must "
+                    "come from one object or they will disagree about the weather (ADR 0078)"
+                )
+            if sea.sky is not sky:
+                raise ValueError(
+                    "the SeaModel reflects a different SkyModel than this bridge renders "
+                    "(CLAUDE.md #6). The sea would show a sky that is not in the picture."
+                )
+
         self.scene = scene
         self.prim_to_target = dict(prim_to_target)
         self.sky = sky
+        self.sea = sea
         self.band = band
         self.tick_s = 1.0 / float(tick_hz)
         self._t_rel_s = 0.0
@@ -336,8 +351,25 @@ class AerialThermalBridge:
             raise ValueError("this bridge has no sky model; pass band= or sky= at construction")
         t_abs = self.scene.t0_s + self._t_rel_s
         elev = np.asarray(elevation_rad, dtype=np.float64)
-        out = np.full(elev.shape, float(ground_temperature_k(self.sky, t_abs)), dtype=np.float64)
-        above = elev >= 0.0
+        below = elev < 0.0
+        if self.sea is not None:
+            # Below the horizon is sea, and a sea has no single temperature: every pixel takes the
+            # profile at its own depression angle (ADR 0078). Rays between the horizon and level --
+            # there are some, because the geometric horizon is 0.14 degrees down at 20 m and a
+            # pixel is 0.05 degrees -- never meet the water, so they keep the sky value.
+            out = np.zeros(elev.shape, dtype=np.float64)
+            horizon = self.sea.horizon_rad
+            wet = below & (-elev >= horizon)
+            if wet.any():
+                out[wet] = self.sea.apparent_temperature_k(t_abs, -elev[wet])
+            skim = below & ~wet
+            if skim.any():
+                out[skim] = self.sky.apparent_temperature_k(t_abs, np.zeros(int(skim.sum())))
+        else:
+            out = np.full(
+                elev.shape, float(ground_temperature_k(self.sky, t_abs)), dtype=np.float64
+            )
+        above = ~below
         if not above.any():
             return out
         if self.cloud is not None and azimuth_rad is not None:

@@ -6,7 +6,10 @@ The reflected part uses (1 − ε) = ρ + τ: a transmitting material passes the
 it (L_behind = L_env until a second ray exists, ADR 0046). L_sky,eff comes from the SkyModel's tilt
 LUT indexed by the pixel's sky-view factor (the unoccluded relation V_s = (1 + cos β)/2);
 L_ground = L_B(T_ground) with T_ground from the environment preset's ground mode (``air``: the
-shared weather's T_air; ``fixed``: the authored value; ``solver``: M6.12).
+shared weather's T_air; ``fixed``: the authored value; ``sea``: the bulk SST, because what an
+object reflects from below is the water right around it at steep incidence, where ε ≈ 0.99 --
+*not* the angular sea profile a background ray sees, which is ADR 0078's SeaModel; ``solver``:
+M6.12).
 
 ``sky_view_factor(n·up, occlusion) = occlusion · (1 + n·up)/2`` is what an adapter or fixture
 should write into the G-buffer: the cosine-weighted fraction of the sky a plane of tilt β sees
@@ -48,6 +51,15 @@ def ground_temperature_k(sky: SkyModel, t_s: float) -> float:
     if ground.mode == "fixed":
         assert ground.fixed_temperature_k is not None
         return float(ground.fixed_temperature_k)
+    if ground.mode == "sea":
+        # The **reflected-environment** value, and only that. What a surface in the scene sees
+        # below its own horizon is the water immediately around it, seen at steep angles where
+        # water's emissivity is ~0.99 and it radiates essentially at its own temperature -- so one
+        # scalar is right here, and it is the SST. The *background* sea, which a ray travels
+        # kilometres across at grazing incidence, is a completely different quantity and comes
+        # from irsim.atmosphere.sea.SeaModel, which needs the ray's depression angle (ADR 0078).
+        assert ground.bulk_sst_k is not None
+        return float(ground.bulk_sst_k)
     raise ValueError("ground.mode 'solver' needs the environment solver (M6.12)")
 
 

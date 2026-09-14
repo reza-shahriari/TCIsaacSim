@@ -305,3 +305,35 @@ def test_a_warmer_skin_than_bulk_is_refused(rig) -> None:
         SeaModel(sky, table, response, bulk_sst_k=290.0, cool_skin_k=-0.2)
     with pytest.raises(ValueError, match="positive absolute temperature"):
         SeaModel(sky, table, response, bulk_sst_k=0.0)
+
+
+def test_the_profile_lut_matches_the_exact_evaluation(rig) -> None:
+    """The depression LUT is what makes a frame renderable, so it has to be shown not to be a lie.
+
+    Without it the sea costs a path-radiance quadrature per pixel, and a supersampled Boson frame
+    asks for 2.6 million of them — one frame then takes longer than the rest of the pipeline put
+    together. The grid is geometric and the interpolation is in log angle, because the structure is
+    compressed against the horizon; interpolating linearly in the angle would flatten the cold band
+    the whole model exists to produce.
+    """
+    _, sea = _sea(rig)
+    horizon = sea.horizon_rad
+    angles = np.geomspace(horizon * 1.01, 0.5 * np.pi * 0.99, 77)
+
+    lut = sea.apparent_temperature_k(0.0, angles)
+    exact = sea.apparent_temperature_exact_k(0.0, angles)
+    assert np.max(np.abs(lut - exact)) < 0.02  # 20 mK against a 50 mK NETD
+
+
+def test_the_profile_lut_is_fast_enough_for_a_supersampled_frame(rig) -> None:
+    """A frame's worth of angles in well under a second, which the exact path cannot do."""
+    import time
+
+    _, sea = _sea(rig)
+    angles = np.geomspace(sea.horizon_rad, 0.5 * np.pi, 2_000_000)
+    sea.profile(0.0)  # build once, as a render would during settling
+
+    start = time.perf_counter()
+    out = sea.apparent_temperature_k(0.0, angles)
+    assert time.perf_counter() - start < 1.0
+    assert out.shape == angles.shape

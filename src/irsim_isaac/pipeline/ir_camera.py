@@ -91,6 +91,7 @@ from irsim_isaac.pipeline.gbuffer_isaac import (
 )
 from irsim_isaac.pipeline.material_ids import (
     labels_from_payload,
+    labels_to_paths,
     material_id_plane,
     overlay_unmapped,
     unmapped_mask,
@@ -331,6 +332,8 @@ class IrCamera:
         strict_materials: bool = True,
         frame_period_s: float | None = None,
         cloud_seed: int | None = None,
+        sea: Any = None,
+        background_prim_paths: Sequence[str] = (),
         rotor_mounts: Mapping[str, Sequence[RotorMount]] | None = None,
         device: str = "cpu",
     ) -> None:
@@ -371,7 +374,15 @@ class IrCamera:
         self.state = PipelineState(t_s=scene.t0_s)
         # `cloud_seed` puts MS.3's structured cloud into the background (ADR 0076). Without one
         # the background is the uniform blend it has always been, bit for bit.
-        self.bridge = AerialThermalBridge(scene, prim_to_target, band=band, cloud_seed=cloud_seed)
+        self.bridge = AerialThermalBridge(
+            scene, prim_to_target, band=band, cloud_seed=cloud_seed, sea=sea
+        )
+        # Prims that are *in* the picture but whose temperature is not a solver node: the sea
+        # (MM.6, ADR 0078). They occlude, they set the horizon, and their apparent temperature
+        # comes from the analytic profile at each ray's own angle, so they join the background
+        # mask rather than the facet table. Marking them here rather than in the caller is what
+        # stops a stage from rendering water with no temperature at all.
+        self._background_paths = frozenset(background_prim_paths)
         # How much scene time one capture costs. The sensor's own frame rate by default; an
         # override makes this a **time-lapse camera** -- one frame every N seconds -- which is the
         # honest way to film a process slower than the video that shows it. It is not a speed-up
@@ -528,6 +539,15 @@ class IrCamera:
             raise RuntimeError("the instance-id channel produced no data this frame")
         instance_id = np.asarray(aovs.instance_id, dtype=np.uint32)
         labels = labels_from_payload(aovs.device_handles.get("instance"))
+        if self._background_paths:
+            paths = labels_to_paths(labels)
+            ids = [i for i, path in paths.items() if path in self._background_paths]
+            if ids:
+                extra = np.isin(instance_id, np.asarray(ids, dtype=instance_id.dtype))
+                geometry = replace(
+                    geometry, sky_mask=np.asarray(geometry.sky_mask | extra, dtype=np.bool_)
+                )
+
         material_id = material_id_plane(
             instance_id, labels, self.resolutions, strict=self.strict_materials
         )

@@ -86,15 +86,32 @@ class SkySpec(_Frozen):
 
 
 class GroundSpec(_Frozen):
-    mode: Literal["air", "solver", "fixed"]
+    """What lies below the horizon.
+
+    ``air``, ``fixed`` and ``solver`` are all **one temperature for the whole ground**, which is
+    all a sky-target scene ever claimed. ``sea`` is different in kind: a sea surface has no single
+    apparent temperature, because water's emissivity runs from 0.99 looking straight down to under
+    0.15 at the horizon and the rest of the signal is reflected sky (ADR 0078). It therefore names
+    a *model* rather than a value -- :class:`irsim.atmosphere.sea.SeaModel` -- and the only scalar
+    it carries is the bulk sea surface temperature that model starts from.
+    """
+
+    mode: Literal["air", "solver", "fixed", "sea"]
     fixed_temperature_k: float | None = Field(default=None, gt=150.0, lt=400.0)
+    #: Bulk SST for ``mode: sea``. A measured SST is what a maritime scenario actually has; the
+    #: skin temperature is derived from it (MM.4), never authored beside it.
+    bulk_sst_k: float | None = Field(default=None, gt=250.0, lt=320.0)
 
     @model_validator(mode="after")
-    def _fixed_needs_value(self) -> GroundSpec:
+    def _mode_needs_its_value(self) -> GroundSpec:
         if self.mode == "fixed" and self.fixed_temperature_k is None:
             raise ValueError("ground.mode 'fixed' needs fixed_temperature_k")
         if self.mode != "fixed" and self.fixed_temperature_k is not None:
             raise ValueError("fixed_temperature_k only applies to ground.mode 'fixed'")
+        if self.mode == "sea" and self.bulk_sst_k is None:
+            raise ValueError("ground.mode 'sea' needs bulk_sst_k (the measured bulk SST)")
+        if self.mode != "sea" and self.bulk_sst_k is not None:
+            raise ValueError("bulk_sst_k only applies to ground.mode 'sea'")
         return self
 
 

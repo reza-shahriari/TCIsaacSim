@@ -48,6 +48,9 @@ VISIBLE_ALBEDO: dict[str, tuple[tuple[float, float, float], float, float]] = {
     "carbon_fibre": ((0.05, 0.05, 0.06), 0.30, 0.0),
     "aircraft_aluminium_painted": ((0.82, 0.82, 0.80), 0.35, 0.0),
     "propeller_rubber": ((0.06, 0.05, 0.05), 0.75, 0.0),
+    # Maritime (MM.6): a white superstructure, a bare metal stack, and a painted hull.
+    "car_paint_white": ((0.78, 0.78, 0.76), 0.30, 0.0),
+    "bare_aluminium": ((0.62, 0.63, 0.64), 0.28, 1.0),
 }
 _DEFAULT_LOOK: tuple[tuple[float, float, float], float, float] = ((0.35, 0.35, 0.35), 0.6, 0.0)
 

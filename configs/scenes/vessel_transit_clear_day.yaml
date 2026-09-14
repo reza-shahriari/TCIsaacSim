@@ -1,0 +1,49 @@
+# Vessels on open water, clear day. Schema: irsim.config.scene (v4).
+#
+# The weather FILE is named here and nowhere else: the Scene loads it once and injects the one
+# WeatherSeries into the atmosphere, the sky, the SEA (its wind is what roughens the surface) and
+# every target node (CLAUDE.md #6).
+#
+# Three nodes, because that is the maritime thermal signature:
+#   hull            pinned near the water it floats in -- the sea is a thermal reservoir with the
+#                   highest P = sqrt(k rho c_p) of any material in the library, so a hull at the
+#                   waterline cannot wander far from the SST no matter what the air does.
+#   superstructure  up in the air, sun-warmed, following T_air.
+#   stack           the exhaust uptake: one small, very hot thing. Its SIZE is what decides
+#                   whether it survives the PSF, not its temperature.
+#
+# KNOWN WART (MM.4): the hull temperature is written here as 290.5 K and the bulk SST is written
+# again in configs/environments/sea_clear_day.yaml as 290.0 K. Two places naming the same water is
+# exactly the split-brain CLAUDE.md #6 exists to prevent. It is here because the phase-1 solver set
+# has no "floating body" kind; MM.4 should add one that takes the sea's own temperature, and this
+# comment should disappear with it.
+
+schema_version: 4
+scene:
+  name: vessel_transit_clear_day
+  description: "Three vessels at 0.6-5.2 km on open water, clear midday, camera 20 m up"
+  # The COASTAL fixture, not the inland one. Its wind is the point: it sets both the Cox-Munk
+  # slope statistics the infrared sea reads and the wave amplitude the visible surface is
+  # built from, and the inland file's constant 2.5 m/s is a glassy sea all day.
+  weather_file: weather/coastal_sea_breeze_48h.csv      # relative to the data root
+  atmosphere_preset: us_standard_clear                  # configs/atmospheres/
+  environment_preset: sea_clear_day                     # configs/environments/ (sea below horizon)
+  site: {latitude_deg: 36.8, longitude_deg: -5.4, altitude_m: 0.0}   # western Mediterranean, sea level
+  # 16:00 local (UTC+1): the sea breeze peak, 9 m/s, and a sun low enough to lay a glitter
+  # path across the water instead of flattening it from overhead.
+  start_utc: "2024-06-21T15:00:00Z"
+  targets:
+    # Water-pinned. ESTIMATED as 0.5 K above the bulk SST: a steel hull in sunlight sits marginally
+    # above the water it exchanges with, and the exchange coefficient is large enough that it
+    # cannot sit much above it.
+    - {name: hull, solver: prescribed, schedule_s: [0.0, 600.0], schedule_k: [290.5, 290.5]}
+
+    # Above the waterline, in air, warmed by the sun. The `airframe` solver is T_air(t) + offset,
+    # which is what an unpowered skin at low speed does; a deck is exactly that.
+    - {name: superstructure, solver: airframe, offset_k: 3.5}
+
+    # Exhaust uptake at cruise. ESTIMATED: published funnel-skin figures for marine diesels run
+    # roughly 350-500 K depending on lagging and load; 430 K is mid-range and deliberately not the
+    # most flattering number available. This is the first value a comparison against public
+    # maritime IR imagery should re-fit.
+    - {name: stack, solver: prescribed, schedule_s: [0.0, 600.0], schedule_k: [430.0, 430.0]}

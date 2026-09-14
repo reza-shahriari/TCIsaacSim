@@ -45,6 +45,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   codes** and the four annuli are plainly there. Real in radiance, absent from the picture — the
   AGC lesson again, and which one you measure decides whether you believe the feature works.
 
+- **A maritime demo: vessels on open water, filmed in LWIR** (MM.5–MM.7, ADR 0078).
+  `scripts/render_maritime_demo.py` is the `render_aerial_demo.py` of the sea — scene YAML in,
+  four physical-unit frames plus a registered visible frame out, 4 frames in 15 s.
+  `configs/scenes/vessel_transit_clear_day.yaml` puts a skiff at 600 m, a patrol boat at 2.1 km
+  and a freighter at 5.2 km, each with a hull pinned near the SST, a superstructure following the
+  air, and an exhaust stack at 430 K.
+- `GroundSpec.mode: sea` with `bulk_sst_k`, and `configs/environments/sea_clear_day.yaml`.
+- **The water in the stage is for the eye only.** It occludes, it carries the Earth's curvature and
+  it sets the horizon, but it joins the *background* mask, so its infrared temperature comes from
+  the analytic sea profile at each ray's own depression angle. `--no-water` leaves the IR frame
+  unchanged and is the cheapest proof of which half of the stage is physics.
+- `data/weather/coastal_sea_breeze_48h.csv`: a maritime fixture with a 2–9 m/s diurnal sea breeze.
+  `synthetic_clear_day` gained `wind_swing_m_s` / `wind_max_hour_local`, defaulting to zero so the
+  existing fixture still regenerates bit-for-bit.
+
+### Fixed
+- **Three things only rendering the picture could have found.**
+  1. `ground_temperature_k` was first made to **raise** for `mode: sea`, reasoning that a sea has no
+     single temperature. That broke every maritime frame: the caller is §5.3(a)'s *reflected* term,
+     where what an object sees below itself is the water right around it at steep incidence, ε ≈
+     0.99, and one scalar — the SST — is exactly right. The guard was right about the physics and
+     wrong about which caller it was guarding. Background rays and reflected rays are now separated
+     in the code and in a test.
+  2. The sea profile was being evaluated **per pixel**, at a 4000-step path-radiance quadrature
+     each, for 2.6 M supersampled pixels. A frame never finished. It is now a LUT, tabulated
+     against **slant range rather than depression angle**: `d(δ)` has a square-root singularity at
+     the horizon, so an angle grid keeps a cusp that refining barely touches (52 mK at 192 points,
+     still 41 mK at 768). In range the same 192 points land under **13 mK** and answer two million
+     pixels in 34 ms.
+  3. The water mesh's rings must be uniform in **depression angle**, not radius. A pixel row covers
+     ground as r², so a geometric radial grid — the obvious choice — is ten times too coarse in the
+     near field and nine times finer than necessary at the horizon, and it renders every wave
+     shorter than 20 m as corduroy.
+- The wave train is scaled by the **shared weather's wind**, wavelength and amplitude together as
+  U² (Pierson–Moskowitz similarity keeps the steepness scale-invariant). Before that it was a fixed
+  constant while Cox–Munk read the real wind — the picture would have looked windy while the
+  radiometry read calm, which is the split-brain CLAUDE.md #6 exists to prevent, and invisible.
+
 - **Rotor veils reach the frame** (ADR 0081, stage 2c). `irsim.pipeline.rotor_veil` composites
   projected discs onto the k× radiance plane and `run_frame` takes `rotor_veils` alongside
   `point_targets`; a frame without them is bit-identical to before.

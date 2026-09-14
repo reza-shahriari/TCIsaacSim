@@ -138,6 +138,8 @@ def synthetic_clear_day(
     t_max_hour_local: float = 15.0,
     dewpoint_k: float = 283.15,
     wind_speed_m_s: float = 2.0,
+    wind_swing_m_s: float = 0.0,
+    wind_max_hour_local: float = 16.0,
     cloud_fraction: float = 0.05,
     dni_peak_w_m2: float = 850.0,
     dhi_peak_w_m2: float = 100.0,
@@ -152,11 +154,19 @@ def synthetic_clear_day(
     2 E_peak (t_set − t_rise)/π exactly; temperature is
     t_mean + ½ swing · sin(2π (h − t_max + 6)/24) (maximum at ``t_max_hour_local``, minimum
     12 h earlier); RH = e_s(T_dew)/e_s(T_air) ≤ 1.
+
+    ``wind_swing_m_s`` adds a diurnal wind on the same sinusoidal form, peaking at
+    ``wind_max_hour_local`` and clipped at zero: a sea breeze, which is the one weather variable a
+    maritime scene cannot do without, because the wind sets both the sea's slope statistics
+    (MM.2) and the wave amplitude the visible surface is built from. It defaults to zero, so every
+    existing fixture regenerates bit-for-bit.
     """
     if start_utc.tzinfo is None or start_utc.utcoffset() is None:
         raise ValueError("start_utc must be timezone-aware")
     if hours <= 0 or step_s <= 0 or not 0 <= sunrise_hour_local < sunset_hour_local <= 24:
         raise ValueError("hours, step_s positive; 0 <= sunrise < sunset <= 24")
+    if wind_speed_m_s < 0.0 or wind_swing_m_s < 0.0:
+        raise ValueError("wind_speed_m_s and wind_swing_m_s must be non-negative")
     n = int(round(hours * 3600.0 / step_s)) + 1
     t = np.arange(n, dtype=np.float64) * step_s
     start = start_utc.astimezone(timezone.utc)
@@ -169,6 +179,11 @@ def synthetic_clear_day(
     rh = np.array(
         [min(1.0, e_dew / saturation_vapour_pressure_hpa(float(tk) - 273.15)) for tk in t_air]
     )
+    wind = np.maximum(
+        wind_speed_m_s
+        + 0.5 * wind_swing_m_s * np.sin(2.0 * np.pi * (h_local - wind_max_hour_local + 6.0) / 24.0),
+        0.0,
+    )
     day = (h_local > sunrise_hour_local) & (h_local < sunset_hour_local)
     phase = np.pi * (h_local - sunrise_hour_local) / (sunset_hour_local - sunrise_hour_local)
     shape = np.where(day, np.sin(np.clip(phase, 0.0, np.pi)), 0.0)
@@ -177,7 +192,7 @@ def synthetic_clear_day(
         t,
         t_air_k=t_air,
         rh_fraction=rh,
-        wind_speed_m_s=np.full(n, float(wind_speed_m_s)),
+        wind_speed_m_s=wind,
         cloud_fraction=np.full(n, float(cloud_fraction)),
         dni_w_m2=dni_peak_w_m2 * shape,
         dhi_w_m2=dhi_peak_w_m2 * shape,
