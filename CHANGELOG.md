@@ -43,6 +43,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The SPG lane's blocker is written down instead of coded around** (M10.12, M10.13a/b/e).
+  Stage 1 needs a **per-frame float32 facet table** to reach the kernel, and M2.3 established that
+  there is no cross-frame device state to keep it in, that `io.` is a forbidden token so it cannot
+  be loaded, and that a Lua literal of LUT size crashes the Kit process. The Planck LUT is static
+  and bakes fine; the facet table changes every frame and does not. `src/irsim_isaac/spg/README.md`
+  states the question, three candidate answers ranked by cost, and how one Isaac session with a
+  fourth `spg_probe` experiment would decide it for all four steps.
+- Writing the kernels against a guess is exactly what CLAUDE.md's "flag uncertainty rather than
+  guessing" rule exists for — Isaac Sim 6.0's SPG API is new and its public documentation is
+  incomplete — so they are not written. The note also carries M2.3's hazard forward: a kernel that
+  fails to load yields a **zero-filled output with status ok**, so any in-sim equivalence test must
+  assert against a known non-zero reference and never merely that a buffer came back.
 - Two placeholder tests said they were waiting for ME.5. ME.5 has landed and **refused** both
   bands: a sky elevation profile and a cloud PSD slope each need a labelled region on the published
   clips, and selecting one automatically would be inventing an annotation and calling it data. The
