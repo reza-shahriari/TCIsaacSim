@@ -52,11 +52,15 @@ def test_the_committed_facet_scene_validates_and_builds(scene: Scene) -> None:
     assert scene.thermal_surfaces == (
         "asphalt_sun",
         "asphalt_shade",
-        "asphalt_wet",
+        "soil_dry",
+        "soil_wet",
         "concrete",
         "roof_black",
         "roof_white",
         "glass",
+        "steel_panel",
+        "hood_still",
+        "hood_moving",
     )
 
 

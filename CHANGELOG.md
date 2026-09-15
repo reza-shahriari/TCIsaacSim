@@ -43,6 +43,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Tier 3 diurnal phenomenology on the facet scene** (M6.13, §6.3, §15 T3). Eleven facets, mostly
+  in pairs that differ in exactly one thing, driven by 48 h of weather. Sunlit asphalt peaks at
+  **14:10 local at 60.1 °C**; the hood at 100 km/h is **26.4 K** colder than the parked one at
+  14:00; dry soil is **7.9 K** above wet at 14:00 and *below* it at dawn; shade is > 3 K colder by
+  day and within **1 K** at night; black and white paint agree to **0.2 K** at 03:00 and differ by
+  **> 20 K** at 13:00; overcast cuts both the swing and the mean night spread by > 30 %; doubling
+  the wind lowers the peak by > 1 K; and the surface falls **below** the air on a clear night.
+- **§6.3's own acceptance test — "does the scene go flat?" — is measured on the scene-wide spread
+  rather than on a chosen pair**, because a pair's crossing time moves by a couple of hours
+  depending which pair you pick, and the operational claim is about the picture. **At dawn the scene
+  collapses from 12.7 K of spread to 0.88 K — a 93 % drop.**
+- **⚠️ There is no dusk collapse, and that is recorded rather than engineered away.** At sunset the
+  spread is still 5.5 K and decays monotonically through the night to the dawn minimum. Each pair
+  *does* cross — one to three hours before sunset — but they cross at different times, so the
+  ensemble never passes through a common point. A dusk flat needs a facet set whose members share a
+  solar absorptivity as well as differing in mass; this one deliberately does not, because its pairs
+  exist to isolate other variables. Choosing its materials to produce a dusk flat would be fitting
+  the fixture to its own acceptance test. The **morning** pair-level crossover does land within
+  **60 min** of sunrise.
+- **⚠️ The swing is 47.1 K against the roadmap's 15–40 K, and the model says why.** These facets are
+  single nodes with an **adiabatic back**, so the day's heat has nowhere to go but back out of the
+  surface. M6.8's two-node solver with a finite R₂d and T_deep is exactly what pulls this into the
+  quoted band, so the single-node number is an **upper bound** rather than a disagreement — and the
+  shaded twin, which never sees the beam, sits inside the band at 15.4 K. Left as a bound because a
+  scene that wants it tightened should say what is under its ground rather than have the fixture
+  guess.
+- Ships `scripts/validate_thermal_diurnal.py` — a plot for the shape and a **diffable CSV** for the
+  numbers — and `docs/validation/tier3-checklist.md` for the six things a person has to look at that
+  no test can, plus the recorded departures above (14 tests).
 - **The `thermal:` scene block, wired to M6.11's field** (M6.12, §12.3, ADR 0032/0037/0043).
   `configs/scenes/thermal_facet_scene.yaml` ships: seven facets, mostly in pairs that differ in
   exactly one thing — dry vs wet, sunlit vs shaded, black vs white paint. `SceneSurfaceForcing`

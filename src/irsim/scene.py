@@ -146,9 +146,21 @@ class Scene:
         luts: Mapping[str, BandLUT] | None = None,
         data_dir: str | os.PathLike[str] | None = None,
         quantity: Quantity = "lb",
+        weather_override: WeatherSeries | None = None,
     ) -> Scene:
+        """``weather_override`` replaces the file the scene names, for *variant* scenes.
+
+        It exists for sensitivity studies -- the same scene under twice the wind, or under
+        overcast -- where loading the file and then mutating it would leave two series in play and
+        trip the one-weather guard for the wrong reason. The override is injected everywhere the
+        loaded series would have been, so CLAUDE.md #6 holds exactly as before.
+        """
         spec = config.scene if isinstance(config, SceneConfig) else config
-        weather = load_weather_csv(resolve_data_dir(data_dir) / spec.weather_file)  # once
+        weather = (
+            weather_override
+            if weather_override is not None
+            else load_weather_csv(resolve_data_dir(data_dir) / spec.weather_file)  # once
+        )
         t0_s = weather.seconds_of(spec.start_utc)
         preset = load_atmosphere_preset(spec.atmosphere_preset)
         atmosphere = Atmosphere(preset, weather, luts)

@@ -29,10 +29,21 @@ scene:
     spin_up_hours: 48.0
     tick_s: 60.0
     surfaces:
-      - {name: asphalt_sun,   material: asphalt_dry,     tilt_deg: 0.0}
-      - {name: asphalt_shade, material: asphalt_dry,     tilt_deg: 0.0, shaded: true}
-      - {name: asphalt_wet,   material: soil_wet,        tilt_deg: 0.0}
-      - {name: concrete,      material: concrete,        tilt_deg: 0.0}
-      - {name: roof_black,    material: car_paint_black, tilt_deg: 0.0}
-      - {name: roof_white,    material: car_paint_white, tilt_deg: 0.0}
+      # the same material, the same hour, differing only in the direct beam
+      - {name: asphalt_sun,   material: asphalt_dry,      tilt_deg: 0.0}
+      - {name: asphalt_shade, material: asphalt_dry,      tilt_deg: 0.0, shaded: true}
+      # what water does to thermal mass: soil_wet holds 3x soil_dry's areal capacity
+      - {name: soil_dry,      material: soil_dry,         tilt_deg: 0.0}
+      - {name: soil_wet,      material: soil_wet,         tilt_deg: 0.0}
+      # the slow surface, for the crossover ordering
+      - {name: concrete,      material: concrete,         tilt_deg: 0.0}
+      # identical in LWIR, opposite in the solar bands
+      - {name: roof_black,    material: car_paint_black,  tilt_deg: 0.0}
+      - {name: roof_white,    material: car_paint_white,  tilt_deg: 0.0}
+      # the one that is not opaque in every band
       - {name: glass,         material: glass_windshield, tilt_deg: 30.0, azimuth_deg: 180.0}
+      # thin and low-mass: the other half of the thermal-crossover pair
+      - {name: steel_panel,   material: rusted_steel,     tilt_deg: 0.0}
+      # the same panel, parked and at 100 km/h -- forced convection, nothing else
+      - {name: hood_still,    material: car_paint_black,  tilt_deg: 0.0}
+      - {name: hood_moving,   material: car_paint_black,  tilt_deg: 0.0, vehicle_speed_m_s: 28.0}
