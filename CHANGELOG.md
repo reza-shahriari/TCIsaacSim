@@ -43,6 +43,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Hemispherical emissivity — the number the thermal solver needs** (M7.8, ADR 0043, §6.1, §4.2).
+  A camera measures ε(θ) along one ray; an energy balance radiates into the whole sky. Water reads
+  **0.990** at normal and **0.9511** hemispherically, because the cos θ sin θ weight peaks at 45°
+  where its collapse has already begun. The solver gets ε_hemi and **cannot reach** the directional
+  band value, because the error is systematic and one-signed — the same direction for every water
+  pixel of every maritime scene, at every hour.
+- **The sign flips for metals, and that is not assumed anywhere.** Aluminium's ε rises with angle, so
+  its ε_hemi is **1.29×** its normal value. A model that clamped ε_hemi ≤ ε(0) would be right for
+  every dielectric in the library and wrong for every metal, quietly.
+- **⚠️ The roadmap's "> 0.3 K equilibrium difference" is unreachable, and that is a property of the
+  balance rather than a tolerance to loosen.** ΔT vanishes at both convective limits — with h → 0 the
+  radiative equilibrium is T = ε_sky^{1/4}·T_air, *independent of ε*, and with h → ∞ the surface is
+  pinned to the air — so it has a maximum in between: **0.230 K at h ≈ 4 W m⁻² K⁻¹**. The test finds
+  that maximum over h instead of asserting one point, which survives a change of h.
+- **The total form reports how much of itself is an assumption.** At 300 K, **61 %** of Planck's
+  weight falls outside every configured band — nearly all beyond 13.5 µm — and is filled by extending
+  the nearest one. `TotalHemispherical.extrapolated_fraction` returns that, because a solver that
+  cannot see how much of its ε rests on an assumption cannot report its own uncertainty. A band
+  holding under 1e-4 of the weight is skipped rather than queried, since §4.2's Level C bound is a
+  thermal-band statement and a material may legally fail it in a band the solver never integrates.
+- The µ = cos θ substitution turns cos θ sin θ dθ into µ dµ, so the integrand has no trigonometry and
+  the quadrature converges on something polynomial-like: 8, 16 and 64 Gauss–Legendre nodes agree to
+  better than **1e-6**, so the default 32 is far past convergence rather than a guess (15 tests).
 - **Level B angular emissivity and its fitter** (M7.6, ADR 0042, §4.2). `emissivity_empirical` is
   §4.2's ε(θ) = ε₀[1 − a(1 − cos θ)^p], and `fit_empirical` / `fit_from_nk` / `fit_band_level_b`
   bake (a, p) per material class against Level A, searching §4.2's p ∈ {4, 5, 6} exhaustively (a is
