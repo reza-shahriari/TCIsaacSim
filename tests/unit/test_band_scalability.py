@@ -20,6 +20,7 @@ docs/physics-model.md §12.1, §12.2 line 900, §16.4 step 10
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
 
 import numpy as np
@@ -89,10 +90,27 @@ def test_every_config_hashes_reproducibly(name, configs) -> None:  # type: ignor
 
 
 def test_the_configs_hash_distinctly(configs) -> None:  # type: ignore[no-untyped-def]
+    """Distinct *cameras*, and a band hash that collides **exactly when the bands are the same**.
+
+    The second half used to assert every band hash was distinct, which held only while every
+    config was a different band. It is not the invariant, and M12.1's Halmstad camera -- a Boson
+    320x256 with the same LWIR response as the 640 -- is the case that shows why: two cameras in
+    one band *must* share a band hash, because that is what lets `make luts` build one LUT bundle
+    for both instead of two identical ones. The invariant is the iff.
+    """
     hashes = {name: config_hash(c, DATA_DIR) for name, c in configs.items()}
     assert len(set(hashes.values())) == len(hashes), hashes
+
     bands = {name: band_hash(c, DATA_DIR) for name, c in configs.items()}
-    assert len(set(bands.values())) == len(bands), bands
+    blocks = {
+        name: json.dumps(c.model_dump(mode="json")["sensor"]["band"], sort_keys=True)
+        for name, c in configs.items()
+    }
+    for a in configs:
+        for b in configs:
+            same_block = blocks[a] == blocks[b]
+            same_hash = bands[a] == bands[b]
+            assert same_hash == same_block, (a, b, bands[a], bands[b])
 
 
 @pytest.mark.parametrize("name", CONFIG_IDS)
