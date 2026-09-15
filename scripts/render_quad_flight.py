@@ -81,6 +81,16 @@ parser.add_argument(
 )
 parser.add_argument("--no-overlay", action="store_true", help="no burnt-in readout")
 parser.add_argument("--keep-frames", action="store_true", help="keep the PNG sequence")
+parser.add_argument(
+    "--integration-ms",
+    type=float,
+    default=None,
+    help="override a photon FPA's integration time, in ms. A camera has an exposure control and "
+    "these configs carry one default each; a daylight reflective-band scene can saturate a "
+    "low-light exposure by a hundred times. Changes the config hash, as it should -- it is a "
+    "different configuration.",
+)
+
 args = parser.parse_args()
 
 t_boot = time.time()
@@ -104,6 +114,7 @@ def main() -> int:
     import numpy as np
 
     from irsim.atmosphere.cloud import generate_sky_cloud
+    from irsim.atmosphere.skylight import skylight_for_sensor
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
@@ -117,8 +128,8 @@ def main() -> int:
         encode_mp4,
         ffmpeg_available,
         overlay_readout,
-        target_span_k,
     )
+    from irsim_isaac.display_span import DisplaySpan, span_from_dn16, span_from_nodes
     from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
@@ -130,9 +141,32 @@ def main() -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
+    if args.integration_ms is not None:
+        from irsim.config.sensor import SensorConfig
+
+        dumped = sensor.model_dump(mode="json")
+        if dumped["sensor"]["fpa"]["type"] != "photon":
+            print("--integration-ms applies to a photon FPA; this is a bolometer", file=sys.stderr)
+            return 1
+        dumped["sensor"]["fpa"]["integration_time_ms"] = float(args.integration_ms)
+        sensor = SensorConfig.model_validate(dumped)
     spec = sensor.sensor
+    # ADR 0021: a photon FPA runs the whole chain on the photon table, and the sky model, the
+    # atmosphere and the target solvers inside the Scene have to be built in the same form. Asked
+    # of the sensor rather than assumed, because a mis-formed scene is out by ~1e19 and the AGC
+    # hides it.
+    quantity = sensor.sensor.quantity
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
-    scene = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    # Scattered sunlight in the sky (M11.10, ADR 0086). `None` for an emissive band, so an LWIR
+    # render is bit-identical to what it was; in a reflective band, without it the sky renders
+    # black and the sunlit target sits on nothing, which is backwards.
+    skylight = skylight_for_sensor(sensor, quantity)
+    scene = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        quantity=quantity,
+        skylights={spec.band.band_id: skylight},
+    )
 
     span_s = args.frames * args.interval_s
     print(
@@ -204,10 +238,23 @@ def main() -> int:
         atmosphere=scene.layered,
         flat_field_enabled=not args.no_flat_field,
     )
+    # The M9 chain is a *bolometer* chain: its NUC residual is authored in mK/K and converted to
+    # DN through the radiometric calibration, which a photon FPA has none of (ADR 0056, M11.6).
+    # A photon camera in this repository is shutterless by configuration anyway, so there is no
+    # FFC to model either. Skipping it is the honest behaviour and is announced; failing here
+    # would make every reflective-band render impossible for a reason that is not about the band.
     if not args.no_chain:
-        from irsim.pipeline.sensor_chain import attach_sensor_chain
+        if pipeline.calibration is None:
+            print(
+                f"{spec.name}: no M9 sensor chain -- a photon FPA has no radiometric calibration "
+                "to convert the NUC residual into DN (ADR 0056), and this camera is shutterless, "
+                "so there is no FFC to freeze. Defects and 3-D noise still apply.",
+                file=sys.stderr,
+            )
+        else:
+            from irsim.pipeline.sensor_chain import attach_sensor_chain
 
-        pipeline = attach_sensor_chain(pipeline, scene.weather, t0_s=scene.t0_s)
+            pipeline = attach_sensor_chain(pipeline, scene.weather, t0_s=scene.t0_s)
 
     camera = IrCamera(
         sensor,
@@ -249,7 +296,12 @@ def main() -> int:
     # ambient, because eight bits is 256 levels and spending half of them on sky-to-ambient leaves
     # every part of the target squeezed into the rest. Sky clips to black, deliberately: it is the
     # region with least to see in and it was costing the target all of its contrast.
-    probe = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    probe = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        quantity=quantity,
+        skylights={spec.band.band_id: skylight},
+    )
     try:
         node_samples = [probe.advance_targets(float(t), 0.0) for t in np.linspace(0.0, span_s, 64)]
     except ValueError as exc:
@@ -262,24 +314,47 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    # **In a reflective band there is no temperature to span.** §12.1 switches
+    # `apparent_temperature` off for SWIR and NIR because inverting L_B does not give a scene
+    # temperature when the signal is reflected sunlight, so the kelvin span above has no plane to
+    # apply to. Those bands span the raw ADC instead, between percentiles of the first captured
+    # frame, held fixed for the sequence -- a manual span, not a slow AGC (M10.23).
+    emissive = spec.outputs.apparent_temperature
+    span: DisplaySpan | None = None
     if args.span_c:
-        span_c = (float(args.span_c[0]), float(args.span_c[1]))
-        span_k = (span_c[0] + 273.15, span_c[1] + 273.15)
-    else:
-        span_k = target_span_k(node_samples)
-        span_c = (span_k[0] - 273.15, span_k[1] - 273.15)
-    if span_c[1] <= span_c[0]:
-        print("--span-c must be increasing", file=sys.stderr)
-        return 1
+        if not emissive:
+            print(
+                "--span-c is a temperature span and this band has no apparent temperature; "
+                "drop it and the render spans the ADC instead",
+                file=sys.stderr,
+            )
+            return 1
+        if float(args.span_c[1]) <= float(args.span_c[0]):
+            print("--span-c must be increasing", file=sys.stderr)
+            return 1
+        span = DisplaySpan(
+            kind="apparent_t",
+            low=float(args.span_c[0]) + 273.15,
+            high=float(args.span_c[1]) + 273.15,
+        )
+    elif emissive:
+        span = span_from_nodes(node_samples)
     palette_name = args.palette or spec.isp.palette
     palette = palette_table(palette_name)
-    print(
-        f"display: fixed span {span_c[0]:.1f} to {span_c[1]:.1f} C, {palette_name} palette "
-        f"(from the sensor ISP); the camera's own {spec.isp.agc} output is filmed alongside"
-    )
-    for name, value in sorted(node_samples[-1].items()):
-        code = max(0, min(255, round(255 * (value - span_k[0]) / (span_k[1] - span_k[0]))))
-        print(f"    {name:10s} {value - 273.15:7.1f} C -> display code {code:3d}")
+    if span is not None:
+        print(
+            f"display: fixed {span.caption}, {palette_name} palette (from the sensor ISP); "
+            f"the camera's own {spec.isp.agc} output is filmed alongside"
+        )
+        for name, value in sorted(node_samples[-1].items()):
+            print(
+                f"    {name:10s} {value - 273.15:7.1f} C -> display code {span.code_for(value):3d}"
+            )
+    else:
+        print(
+            f"display: {palette_name} palette; the fixed span is taken from the first frame's ADC "
+            "percentiles once it exists (this band has no apparent temperature to span)"
+        )
     history: list[dict[str, float]] = []
     t_render = time.time()
     for index in range(args.frames):
@@ -297,28 +372,44 @@ def main() -> int:
 
         outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         temps = camera.bridge.temperatures()
-        t_app = np.asarray(outputs.apparent_t)
-        history.append(
-            {
-                "frame": index,
-                "t_rel_s": round(t_rel, 3),
-                "throttle": round(throttle, 4),
-                **{f"{k}_k": round(v, 3) for k, v in temps.items()},
-                "t_app_min_k": round(float(t_app.min()), 3),
-                "t_app_max_k": round(float(t_app.max()), 3),
-            }
-        )
+        if span is None:
+            # First frame in a reflective band: the span is the picture's own ADC percentiles,
+            # taken once and then held, so the video does not breathe.
+            span = span_from_dn16(np.asarray(outputs.dn16))
+            print(f"display: fixed {span.caption} from the first frame's ADC percentiles")
+        record: dict[str, float] = {
+            "frame": index,
+            "t_rel_s": round(t_rel, 3),
+            "throttle": round(throttle, 4),
+            **{f"{k}_k": round(v, 3) for k, v in temps.items()},
+        }
+        if outputs.apparent_t is not None:
+            t_app = np.asarray(outputs.apparent_t)
+            record["t_app_min_k"] = round(float(t_app.min()), 3)
+            record["t_app_max_k"] = round(float(t_app.max()), 3)
+        if outputs.dn16 is not None:
+            dn = np.asarray(outputs.dn16)
+            record["dn16_min"] = float(dn.min())
+            record["dn16_max"] = float(dn.max())
+        history.append(record)
 
         # Fixed span -> palette. `quantise_display` is the ISP's own rounding, so the mapping is
         # the one the display branch uses and not a second, subtly different one.
-        scaled = (t_app - span_k[0]) / (span_k[1] - span_k[0])
-        spanned = palette[quantise_display(scaled)]
+        spanned = palette[quantise_display(span.scale(outputs))]
+        caption_span = span.caption
 
         # Defaults bind this frame's values at definition time; a closure over the loop variables
         # would be evaluated later and is the classic way to caption every frame with the last
         # frame's numbers.
+        bar = (span.low, span.high) if span.is_temperature else None
+
         def readout(
-            image: Any, caption: str, t: float = t_rel, u: float = throttle, node: dict = temps
+            image: Any,
+            caption: str,
+            t: float = t_rel,
+            u: float = throttle,
+            node: dict = temps,
+            scale: Any = bar,
         ) -> Any:
             minutes, seconds = divmod(int(t), 60)
             return overlay_readout(
@@ -334,13 +425,13 @@ def main() -> int:
                     "battery": node["battery"],
                     "air    ": node["airframe"],
                 },
-                span_k,
+                scale,
                 bare=args.no_overlay,
             )
 
         write_png(
             frames_dir / f"ir_{index:05d}.png",
-            readout(spanned, f"span {span_c[0]:.0f}-{span_c[1]:.0f}C {palette_name}"),
+            readout(spanned, f"{caption_span} {palette_name}"),
         )
         write_png(
             frames_dir / f"agc_{index:05d}.png",
@@ -353,10 +444,14 @@ def main() -> int:
                 np.ascontiguousarray(np.asarray(camera.last_frame.rgb)[..., :3]),
             )
         if index % 25 == 0 or index == args.frames - 1:
+            level = (
+                f"T_app {record['t_app_min_k']:.1f}..{record['t_app_max_k']:.1f} K"
+                if "t_app_min_k" in record
+                else f"DN {record.get('dn16_min', 0):.0f}..{record.get('dn16_max', 0):.0f}"
+            )
             print(
                 f"  frame {index:4d}  T+{t_rel:7.1f}s  u={throttle:4.2f}  "
-                f"motor {temps['motor'] - 273.15:5.1f}C  "
-                f"T_app {t_app.min():.1f}..{t_app.max():.1f} K"
+                f"motor {temps['motor'] - 273.15:5.1f}C  {level}"
             )
     render_s = time.time() - t_render
     camera.close()
@@ -400,7 +495,7 @@ def main() -> int:
         "motor_peak_k": peak["motor_k"],
         "motor_peak_at_s": peak["t_rel_s"],
         "motor_swing_k": round(peak["motor_k"] - min(r["motor_k"] for r in history), 3),
-        "display_span_c": list(span_c),
+        "display_span": {"kind": span.kind, "low": span.low, "high": span.high},
         "palette": palette_name,
         "videos": videos,
         "history": history,

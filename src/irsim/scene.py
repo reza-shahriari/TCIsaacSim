@@ -147,6 +147,7 @@ class Scene:
         data_dir: str | os.PathLike[str] | None = None,
         quantity: Quantity = "lb",
         weather_override: WeatherSeries | None = None,
+        skylights: Mapping[str, Any] | None = None,
     ) -> Scene:
         """``weather_override`` replaces the file the scene names, for *variant* scenes.
 
@@ -172,7 +173,19 @@ class Scene:
             environment = load_environment_preset(spec.environment_preset)
             layered = LayeredAtmosphere(preset, weather, luts)
             for band, lut in (luts or {}).items():
-                sky_models[band] = SkyModel(layered, environment, band, lut, quantity)
+                # Scattered sunlight (M11.10, ADR 0086) is supplied by the caller, because
+                # integrating it needs the *sensor's* R(λ) and this module does not take sensor
+                # configs. `None` is the purely thermal sky this class has always been -- right
+                # for an emissive band, where the scattered term is 1.6e-8 of the column's own
+                # emission, and a black sky in a reflective one.
+                sky_models[band] = SkyModel(
+                    layered,
+                    environment,
+                    band,
+                    lut,
+                    quantity,
+                    skylight=None if skylights is None else skylights.get(band),
+                )
         thermal, surface_names = _build_thermal_field(spec, weather, t0_s, data_dir)
         return cls(
             spec=spec,
@@ -194,8 +207,11 @@ class Scene:
         luts: Mapping[str, BandLUT] | None = None,
         data_dir: str | os.PathLike[str] | None = None,
         quantity: Quantity = "lb",
+        skylights: Mapping[str, Any] | None = None,
     ) -> Scene:
-        return cls.from_config(load_scene_config(path), luts, data_dir, quantity)
+        return cls.from_config(
+            load_scene_config(path), luts, data_dir, quantity, skylights=skylights
+        )
 
     # -- time helpers ---------------------------------------------------------------------
     def weather_at(self, t_rel_s: float) -> WeatherSample:

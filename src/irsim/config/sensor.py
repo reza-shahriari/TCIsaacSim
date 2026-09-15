@@ -486,6 +486,18 @@ class SensorSpec(_Frozen):
     fidelity: FidelitySpec = FULL_FIDELITY
 
     @property
+    def quantity(self) -> Literal["lb", "lb_q"]:
+        """Which LUT table this camera runs on: ``"lb"`` (energy) or ``"lb_q"`` (photons).
+
+        ADR 0021's rule, in one place. A bolometer measures absorbed *power*, so its transfer is
+        linear in energy-form band radiance; a photon detector counts *photons*, so N_e =
+        eta t_int Phi_q and the chain has to run on the photon table. The two differ by about
+        1e19, and getting it wrong produces a uniformly, invisibly mis-scaled scene that the AGC
+        then normalises away -- so every consumer asks the sensor rather than deciding for itself.
+        """
+        return "lb" if self.fpa.type == "bolometer" else "lb_q"
+
+    @property
     def pixel_area_m2(self) -> float:
         """Photosensitive area A_d = pitch² · fill_factor, in m² (§9.1)."""
         return (self.fpa.pitch_um * 1e-6) ** 2 * self.fpa.fill_factor

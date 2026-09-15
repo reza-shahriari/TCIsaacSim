@@ -223,7 +223,7 @@ def overlay_readout(
     frame: NDArray[np.uint8],
     lines: Sequence[str],
     values_k: Mapping[str, float],
-    span_k: tuple[float, float],
+    span_k: tuple[float, float] | None,
     *,
     bare: bool = False,
 ) -> NDArray[np.uint8]:
@@ -232,8 +232,18 @@ def overlay_readout(
     One function rather than one per stage, because the two videos of a scene differ only in how
     temperature was mapped to brightness, and the caption is the only thing that says which -- so
     it has to look the same in both or the comparison is doing the reader no favours.
+
+    ``span_k`` may be ``None``, and then the **temperature gauge is left off entirely**. That is
+    the reflective-band case (M10.23): the picture is reflected sunlight and its brightness axis
+    is not a temperature axis, so a gauge in kelvin beside it would be a scale for a quantity the
+    image is not showing -- worse than no gauge, because a reader would use it. The caption block,
+    which carries the node temperatures as *numbers*, stays: those are real and are still what the
+    thermal model computed.
     """
     arr = np.asarray(frame, dtype=np.uint8)
     if bare:
         return np.ascontiguousarray(arr[..., :3])
-    return np.ascontiguousarray(temperature_bar(annotate(arr, lines), values_k, span_k)[..., :3])
+    annotated = annotate(arr, lines)
+    if span_k is None:
+        return np.ascontiguousarray(annotated[..., :3])
+    return np.ascontiguousarray(temperature_bar(annotated, values_k, span_k)[..., :3])

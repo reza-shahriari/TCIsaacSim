@@ -43,6 +43,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **A scattered-sunlight sky for the reflective bands** (M11.10, ADR 0086). Found by rendering NIR
+  for the first time: a brightly sunlit quadrotor on a **black sky**. That is backwards — in the
+  near infrared the daytime sky is the brightest thing in the frame and an aircraft is a dark
+  silhouette against it. `SkyModel` is a *thermal* sky, the atmospheric column's own emission, which
+  is right for LWIR and zero at 0.9 µm; the reflected-solar term lit the target and nothing lit the
+  sky. `irsim.atmosphere.skylight` adds **L = f_B · DHI / π**, with DHI from the scene's one
+  `WeatherSeries`.
+- **Isotropy is chosen for the integral, not for convenience.** ∫L cos θ dΩ over the hemisphere is
+  exactly L·π, so this form reproduces the diffuse irradiance the weather file measured — the one
+  angular distribution guaranteed right in the integral, which is the quantity that was measured.
+  The diffuse spectrum is the ground-level solar spectrum weighted by **λ⁻⁴**, because skylight is
+  far bluer than the beam that made it and a near-infrared band therefore receives a much smaller
+  share of DHI than of DNI.
+- Measured at DHI = 120 W m⁻²: NIR 5.35e18 and SWIR 4.28e18 photons s⁻¹ m⁻² sr⁻¹, MWIR 6.35e15, and
+  LWIR **8.2e-7 W m⁻² sr⁻¹** against ~50 of column emission — eight orders down, two below float32's
+  spacing there, which is why an emissive band gets `None` and every LWIR render stays bit-identical.
+- ⚠️ Wrong in its distribution, deliberately: no horizon brightening and **no circumsolar aureole**,
+  so a target passing near the sun is rendered against a sky that is too dim. Both are distribution
+  errors under a correct total; ADR 0086 records why a Preetham-style fit was not extended to 1.7 µm.
+- **The render scripts work in any band now** (M10.23). Three things had quietly assumed a
+  bolometer: the `Scene` was built in the energy form regardless of the FPA (ADR 0021's rule is now
+  a `SensorSpec.quantity` property that `PipelineConfig` delegates to); `attach_sensor_chain` raises
+  for a photon FPA because the M9 NUC residual is in mK/K and needs a radiometric calibration it has
+  none of, so the scripts skip the chain and say why; and the manual display span was written in
+  kelvin and applied to `apparent_t`, which §12.1 switches off for SWIR and NIR.
+  `irsim_isaac.display_span` spans `apparent_t` in an emissive band and the raw `dn16` between
+  first-frame percentiles in a reflective one, and the readout leaves the **temperature gauge off**
+  rather than print a kelvin scale beside a picture of reflected sunlight.
+- **The exposure had to move, and that is physics.** At f/1.4 a 0.3-albedo surface in full sun
+  delivers **1.17e6 photoelectrons** per NIR pixel in 16 ms against a 1e4 well — **117× saturated**,
+  a uniformly white frame. The NIR file is authored at **80 µs**, which puts that surface at ~60 %
+  of full well, and its §9.4 NETD moves with it to 2.42e13 K. SWIR reads **122×** at its own 16 ms
+  and keeps its file; `--integration-ms` on the render scripts is how a daylight SWIR render exposes.
 - **The Tier 4 acceptance report** (ME.6, ADR 0085). `irsim.validation.compare` holds the four DN8
   statistics — histogram EMD in codes, contrast ratio, PSD shape, ESF width — and `Tier4Report`, in
   which **`untestable` is a verdict**: §15's "apparent temperature within 2 K" is printed as open in

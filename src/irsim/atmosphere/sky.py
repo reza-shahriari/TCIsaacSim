@@ -47,6 +47,7 @@ from irsim.atmosphere.cloud import (
     lifting_condensation_level_m,
 )
 from irsim.atmosphere.layered import LayeredAtmosphere
+from irsim.atmosphere.skylight import DiffuseSkylight
 from irsim.config.environment import EnvironmentSpec
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.thermal.longwave import EmissivityFormula, longwave_down_from_sample
@@ -89,6 +90,7 @@ class SkyModel:
         band: str,
         lut: BandLUT,
         quantity: Quantity = "lb",
+        skylight: DiffuseSkylight | None = None,
     ) -> None:
         if not isinstance(atmosphere, LayeredAtmosphere):
             raise TypeError(
@@ -104,6 +106,17 @@ class SkyModel:
         self._band = band
         self._lut = lut
         self._q: Quantity = quantity
+        #: Scattered sunlight (M11.10, ADR 0086). ``None`` is a purely thermal sky, which is what
+        #: this class was and is right for an emissive band -- in LWIR the scattered term is 1.6e-8
+        #: of the column's own emission. In a reflective band leaving it out renders a **black
+        #: sky**, which is backwards: there the daytime sky is the brightest thing in the frame.
+        self._skylight = skylight
+        if skylight is not None and skylight.quantity != quantity:
+            raise ValueError(
+                f"the skylight is in the {skylight.quantity!r} form and this sky model runs on "
+                f"{quantity!r}; the two differ by ~1e19 and a mismatch renders a plausible sky "
+                "with the wrong brightness"
+            )
         self._cache: dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] = {}
 
     # -- identity -------------------------------------------------------------------------
@@ -131,6 +144,10 @@ class SkyModel:
     def lut(self) -> BandLUT:
         return self._lut
 
+    @property
+    def skylight(self) -> DiffuseSkylight | None:
+        return self._skylight
+
     # -- clear-sky elevation LUT ----------------------------------------------------------
     def _clear_lut(self, t_s: float) -> NDArray[np.float64]:
         """L_clear(θ) on the elevation grid (the layered column emission), cached per time."""
@@ -144,6 +161,11 @@ class SkyModel:
                     for d in ELEVATION_GRID_DEG
                 ]
             )
+            if self._skylight is not None:
+                # Isotropic, so it is a constant added at every elevation, and it flows into the
+                # tilt LUT below and into every consumer of `clear_radiance` -- the sky background
+                # *and* the reflected environment term -- from this one place.
+                values = values + float(self._skylight.radiance(self.weather.at(key).dhi_w_m2)[()])
             tilt = self._tilt_lut(values)
             self._cache[key] = (values, tilt)
         return self._cache[key][0]

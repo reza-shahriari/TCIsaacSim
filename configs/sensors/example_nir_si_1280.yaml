@@ -60,7 +60,15 @@ sensor:
                                                  # of epitaxial silicon (generate_response_curves)
     well_capacity_e: 1.0e4                       # ESTIMATED -- small pixels hold few electrons,
                                                  # which is the real dynamic-range limit here
-    integration_time_ms: 16.0                    # fits the 16.667 ms frame period
+    integration_time_ms: 0.08                    # 80 us. **A daylight exposure, and it has to be.**
+                                                 # At f/1.4 with a 4.8 um pixel, a 0.3-albedo
+                                                 # surface in full sun delivers 1.17e6 electrons
+                                                 # per pixel in 16 ms against a 1e4 well -- 117x
+                                                 # saturated, a uniformly white frame. 80 us puts
+                                                 # that surface at ~60 % of full well. A real NIR
+                                                 # camera auto-exposes across five decades between
+                                                 # noon and starlight; this file is one exposure,
+                                                 # and a night scene needs a much longer one.
     dark_current_model: arrhenius
     read_noise_e: 7.0                            # ESTIMATED -- a mature silicon ROIC is quiet,
                                                  # 17x better than the InGaAs part in this repo
@@ -73,10 +81,10 @@ sensor:
     # NOT A DATASHEET FIGURE AND NOT USABLE AS ONE -- but not invented either. §9.4 defines NETD
     # against a 300 K blackbody, and this band's answer is worth stating because it is the most
     # extreme case in the repository: a 300 K hemisphere-filling blackbody delivers
-    # **3.7e-10 photoelectrons per pixel per 16 ms frame** through this camera -- one electron
-    # roughly every seventy-five years -- against 7 e- of read noise. Evaluating §9.4 on the
+    # **1.9e-12 photoelectrons per pixel per 80 us exposure** through this camera -- one electron
+    # roughly every fifteen thousand years -- against 7 e- of read noise. Evaluating §9.4 on the
     # camera's own numbers,
-    #     NETD = sigma_read / (A_d . pi/(4F^2+1) . tau . QE . t_int . dLb_q/dT) = 1.21e11 K,
+    #     NETD = sigma_read / (A_d . pi/(4F^2+1) . tau . QE . t_int . dLb_q/dT) = 2.42e13 K,
     # which is not a sensitivity but a restatement of "thermal contrast does not exist at 0.9 um".
     # Compare the SWIR file's 976 K: eight orders of magnitude of the same physics.
     # The schema requires the field because it was written for emissive bands; M11.6's
@@ -84,7 +92,7 @@ sensor:
     # above) is what actually sets this camera's noise, and §9.4's cross-check is skipped for a
     # reflective band where the definition is vacuous (ADR 0025 addendum). Nothing in the NIR path
     # may anchor to this field.
-    netd_mk_at_300k: 1.211e14                    # DERIVED 2026-09-15 from this file's own numbers
+    netd_mk_at_300k: 2.423e16                    # DERIVED 2026-09-15 from this file's own numbers
     ratios_3d:                                   # relative to sigma_TVH; ESTIMATED
       tvh: 1.00
       vh:  0.15                                  # silicon FPN is well corrected on-chip

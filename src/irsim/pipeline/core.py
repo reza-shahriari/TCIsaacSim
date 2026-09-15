@@ -78,8 +78,13 @@ class PipelineConfig:
 
     @property
     def quantity(self) -> Quantity:
-        """Which LUT table the radiance chain runs on: energy for bolometers, photon otherwise."""
-        return "lb" if self.fpa.type == "bolometer" else "lb_q"
+        """Which LUT table the radiance chain runs on (ADR 0021).
+
+        Delegates to the sensor config so a caller that has only a ``SensorConfig`` -- a render
+        script building its ``Scene`` before the pipeline exists, say -- reaches the same answer
+        and cannot build the scene in the other form.
+        """
+        return self.sensor.sensor.quantity
 
     @classmethod
     def from_sensor(

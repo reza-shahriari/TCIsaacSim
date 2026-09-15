@@ -67,6 +67,16 @@ parser.add_argument(
 )
 parser.add_argument("--no-dome", action="store_true", help="untextured grey dome (ADR 0073)")
 parser.add_argument("--no-flat-field", action="store_true", help="skip the flat-field correction")
+parser.add_argument(
+    "--integration-ms",
+    type=float,
+    default=None,
+    help="override a photon FPA's integration time, in ms. A camera has an exposure control and "
+    "these configs carry one default each; a daylight reflective-band scene can saturate a "
+    "low-light exposure by a hundred times. Changes the config hash, as it should -- it is a "
+    "different configuration.",
+)
+
 args = parser.parse_args()
 
 t_boot = time.time()
@@ -80,6 +90,7 @@ def main() -> int:
     import numpy as np
 
     from irsim.atmosphere.sea import SeaModel, slant_range_m
+    from irsim.atmosphere.skylight import skylight_for_sensor
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
     from irsim.io import write_frame
     from irsim.materials.library import MaterialLibrary
@@ -100,9 +111,32 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
+    if args.integration_ms is not None:
+        from irsim.config.sensor import SensorConfig
+
+        dumped = sensor.model_dump(mode="json")
+        if dumped["sensor"]["fpa"]["type"] != "photon":
+            print("--integration-ms applies to a photon FPA; this is a bolometer", file=sys.stderr)
+            return 1
+        dumped["sensor"]["fpa"]["integration_time_ms"] = float(args.integration_ms)
+        sensor = SensorConfig.model_validate(dumped)
     spec = sensor.sensor
+    # ADR 0021: a photon FPA runs the whole chain on the photon table, and the sky model, the
+    # atmosphere and the target solvers inside the Scene have to be built in the same form. Asked
+    # of the sensor rather than assumed, because a mis-formed scene is out by ~1e19 and the AGC
+    # hides it.
+    quantity = sensor.sensor.quantity
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
-    scene = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    # Scattered sunlight in the sky (M11.10, ADR 0086). `None` for an emissive band, so an LWIR
+    # render is bit-identical to what it was; in a reflective band, without it the sky renders
+    # black and the sunlit target sits on nothing, which is backwards.
+    skylight = skylight_for_sensor(sensor, quantity)
+    scene = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        quantity=quantity,
+        skylights={spec.band.band_id: skylight},
+    )
 
     environment = scene.environment
     if environment is None or environment.ground.mode != "sea":
@@ -188,10 +222,23 @@ def main() -> int:
         atmosphere=scene.layered,
         flat_field_enabled=not args.no_flat_field,
     )
+    # The M9 chain is a *bolometer* chain: its NUC residual is authored in mK/K and converted to
+    # DN through the radiometric calibration, which a photon FPA has none of (ADR 0056, M11.6).
+    # A photon camera in this repository is shutterless by configuration anyway, so there is no
+    # FFC to model either. Skipping it is the honest behaviour and is announced; failing here
+    # would make every reflective-band render impossible for a reason that is not about the band.
     if not args.no_chain:
-        from irsim.pipeline.sensor_chain import attach_sensor_chain
+        if pipeline.calibration is None:
+            print(
+                f"{spec.name}: no M9 sensor chain -- a photon FPA has no radiometric calibration "
+                "to convert the NUC residual into DN (ADR 0056), and this camera is shutterless, "
+                "so there is no FFC to freeze. Defects and 3-D noise still apply.",
+                file=sys.stderr,
+            )
+        else:
+            from irsim.pipeline.sensor_chain import attach_sensor_chain
 
-        pipeline = attach_sensor_chain(pipeline, scene.weather, t0_s=scene.t0_s)
+            pipeline = attach_sensor_chain(pipeline, scene.weather, t0_s=scene.t0_s)
 
     rows = describe(demo, ifov_mrad)
     print(
