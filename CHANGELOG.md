@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Surface temperature that varies across one surface** (MP.1, ADR 0087, §6.1/§6.4).
+  `irsim.thermal.surface_field.PlanarPatch` is a grid of §6.1 facets on a plane and
+  `PlanarThermalField` solves it on the existing fixed tick, so a bonnet over a running engine or a
+  road beside a warm car carries a temperature *field* instead of one number. Until now every
+  rendered prim had exactly one temperature — `ThermalField` was always an N-facet solver, but every
+  consumer mapped one facet to one prim, so N counted objects and not points. In LWIR that is the
+  dominant modelling error for anything bigger than a few pixels: a wall half in sun spans 10–20 K
+  and irsim rendered it flat.
+- Nothing in the balance changed. The spatial variation enters through `FacetForcing.q_internal_w_m2`
+  and friends, which were already per-facet and had simply never been varied across one surface.
+  The new code is the *lookup*: a point in space becomes a bilinear blend of cells, exact at cell
+  centres, with no staircase at the resolutions a camera resolves.
+- Held to per-cell equilibrium, not to "there is now a gradient": with 250 W/m² of internal load on
+  half a patch, **every cell** converges to the root `steady_state_temperature` predicts for the flux
+  *that cell* sees, to **1 mK**, with the two halves 9+ K apart. A field that averaged, broadcast or
+  dropped the spatial forcing fails that by ~10 K.
+- A patch claims a **slab**, not a rectangle (`thickness_m`): a bonnet 0.9 m above a road projects
+  into the road's own (u, v) rectangle, and a patch testing only its in-plane extent would hand the
+  road's temperature to the car and produce a frame that looks entirely reasonable. Points outside
+  the slab sample as NaN rather than as the nearest edge value, because a patch quietly extending
+  itself to the whole scene is the failure the fill exists to make loud.
+- Known limit, recorded in ADR 0087 rather than hidden: the parameterisation is a *projection*, so it
+  is exact for near-planar surfaces (road, bonnet, roof, deck) and a wheel or an exhaust pipe still
+  takes one temperature per prim. Lifting that needs a UV or per-triangle AOV this build does not
+  expose (ADR 0014).
+
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`
   has existed since M9.1 and `irsim.pipeline.detector` has driven it since, but **`run_frame` never

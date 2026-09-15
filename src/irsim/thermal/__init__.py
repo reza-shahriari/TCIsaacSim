@@ -46,6 +46,7 @@ from irsim.thermal.solvers import (
     SolverState,
     TemperatureSolver,
 )
+from irsim.thermal.surface_field import PlanarPatch, PlanarThermalField
 from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, seconds_since
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
 
@@ -61,6 +62,8 @@ __all__ = [
     "prescribed_from_schedule",
     "refine_nodes",
     "throttle_profile",
+    "PlanarPatch",
+    "PlanarThermalField",
     "SOLVER_TYPES",
     "NewtonCoolingSolver",
     "PrescribedSolver",
