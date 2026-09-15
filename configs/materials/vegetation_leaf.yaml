@@ -1,0 +1,24 @@
+# Vegetation (leaf): the material that most obviously separates the bands.
+# Section 16.2 for the thermal bands; NIR/SWIR ESTIMATED but NOT arbitrary -- the near-infrared
+# numbers below are the "red edge", the single best known spectral feature in remote sensing.
+schema_version: 1
+material:
+  name: vegetation_leaf
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED from the leaf red edge"
+  description: "Broadleaf canopy. Nearly transparent and highly reflective in NIR, dark in LWIR"
+  thermal:
+    density_kg_m3: 700
+    specific_heat_j_kgk: 3000
+    conductivity_w_mk: 0.30
+    thickness_m: 0.0003
+    solar_absorptivity: 0.50
+  optical:
+    # A healthy leaf in the NIR plateau (0.75-1.3 um) reflects about 0.45 and TRANSMITS about
+    # 0.45, absorbing only ~0.10 -- which is why vegetation is brilliant in a near-infrared image
+    # and why a canopy is not opaque there. Past 1.4 um leaf water absorbs and the transmission
+    # collapses. In LWIR a leaf is an ordinary high-emissivity dielectric and opaque.
+    emissivity_per_band: {nir: 0.10, swir: 0.25, mwir: 0.96, lwir: 0.97}
+    transmittance_per_band: {nir: 0.45, swir: 0.35, mwir: 0.0, lwir: 0.0}
+    roughness_per_band: {nir: 0.55, swir: 0.55, mwir: 0.45, lwir: 0.40}
+    angular_model: {type: empirical, a: 0.06, p: 4.0}

@@ -1,0 +1,21 @@
+# Cotton clothing: the surface most of a person actually presents to a camera.
+# Section 16.2; NIR/SWIR ESTIMATED and colour-dependent -- these are a mid-tone garment.
+schema_version: 1
+material:
+  name: cotton_clothing
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Mid-tone cotton. Low conductivity and low mass: it tracks air temperature, not body"
+  thermal:
+    density_kg_m3: 300
+    specific_heat_j_kgk: 1300
+    conductivity_w_mk: 0.06
+    thickness_m: 0.001
+    solar_absorptivity: 0.70
+  optical:
+    # NIR/SWIR ESTIMATED and strongly colour-dependent in the near infrared -- white cotton
+    # reflects ~0.75 there and black ~0.15, so a single number is a mid-tone stand-in and nothing
+    # more. The thermal bands barely care, which is why §16.2 quotes only those two.
+    emissivity_per_band: {nir: 0.45, swir: 0.55, mwir: 0.93, lwir: 0.95}
+    roughness_per_band: {nir: 0.80, swir: 0.78, mwir: 0.70, lwir: 0.65}
+    angular_model: {type: empirical, a: 0.08, p: 4.0}

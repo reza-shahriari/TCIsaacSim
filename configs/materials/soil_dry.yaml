@@ -1,0 +1,18 @@
+# Dry soil / bare earth. Section 16.2; NIR/SWIR ESTIMATED.
+schema_version: 1
+material:
+  name: soil_dry
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Bare dry earth. Low conductivity and low capacity: large diurnal swing"
+  thermal:
+    density_kg_m3: 1500
+    specific_heat_j_kgk: 800
+    conductivity_w_mk: 0.30
+    thickness_m: 0.10
+    solar_absorptivity: 0.75
+  optical:
+    # NIR/SWIR ESTIMATED: dry mineral soil reflects 0.25-0.35 across the near infrared.
+    emissivity_per_band: {nir: 0.70, swir: 0.74, mwir: 0.90, lwir: 0.92}
+    roughness_per_band: {nir: 0.90, swir: 0.90, mwir: 0.85, lwir: 0.80}
+    angular_model: {type: empirical, a: 0.04, p: 4.0}

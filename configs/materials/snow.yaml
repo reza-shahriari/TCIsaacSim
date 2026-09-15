@@ -1,0 +1,23 @@
+# Snow: the other material that separates the bands, in the opposite direction to vegetation.
+# Section 16.2; NIR/SWIR ESTIMATED but not arbitrary -- snow is brilliant in the NIR and DARK in
+# the SWIR, which is how every satellite cloud/snow discriminator works.
+schema_version: 1
+material:
+  name: snow
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED from the snow/cloud contrast"
+  description: "Fresh snow. Near-blackbody in LWIR, a mirror in NIR, a sponge in SWIR"
+  thermal:
+    density_kg_m3: 300
+    specific_heat_j_kgk: 2100
+    conductivity_w_mk: 0.20
+    thickness_m: 0.10
+    solar_absorptivity: 0.15
+  optical:
+    # Fresh snow reflects ~0.85 at 0.9 um and only ~0.10 at 1.6 um, because ice absorbs strongly
+    # in the SWIR. So eps runs 0.15 in NIR and 0.90 in SWIR -- a swing of 0.75 between two
+    # adjacent bands, larger than any other material in this library, and the reason snow and
+    # cloud look identical in the visible and completely different at 1.6 um.
+    emissivity_per_band: {nir: 0.15, swir: 0.90, mwir: 0.98, lwir: 0.99}
+    roughness_per_band: {nir: 0.70, swir: 0.70, mwir: 0.60, lwir: 0.55}
+    angular_model: {type: empirical, a: 0.03, p: 4.0}

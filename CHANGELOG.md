@@ -43,6 +43,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Material library v0 — §16.2's fifteen, with provenance** (M7.9, §16.2, §12.3, §4.3, §4.4). Nine
+  new materials (concrete, rusted steel, tyre rubber, cotton, leaf, dry and wet soil, water, snow)
+  bring the library to **19**, and each of the fifteen §16.2 rows is reproduced *exactly* — ε_LWIR,
+  ε_MWIR, α_sol, ρ, c_p, k to 1e-6. Closure holds over 19 materials × 4 bands to **1e-6**, and every
+  Level C material clears §4.2's 0.93 in every band, which after M7.7 is enforced rather than hoped.
+- **§16.2 gives nothing about NIR or SWIR, so every such value is ESTIMATED and says so in its own
+  file** — a test reads the file to check the label is there. Two of them are not guesses, and they
+  are why a multi-band library is worth having at all: a **leaf** in the NIR plateau reflects ~0.45
+  and **transmits** ~0.45, absorbing a tenth, so a canopy is semi-transparent at 0.9 µm and an
+  ordinary opaque dielectric at 10 µm; and **snow** runs ε 0.15 at 0.9 µm to 0.90 at 1.6 µm — the
+  largest adjacent-band swing in the library, and the reason snow and cloud are indistinguishable in
+  the visible and obvious at 1.6 µm. A single-band library cannot be wrong about either, because it
+  cannot say anything about them.
+- **`water` is now a material, and it is the only one with measured optical constants behind it**
+  (Segelstein 1981), so it carries Level A — a sea surface is an angular-emissivity problem before it
+  is anything else. Its file records a discrepancy rather than hiding it: §16.2 gives ε_LWIR = 0.96
+  while Fresnel on that table gives **0.99** at normal and **0.951** hemispherically, which puts
+  §16.2's water row within 0.01 of the *hemispherical* value and suggests that column is not the
+  normal-incidence figure ADR 0043 reads it as.
+- `configs/materials/mapping.yaml` gains 8 semantic classes and 20 name patterns so the new materials
+  are reachable from USD asset names. One existing test had used `vegetation_leaf` as its example of
+  an *unknown* material and stopped working the moment it became a real one; it now names something
+  that will not become a material (40 tests).
 - **An aluminium n/k table, and Level A scaled to the authored value** (M7.5 part, §4.2, §12.3).
   M7.7's guard left two committed materials with no valid angular model; this closes the one that
   genuinely had none. `data/nk/aluminium.csv` is **MODELLED, not measured** — the Drude free-electron

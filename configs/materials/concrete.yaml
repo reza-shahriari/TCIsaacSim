@@ -1,0 +1,21 @@
+# Concrete: road surface, kerbs, buildings. Section 16.2; NIR/SWIR ESTIMATED.
+# Rough dielectric -- §4.2's "nearly flat (a -> 0)" class, so Level B with a small a rather than
+# a constant (the constant is only licensed above eps = 0.93 and the NIR value is far below it).
+schema_version: 1
+material:
+  name: concrete
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Pavement, kerbs, structures. Holds heat: the classic night-time warm slab"
+  thermal:
+    density_kg_m3: 2300
+    specific_heat_j_kgk: 880
+    conductivity_w_mk: 1.4
+    thickness_m: 0.10
+    solar_absorptivity: 0.65
+  optical:
+    # NIR/SWIR ESTIMATED: dry concrete reflects roughly 0.35 in the near infrared and a little
+    # less further out, so eps = 1 - rho lands near 0.65 and 0.72.
+    emissivity_per_band: {nir: 0.65, swir: 0.72, mwir: 0.90, lwir: 0.92}
+    roughness_per_band: {nir: 0.85, swir: 0.85, mwir: 0.80, lwir: 0.75}
+    angular_model: {type: empirical, a: 0.05, p: 4.0}

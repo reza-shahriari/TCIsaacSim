@@ -1,0 +1,20 @@
+# Rusted steel: weathered structures, rail, old vehicles. Section 16.2; NIR/SWIR ESTIMATED.
+# NOT a metal for radiative purposes -- the oxide layer is a dielectric, which is why eps is 0.85
+# rather than bare steel's ~0.1 and why its emissivity FALLS with angle like a dielectric's.
+schema_version: 1
+material:
+  name: rusted_steel
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Weathered structural steel. The oxide dominates: high eps, dielectric angular falloff"
+  thermal:
+    density_kg_m3: 7800
+    specific_heat_j_kgk: 470
+    conductivity_w_mk: 45
+    thickness_m: 0.004
+    solar_absorptivity: 0.80
+  optical:
+    # NIR/SWIR ESTIMATED: iron oxide is dark red-brown, reflecting ~0.35 in the near infrared.
+    emissivity_per_band: {nir: 0.62, swir: 0.68, mwir: 0.82, lwir: 0.85}
+    roughness_per_band: {nir: 0.70, swir: 0.65, mwir: 0.55, lwir: 0.50}
+    angular_model: {type: empirical, a: 0.15, p: 5.0}

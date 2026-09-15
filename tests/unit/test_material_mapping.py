@@ -118,12 +118,14 @@ def test_audit_script_exit_code(tmp_path: pathlib.Path) -> None:
 def test_rule_file_guards(tmp_path: pathlib.Path) -> None:
     raw = yaml.safe_load(MAPPING_PATH.read_text())
     assert raw["mapping"]["coverage_threshold"] == 0.95
-    raw["mapping"]["semantic"]["tree"] = "vegetation_leaf"
+    # A name that is deliberately not, and will not become, a material. `vegetation_leaf`
+    # used to serve here and stopped working the day M7.9 authored it.
+    raw["mapping"]["semantic"]["hull"] = "unobtanium_plating"
     p = tmp_path / "mapping.yaml"
     p.write_text(yaml.safe_dump(raw))
     with pytest.raises(ValueError, match="unknown materials"):
         load_mapping_rules(p, known_materials=MaterialLibrary.load().names)
-    assert "vegetation_leaf" in load_mapping_rules(p).targets  # unchecked load is allowed
+    assert "unobtanium_plating" in load_mapping_rules(p).targets  # unchecked load is allowed
     raw = yaml.safe_load(MAPPING_PATH.read_text())
     raw["mapping"]["patterns"].append({"match": "*GLASS*", "material": "asphalt_dry"})
     p.write_text(yaml.safe_dump(raw))

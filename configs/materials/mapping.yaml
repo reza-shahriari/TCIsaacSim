@@ -13,6 +13,17 @@ mapping:
     pedestrian: human_skin
     person: human_skin
     glass: glass_windshield
+    # The nine §16.2 materials M7.9 added. Semantic classes first, because an asset that carries
+    # a semantic label is telling you what the thing *is*, while a material name is telling you
+    # what someone called it.
+    vegetation: vegetation_leaf
+    tree: vegetation_leaf
+    terrain: soil_dry
+    ground: soil_dry
+    building: concrete
+    sidewalk: concrete
+    water: water
+    sky: water          # only reachable for a water-plane prim; sky pixels never carry a material
   patterns:
     - {match: "*windshield*", material: glass_windshield}
     - {match: "*glass*", material: glass_windshield}
@@ -24,3 +35,23 @@ mapping:
     - {match: "*asphalt*", material: asphalt_dry}
     - {match: "*road*", material: asphalt_dry}
     - {match: "*skin*", material: human_skin}
+    - {match: "*tyre*", material: rubber_tyre}
+    - {match: "*tire*", material: rubber_tyre}
+    - {match: "*wheel*", material: rubber_tyre}
+    - {match: "*rust*", material: rusted_steel}
+    - {match: "*concrete*", material: concrete}
+    - {match: "*pavement*", material: concrete}
+    - {match: "*kerb*", material: concrete}
+    - {match: "*leaf*", material: vegetation_leaf}
+    - {match: "*foliage*", material: vegetation_leaf}
+    - {match: "*grass*", material: vegetation_leaf}
+    - {match: "*snow*", material: snow}
+    - {match: "*water*", material: water}
+    - {match: "*sea*", material: water}
+    - {match: "*ocean*", material: water}
+    - {match: "*soil*", material: soil_dry}
+    - {match: "*dirt*", material: soil_dry}
+    - {match: "*mud*", material: soil_wet}
+    - {match: "*cloth*", material: cotton_clothing}
+    - {match: "*fabric*", material: cotton_clothing}
+    - {match: "*shirt*", material: cotton_clothing}

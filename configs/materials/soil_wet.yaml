@@ -1,0 +1,21 @@
+# Wet soil. Section 16.2; NIR/SWIR ESTIMATED. Darker and far more thermally massive than dry
+# soil -- the pair exists so a scene can show what rain does to a surface's diurnal behaviour.
+schema_version: 1
+material:
+  name: soil_wet
+  source: literature
+  reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
+  description: "Rain-wetted earth. Five times the volumetric heat capacity of the dry case"
+  thermal:
+    density_kg_m3: 2000
+    specific_heat_j_kgk: 1500
+    conductivity_w_mk: 1.5
+    thickness_m: 0.10
+    solar_absorptivity: 0.85
+  optical:
+    # NIR/SWIR ESTIMATED: water in the pores darkens the surface everywhere, and the SWIR water
+    # bands darken it further -- wet soil is much darker than dry soil at 1.6 um, which is the
+    # basis of most remote soil-moisture retrieval.
+    emissivity_per_band: {nir: 0.85, swir: 0.90, mwir: 0.95, lwir: 0.96}
+    roughness_per_band: {nir: 0.85, swir: 0.85, mwir: 0.75, lwir: 0.70}
+    angular_model: {type: empirical, a: 0.05, p: 4.0}
