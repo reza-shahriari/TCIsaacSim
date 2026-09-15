@@ -53,6 +53,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     "gradient_median",
     "gradient_p95_over_median",
     "lag1_autocorrelation",
+    "spectrum_degenerate",
 )
 
 
@@ -65,13 +66,23 @@ def patch_features(patch: Any) -> NDArray[np.float64]:
     is a real difference somebody should see. The named features are what tell a reader whether a
     separation is physical or an artefact of the display mapping.
     """
-    from irsim.validation.codec import blockiness
     from irsim.validation.flat import robust_noise_scale
     from irsim.validation.targets import clutter_slope
 
     image = np.asarray(patch, dtype=np.float64)
     if image.ndim != 2 or min(image.shape) < 8:
         raise ValueError(f"a patch must be 2-D and at least 8x8, got {image.shape}")
+    # A patch the codec has flattened has *exactly zero* power in most radial bins, and
+    # `clutter_slope` refuses it rather than fitting a line through empty bins. That refusal is a
+    # measurement, not an error: ME.5 found 306 of 365 published clips in that state. So it becomes
+    # a feature of its own -- "this patch has no measurable spectrum" -- with the slope set to zero
+    # beside it. Dropping such patches instead would remove precisely the property that
+    # distinguishes the real set, and substituting a plausible slope would be inventing data.
+    try:
+        slope = clutter_slope(image)
+        degenerate = 0.0
+    except ValueError:
+        slope, degenerate = 0.0, 1.0
     centred = image - image.mean()
     sigma = float(image.std())
     normalised = centred / sigma if sigma > 0.0 else centred
@@ -81,8 +92,8 @@ def patch_features(patch: Any) -> NDArray[np.float64]:
     return np.array(
         [
             robust_noise_scale(image),
-            clutter_slope(image),
-            float(max(blockiness(image[None, ...]).z_h, blockiness(image[None, ...]).z_v)),
+            slope,
+            _blockiness_z(image),
             float(image.mean()),
             sigma,
             float(np.mean(flat**3)),
@@ -90,9 +101,26 @@ def patch_features(patch: Any) -> NDArray[np.float64]:
             grad_median,
             float(np.percentile(grad, 95) / grad_median) if grad_median > 0.0 else 0.0,
             float(np.mean(flat[:-1] * flat[1:])) if flat.size > 1 else 0.0,
+            degenerate,
         ],
         dtype=np.float64,
     )
+
+
+def _blockiness_z(image: NDArray[np.float64]) -> float:
+    """The 8x8 block-grid z, or **0 for a patch with nothing to grade**.
+
+    `blockiness` compares the pixel differences across block boundaries with those inside, and on a
+    patch the codec has flattened to a single code both are exactly zero, so the z is 0/0. Zero --
+    "no evidence of a block grid" -- is the right answer there and a NaN is not: a NaN propagates
+    into the probe and kills the whole comparison, and `spectrum_degenerate` already records that
+    the patch was flat.
+    """
+    from irsim.validation.codec import blockiness
+
+    result = blockiness(image[None, ...])
+    z = max(float(result.z_h), float(result.z_v))
+    return z if math.isfinite(z) else 0.0
 
 
 def feature_matrix(patches: Any) -> NDArray[np.float64]:

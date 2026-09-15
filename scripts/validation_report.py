@@ -33,6 +33,34 @@ from irsim_eval.discriminator import gap_score
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
+#: Which step a failing check points at first. ME.6's exit criterion asks that every failing metric
+#: name the step responsible, and this is that mapping -- a judgement, written down, so a reader can
+#: disagree with it rather than guess. It is deliberately **not** a list of physics steps: on
+#: public 8-bit lossy data the signal path is the first suspect for three of the five, and blaming
+#: the radiometry for an encoder's work is the single easiest mistake to make here.
+ATTRIBUTION: dict[str, str] = {
+    "histogram EMD (DN8 codes)": (
+        "M12.1's recorder model first (`agc: linear` standing in for an unverified Y16 -> 8-bit "
+        "conversion), then the scene priors, which ME.5 could not measure at all. The radiometry "
+        "is the last suspect: an unknown display mapping can move a histogram by tens of codes "
+        "without any physics changing."
+    ),
+    "PSD shape ratio": (
+        "M12.1's codec settings and MS.3's cloud model. ME.2b measured x264 at CRF 18 removing "
+        "95 % of a clip's temporal noise, so a mismatch here is an encoder mismatch until the "
+        "encoder is matched; after that it is the spatial structure of the modelled sky."
+    ),
+    "contrast ratio agreement": (
+        "M11.3/M11.10 (how much light reaches the target) and the target's own material."
+    ),
+    "ESF width agreement": "M10.1b/M9.13 (motion and the membrane) and the optics MTF cascade.",
+    "discriminator AUC": (
+        "read the heaviest features in the note. `noise_scale` or `spectrum_degenerate` at the top "
+        "means the *signal path* separates the sets -- M12.1's recorder and codec -- not the "
+        "physics. A physics gap shows up as `psd_slope`, `gradient_*` or `lag1_autocorrelation`."
+    ),
+}
+
 
 def _load_sequences(directory: pathlib.Path, limit: int | None) -> list[np.ndarray]:
     """Frames from the ME.1 canonical layout -- one or many sequences under ``directory``.
@@ -42,8 +70,8 @@ def _load_sequences(directory: pathlib.Path, limit: int | None) -> list[np.ndarr
     """
     from irsim_eval.data import read_sequence
 
-    roots = sorted(d for d in directory.iterdir() if (d / "index.json").is_file())
-    if (directory / "index.json").is_file() and not roots:
+    roots = sorted(d for d in directory.iterdir() if (d / "sequence.json").is_file())
+    if (directory / "sequence.json").is_file() and not roots:
         roots = [directory]
     frames: list[np.ndarray] = []
     for root in roots:
@@ -85,8 +113,8 @@ def _load_dataset_clips(name: str, limit: int, max_frames: int) -> list[np.ndarr
 
 
 def _load_frames(directory: pathlib.Path, limit: int | None) -> list[np.ndarray]:
-    if (directory / "index.json").is_file() or any(
-        (d / "index.json").is_file() for d in directory.iterdir() if d.is_dir()
+    if (directory / "sequence.json").is_file() or any(
+        (d / "sequence.json").is_file() for d in directory.iterdir() if d.is_dir()
     ):
         return _load_sequences(directory, limit)
     paths = sorted(p for p in directory.iterdir() if p.suffix.lower() in {".npy", ".png"})
@@ -243,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"# Tier 4 acceptance -- {label}\n")
     print(report.as_markdown())
     print()
+    if report.failed:
+        print("Where each failure points first:\n")
+        for check in report.failed:
+            print(f"- **{check.name}** -- {ATTRIBUTION.get(check.name, 'unattributed')}")
+        print()
     if report.untestable:
         print(f"{len(report.untestable)} check(s) untestable on this input:")
         for check in report.untestable:
@@ -250,12 +283,23 @@ def main(argv: list[str] | None = None) -> int:
         print()
     if args.out:
         args.out.mkdir(parents=True, exist_ok=True)
-        (args.out / "tier4-acceptance.md").write_text(
-            f"# Tier 4 acceptance -- {label}\n\n{report.as_markdown()}\n", "utf-8"
-        )
+        body = [f"# Tier 4 acceptance -- {label}", "", report.as_markdown(), ""]
+        if report.failed:
+            body += ["## Where each failure points first", ""]
+            body += [
+                f"- **{c.name}** -- {ATTRIBUTION.get(c.name, 'unattributed')}"
+                for c in report.failed
+            ]
+            body += [""]
+        if report.untestable:
+            body += ["## Not testable on this input", ""]
+            body += [f"- **{c.name}** -- {c.note}" for c in report.untestable]
+            body += [""]
+        (args.out / "tier4-acceptance.md").write_text("\n".join(body), "utf-8")
         payload: dict[str, Any] = {
             "label": label,
             "checks": [c.as_dict() for c in report.checks],
+            "attribution": {c.name: ATTRIBUTION.get(c.name) for c in report.failed},
             "passed": report.passed,
         }
         (args.out / "tier4-acceptance.json").write_text(

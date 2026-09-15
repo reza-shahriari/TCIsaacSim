@@ -43,6 +43,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The first Tier 4 acceptance run — and it fails, which is the result** (M12.2).
+  `docs/validation/tier4-2026-09-15.md` compares six real Halmstad clips against six matched
+  renders: histogram EMD **24.7 codes** against a target of 8, PSD shape ratio **5.70** against 1.5,
+  and a discriminator AUC of **0.907** — **+37.8 null standard errors** from chance on 1440 patches
+  a side. The two sets are trivially distinguishable.
+- **The dominant term is the signal path, not the radiometry, and the discriminator says so
+  itself.** Its heaviest feature is `noise_scale`, and ME.5 measured exactly why: 306 of the 365
+  published clips sit at or below **one code** of noise because the encoder removed it, while the
+  rendered clips keep 2–3 codes through the same nominal codec. A CRF sweep from 18 to 36 moves the
+  rendered figure only 3.1 → 2.1, so the published recorder did something the round trip does not
+  reproduce (~128 kb/s at 320×256×30). The number to act on is M12.1's recorder model and its codec
+  settings, both already marked ESTIMATED in their own files.
+- Every failing metric **names the step it points at first**, in a written-down attribution table a
+  reader can disagree with rather than guess at. The table is deliberately not a list of physics
+  steps: on public 8-bit lossy data the signal path is the first suspect for three of the five, and
+  blaming the radiometry for an encoder's work is the easiest mistake available here.
+- **No README row is promoted on this run.** ADR 0068's targets are the gate and they were not met.
+  Landing this failing, with attribution, is the point: a passing first acceptance run on data this
+  compressed would have meant the thresholds were wrong.
+- A codec-flattened patch has *exactly zero* power in most radial bins, so `clutter_slope` refuses
+  it — which crashed the discriminator on real data. That refusal is a measurement, not an error, so
+  it became a feature of its own (`spectrum_degenerate`). Dropping such patches would have removed
+  precisely the property that distinguishes the real set; substituting a plausible slope would have
+  been inventing data.
 - **ROS 2 message construction, checked without a ROS graph** (M10.10b).
   `irsim_isaac.ros2_bridge` builds `CameraInfo` and the four `Image` messages as plain data, so the
   part most likely to be wrong — the arithmetic — is testable on any machine, and `publish_frame` is

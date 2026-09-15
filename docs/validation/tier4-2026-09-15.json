@@ -1,0 +1,53 @@
+{
+  "attribution": {
+    "PSD shape ratio": "M12.1's codec settings and MS.3's cloud model. ME.2b measured x264 at CRF 18 removing 95 % of a clip's temporal noise, so a mismatch here is an encoder mismatch until the encoder is matched; after that it is the spatial structure of the modelled sky.",
+    "discriminator AUC": "read the heaviest features in the note. `noise_scale` or `spectrum_degenerate` at the top means the *signal path* separates the sets -- M12.1's recorder and codec -- not the physics. A physics gap shows up as `psd_slope`, `gradient_*` or `lag1_autocorrelation`.",
+    "histogram EMD (DN8 codes)": "M12.1's recorder model first (`agc: linear` standing in for an unverified Y16 -> 8-bit conversion), then the scene priors, which ME.5 could not measure at all. The radiometry is the last suspect: an unknown display mapping can move a histogram by tens of codes without any physics changing."
+  },
+  "checks": [
+    {
+      "measured": 24.693944692611666,
+      "name": "histogram EMD (DN8 codes)",
+      "note": "L1 between the cumulative distributions; reads as codes of shift",
+      "target": 8.0,
+      "verdict": "fail"
+    },
+    {
+      "measured": 5.698045843586086,
+      "name": "PSD shape ratio",
+      "note": "radial, normalised, every bin compared",
+      "target": 1.5,
+      "verdict": "fail"
+    },
+    {
+      "measured": null,
+      "name": "contrast ratio agreement",
+      "note": "no annotation boxes supplied; on the reference set the labels are MATLAB MCOS objects with no Python reader (ME.5), so this is untestable there",
+      "target": 0.25,
+      "verdict": "untestable"
+    },
+    {
+      "measured": null,
+      "name": "ESF width agreement",
+      "note": "no edge profiles supplied",
+      "target": 0.2,
+      "verdict": "untestable"
+    },
+    {
+      "measured": 0.9066425540123457,
+      "name": "discriminator AUC",
+      "note": "1440 vs 1440 patches, 5-fold cross-validated; +37.79 null sigma from chance (sigma = 0.011); heaviest features: noise_scale 3.98, skew 2.49, gradient_median 2.41",
+      "target": 0.7,
+      "verdict": "fail"
+    },
+    {
+      "measured": null,
+      "name": "apparent-temperature bias (K)",
+      "note": "\u00a715 asks for 2 K against a measurement. The public data is 8-bit, post-AGC and lossy-coded, so there is no radiometric measurement to be within 2 K of. Open until a radiometric capture exists (ADR 0003, ADR 0068)",
+      "target": 2.0,
+      "verdict": "untestable"
+    }
+  ],
+  "label": "halmstad_drone_detection (6 clips) vs outputs/matched",
+  "passed": false
+}
