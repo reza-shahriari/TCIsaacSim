@@ -43,6 +43,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The Tier 5 detection metrics** (ME.7, scoring half). `irsim_eval.detection` is pure NumPy —
+  pairwise IoU, greedy highest-score-first matching, **all-point** average precision at IoU 0.5,
+  AP restricted to small and tiny targets, P_d against SCR and against apparent size, and false
+  alarms per frame — so a detector trained anywhere can be scored in the default environment.
+  All-point rather than the 11-point interpolation, which was an artefact of a 2007 evaluation
+  server and reports a visibly different number on a small set: on a worked four-box example the
+  two rules give 0.8333 and 0.8182, and a *comparison* metric must not depend on that choice.
+- **An empty P_d bin reports NaN, never zero.** "No target was this small" and "every target this
+  small was missed" are opposite conclusions, and a zero would let a reader draw the second from
+  the first. P_d against SCR is the metric that carries the weight here: a drone at 2 km subtends
+  two pixels at an SCR of 2 and is a rounding error in an AP dominated by close, large targets, so
+  two sets can agree on AP and disagree completely about the regime this simulator exists to model.
+- ⚠️ **Training is blocked, and the binding blocker is the data, not the compute.** ME.5 found the
+  reference set's labels are MATLAB Video Labeler `groundTruth` MCOS objects with no Python reader,
+  so there are no boxes to train on until somebody exports them with the dataset's own MATLAB
+  script. Separately, the `ml` extra (torch, torchvision) is declared and deliberately **not**
+  installed: it is multi-gigabyte, `src/irsim` may never import it, and a Tier 4 report must not be
+  blocked on it. `scripts/train_detector.py` refuses with both reasons rather than a traceback.
 - **A scattered-sunlight sky for the reflective bands** (M11.10, ADR 0086). Found by rendering NIR
   for the first time: a brightly sunlit quadrotor on a **black sky**. That is backwards — in the
   near infrared the daytime sky is the brightest thing in the frame and an aircraft is a dark

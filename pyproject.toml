@@ -29,6 +29,15 @@ dev = [
 validation = [
     "imageio>=2.31",
 ]
+# Tier 5 training (roadmap ME.7). **Deliberately not a default and not installed by `make install`.**
+# torch is multi-gigabyte, `src/irsim` may never import it (enforced by tests/unit/test_layering.py),
+# and a Tier 4 report must not be blocked on it. The *scoring* metrics need none of this: they are
+# pure NumPy in `irsim_eval.detection` and run in the default environment, so a detector trained
+# anywhere can be scored here.
+ml = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+]
 # Engine-side extra: deliberately empty (ADR 0061). Isaac Sim ships NVIDIA Warp as the
 # `omni.warp.core` Kit extension (1.16.0 on the pinned build, ADR 0014); a pip `warp-lang` would
 # shadow it and make the equivalence harness pass against the wrong runtime. Warp code runs
