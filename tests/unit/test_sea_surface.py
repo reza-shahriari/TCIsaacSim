@@ -297,6 +297,25 @@ def test_the_sea_cannot_be_built_on_a_different_weather(rig) -> None:
         SeaModel(object(), table, response, bulk_sst_k=290.0)  # type: ignore[arg-type]
 
 
+def test_a_sky_in_the_other_radiance_form_is_refused(rig) -> None:
+    """The bug this caught, in the one place it can be caught (ADR 0021).
+
+    The sea is mostly *reflected sky*, so the two radiances are added together -- and `lb` and
+    `lb_q` differ by about 1e19. A sea in energy form reflecting a sky in photon form therefore
+    does not produce a slightly wrong sea: it produces one whose apparent temperature pins at the
+    LUT ceiling, 1000 K, over the entire water surface. That is exactly what a maritime MWIR
+    render did, uniformly and silently, because the script built the `SeaModel` without a quantity
+    and got the `lb` default while the camera ran on `lb_q`.
+    """
+    response, _, table = rig
+    sky, _ = _sea(rig)
+    assert sky.quantity == "lb"
+    with pytest.raises(ValueError, match="1e19"):
+        SeaModel(sky, table, response, bulk_sst_k=290.0, quantity="lb_q")
+    # ...and the matching pair is accepted, so the guard is about agreement and not about a form.
+    assert SeaModel(sky, table, response, bulk_sst_k=290.0, quantity="lb") is not None
+
+
 def test_a_warmer_skin_than_bulk_is_refused(rig) -> None:
     """cool_skin_k is a deficit. Under net cooling the skin is never warmer than the water."""
     response, _, table = rig

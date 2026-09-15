@@ -164,6 +164,11 @@ def main() -> int:
         load_spectral_response(str(spec.band.spectral_response)),
         bulk_sst_k=bulk_sst_k,
         camera_height_m=args.camera_height_m,
+        # ADR 0021 again, and the fourth place that quietly assumed a bolometer: the sea adds the
+        # sky's radiance to its own emission, so a sea in `lb` reflecting a sky in `lb_q` is wrong
+        # by ~1e19 and its apparent temperature pins at the LUT ceiling. `SeaModel` refuses the
+        # mismatch now; this is where the right answer comes from.
+        quantity=quantity,
     )
     horizon_deg = math.degrees(sea.horizon_rad)
     wind_m_s = float(scene.weather.at(scene.t0_s).wind_speed_m_s)
@@ -222,14 +227,32 @@ def main() -> int:
     if unresolved:
         print(f"unmapped prims: {unresolved}", file=sys.stderr)
 
-    pipeline = PipelineConfig.from_sensor(
-        sensor,
-        table,
-        lut,
-        sky=sky,
-        atmosphere=scene.layered,
-        flat_field_enabled=not args.no_flat_field,
-    )
+    # **The flat field is refused when its hot calibration point is outside the ADC.**
+    # `calibrate_flat_field` defaults to ADR 0021's -40..+200 C, which is a *bolometer*
+    # range: the modelled InSb camera fills its well at 366 K, so a 473 K calibration point
+    # drives it 16x over and the two-point fit becomes an extrapolation that comes back as
+    # inverted vignetting. Falling back to no flat field, loudly, is better than a picture
+    # with a calibration artefact in it that reads as a lens problem.
+    try:
+        pipeline = PipelineConfig.from_sensor(
+            sensor,
+            table,
+            lut,
+            sky=sky,
+            atmosphere=scene.layered,
+            flat_field_enabled=not args.no_flat_field,
+        )
+    except ValueError as exc:
+        print(f"{spec.name}: no flat field -- {exc}", file=sys.stderr)
+        pipeline = PipelineConfig.from_sensor(
+            sensor,
+            table,
+            lut,
+            sky=sky,
+            atmosphere=scene.layered,
+            flat_field_enabled=False,
+        )
+
     # The M9 chain is a *bolometer* chain: its NUC residual is authored in mK/K and converted to
     # DN through the radiometric calibration, which a photon FPA has none of (ADR 0056, M11.6).
     # A photon camera in this repository is shutterless by configuration anyway, so there is no

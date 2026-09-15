@@ -164,6 +164,14 @@ class SeaModel:
                 "SeaModel takes the scene's SkyModel, so the sea and the sky it reflects share "
                 f"one WeatherSeries (CLAUDE.md #6), not {type(sky).__name__}"
             )
+        if sky.quantity != quantity:
+            raise ValueError(
+                f"the sky model is in the {sky.quantity!r} form and this sea model runs on "
+                f"{quantity!r}. The sea is mostly *reflected sky*, so the two radiances are added "
+                "together -- and `lb` and `lb_q` differ by about 1e19, so a mismatch does not "
+                "produce a slightly wrong sea, it produces one whose apparent temperature pins at "
+                "the LUT ceiling. Pass the camera's own quantity (SensorSpec.quantity, ADR 0021)."
+            )
         if bulk_sst_k <= 0.0:
             raise ValueError("bulk_sst_k must be a positive absolute temperature")
         if cool_skin_k < 0.0:

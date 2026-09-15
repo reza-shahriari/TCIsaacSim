@@ -42,6 +42,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rotates every ray by twice the camera tilt and raises nothing.
 
 ### Fixed
+- **The sea reflected a sky in the wrong radiance form, and the error was ~1e19.** `SeaModel`
+  defaulted to the energy form (`lb`) while the `SkyModel` it reflects was built in the photon form
+  (`lb_q`) for every photon FPA. The sea *is* mostly reflected sky, so the two radiances are added
+  together — which means a mismatch does not produce a slightly wrong sea, it produces one whose
+  apparent temperature pins at the **LUT ceiling of 1000 K across the entire water surface**. That
+  is exactly what a maritime MWIR render did: uniformly, silently, and only in the bands a
+  bolometer never exercises. `SeaModel` now refuses the mismatch with an error that says why, the
+  same guard `SkyModel` already had for its skylight, and the maritime script passes the camera's
+  own quantity (ADR 0021). This is the fourth place that quietly assumed a bolometer.
+- **The flat field calibrated outside the converter.** `calibrate_flat_field` defaults to
+  `RADIOMETRIC_RANGE_K`, −40…+200 °C — a *bolometer* range (ADR 0021). The modelled InSb camera
+  fills its well at 366 K, so the 473 K hot point drives it **15.8× over its 16383-code ADC** and
+  the two-point fit becomes an extrapolation. It did not fail loudly: it returned a gain and offset
+  map wrong by that factor, and the picture came back with the vignetting **inverted**, which reads
+  as a lens artefact rather than a calibration error. It is refused now, where the range is known,
+  and the three render scripts fall back to no flat field with the reason printed.
 - **ADR 0014 recorded the position AOV as world space beside a probe that reported camera space**
   (M2.4). The M10.1 addendum's table said *world*; `detect_position_frame`, cited in the same
   addendum and run on the same scene, reported `camera` with `err_camera = 0.013 m` against

@@ -73,6 +73,24 @@ def calibrate_flat_field(
     high = RADIOMETRIC_RANGE_K[1] if t_high_k is None else float(t_high_k)
     if not high > low:
         raise ValueError(f"the hot blackbody must be hotter: {high} K is not above {low} K")
-    return TwoPointNuc.calibrate(
-        uniform_signal_dn(config, low), uniform_signal_dn(config, high), restore_pedestal=True
-    )
+    cold = uniform_signal_dn(config, low)
+    hot = uniform_signal_dn(config, high)
+
+    # **The default range is a bolometer's** (ADR 0021: -40..+200 C is what the calibrated transfer
+    # spans). A photon FPA's ADC fills long before 473 K -- the modelled InSb camera reaches full
+    # well at 366 K and a 473 K frame drives it **16x over** -- and calibrating a two-point
+    # correction on a point that far outside the converter is an extrapolation, not a calibration.
+    # It does not fail loudly: it produces a gain and offset map that is wrong by that factor, and
+    # the picture comes back with the vignetting *inverted*, which reads as a lens artefact rather
+    # than as a calibration error. So it is refused here, where the range is known.
+    dn_max = float(2 ** int(config.sensor.sensor.fpa.bit_depth) - 1)
+    if float(np.max(hot)) > dn_max:
+        raise ValueError(
+            f"the hot calibration point {high:.1f} K drives this camera to "
+            f"{float(np.max(hot)):.0f} DN, {float(np.max(hot)) / dn_max:.1f}x its "
+            f"{dn_max:.0f}-code converter, so a two-point fit through it is an extrapolation. "
+            "Pass `t_high_k` inside "
+            "the camera's own range (the default is the bolometer range of ADR 0021), or disable "
+            "the flat field for this camera."
+        )
+    return TwoPointNuc.calibrate(cold, hot, restore_pedestal=True)
