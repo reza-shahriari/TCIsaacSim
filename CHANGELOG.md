@@ -286,6 +286,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The frame conversion is the part that had to be right: M2.4 established the position AOV is
   *camera* space on this build, so `world_positions` applies the same `camera_to_world` rotation
   `ray_directions` does rather than deriving a second one. Tested on a camera both moved and
+  rotated, because the readings are indistinguishable on a camera at the origin. A pixel that lands
+  on a bound prim but outside all of its patches **raises**, and the overlay advances its fields on
+  the **absolute** weather clock — the trap M10.3 pinned for `thermal_surfaces`.
+- **§6.6's vehicle heat sources are reachable from a scene** (MP.4a, ADR 0089, §6.6). Scene schema
+  **v6** gains `solver: vehicle_source` — `source` names a row of `VEHICLE_HEAT_SOURCES` and
+  `load_s`/`load` is the duty fraction over time. The table and its integrator have existed since
+  M6.14 and nothing outside their own unit tests could reach them: `heat_source` is ADR 0072's
+  *aerial* node, whose law is a steady-state relation with **no time constant at all**, so an engine
+  bay authored through it shows its full 65 K in the first frame after ignition.
+  `VehicleSourceSolver` is deliberately only an adapter — the law and its exact-exponential step
+  stay in `SourceHistory`. Held to §6.6's closed form to **1 mK** at five elapsed times; a 1 s and a
+  200 s step agree to 1e-9; switch-off cools on τ_cool (1800 s), not τ_rise (750 s).
+  `MIN_SCENE_SCHEMA_VERSION` stays at 4, so every older file still loads. Also adds
+  `data/weather/overcast_still_48h.csv`, the flat still night frame 0 needs.
+- **A car that starts its engine, filmed in LWIR** (MP.4b, ADR 0087/0088/0089). `irsim_isaac.car_demo`
+  + `scripts/render_car_ignition.py` + two scene configs. The bonnet is **one USD prim**, flat to
+  under a millikelvin in frame 0 and **6.3 K across** after 30 minutes — 127 NETD of structure a
+  per-prim bridge has one number to represent.
+- **The wheels do not warm, and the readout says so.** §6.6 makes tyre heating flexing work and
+  brake heating kinetic energy; a car idling in a car park is doing neither, so its tyres sit at
+  ambient (+0.000 K). A test pins it so a later change cannot quietly "fix" it.
+- **What the field holds is not what the camera sees, and both are reported.** The road patch is
+  **1.30 K** in the field and only **0.15 K** (3 NETD) reaches the sensor: the warmest asphalt is
+  directly *under* the car and a 45° view cannot see it.
+- **Two scenes, one engine.** `car_ignition_overcast_night.yaml` and `car_ignition_clear_night.yaml`
+  run the *same* §6.6 node on the *same* load profile and differ only in the sky. Measured after
+  30 minutes the road patch is **+4.13 K** under a clear sky against **+1.47 K** under overcast —
+  nearly three times, from the sky alone (ADR 0088). The bonnet moves the *other* way (5.85 vs
+  6.50 K), since the skin radiates to that sky too, which is the cross-check that this is the
+  occlusion term and not a scale factor.
+- Found while getting the first frame out of Kit: the stage up axis must be **+Y** (Kit defaults to
+  +Z, which gives `azimuth_from_rays` an up vector parallel to its own forward and raises);
+  `world_positions` reuses `gbuffer_isaac`'s plane validator because the annotator delivers
+  (H, W, **4**); and the render script reads its clock *before* `get_outputs`, which advances it on
+  the way out — on a time-lapse that labelled every row with the state of the row after it.
+- The car scenes encode to **video** through the same `irsim_eval.video` path the quadrotor and
+  aircraft films use: three streams per run — the bonnet's own span, a 1.6 K window on ambient, and
+  the camera's own AGC — because no single linear span shows both features. The last frame's gauge
+  reads bay **39.4 °C**, bonnet **19.0 °C**, wing **13.2 °C**: the milestone's claim as two numbers
+  off one prim.
+- ⚠️ **Known limit.** §12.3 solves the asphalt as one surface, so the ground field inherits a
+  *uniform* spun-up state — the road as it would be with no car on it. Frame 0 is the moment the car
+  arrived, and every patch is one the run itself grew. Pinned by a test so it is not mistaken for a
+  result.
+- **Per-pixel temperature on the Isaac render path** (MP.3, ADR 0087, §13.1/§13.3).
+  `irsim_isaac.pipeline.point_bridge` overlays patch-backed prims onto the per-instance temperature
+  plane: the position AOV gives each pixel a world point, the point selects a cell, and the cell
+  carries the temperature. `IrCamera` takes `surface_fields=`; without it the overlay is not even
+  constructed and every existing scene renders **bit-identically**.
+- The frame conversion is the part that had to be right: M2.4 established the position AOV is
+  *camera* space on this build, so `world_positions` applies the same `camera_to_world` rotation
+  `ray_directions` does rather than deriving a second one. Tested on a camera both moved and
   rotated, because the readings are indistinguishable on a camera at the origin — read as world,
   every lookup is displaced by the camera's own position.
 - A pixel that lands on a bound prim but outside all of its patches **raises**. A patch authored
