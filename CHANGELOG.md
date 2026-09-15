@@ -43,6 +43,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- Two placeholder tests said they were waiting for ME.5. ME.5 has landed and **refused** both
+  bands: a sky elevation profile and a cloud PSD slope each need a labelled region on the published
+  clips, and selecting one automatically would be inventing an annotation and calling it data. The
+  skips now say that, and point at M12.2's acceptance report — which is where the comparison that
+  *can* be made without a region list actually runs, and where it currently fails.
 - **A rendered prim can take its temperature from the §12.3 thermal solver** (M10.3). Phase 1
   mapped a prim to one of the scene's target solvers — a scripted drone motor, a relaxing airframe.
   A prim can now map to a thermal *surface* instead, so a rendered roof is the one M6.12's energy

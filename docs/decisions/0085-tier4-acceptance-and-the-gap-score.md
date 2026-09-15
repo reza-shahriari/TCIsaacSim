@@ -67,3 +67,20 @@ worth reading. It is what the unit test drives, so the thresholds cannot drift w
 On the reference set two of the five checks are untestable for reasons ME.5 recorded — the
 annotation boxes are MATLAB MCOS objects with no Python reader, which costs the contrast-ratio and
 ESF checks — so a real Tier 4 run there exercises the histogram, the spectrum and the gap score.
+
+## Addendum, 2026-09-15 — two things the first real runs taught
+
+**A codec-flattened patch has no spectrum, and that is a feature.** `clutter_slope` refuses a patch
+whose radial power spectrum is empty in most bins, which crashed the discriminator the first time it
+met real Halmstad frames. The refusal is a measurement, not an error — ME.5 found 306 of 365
+published clips in that state — so it became a feature of its own, `spectrum_degenerate`. Dropping
+such patches would have removed precisely the property that distinguishes the real set; substituting
+a plausible slope would have been inventing data.
+
+**The null standard error assumes independent patches, and patches from the same frames are not.**
+The fidelity ablation's control compares two disjoint samples of the *same* frames, so it must read
+an AUC of 0.5. At two scenarios it read **0.40** — five null standard errors below chance on sets
+that are identical by construction — and at five scenarios it reads 0.495. The effective sample size
+is nearer the number of *scenarios* than the number of patches, so `null_sigma` is a **lower bound**
+on the spread whenever patches share frames, and independence is bought with more scenarios and
+never with more patches per frame.

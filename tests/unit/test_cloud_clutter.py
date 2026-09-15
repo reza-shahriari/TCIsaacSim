@@ -136,7 +136,11 @@ def test_coverage_limits_and_radiance_guards() -> None:
 
 
 @pytest.mark.skip(
-    reason="ME.5 reference statistics (display-domain cloud PSD bands) not yet landed"
+    reason="ME.5 landed and *refused* this band: a cloud PSD slope needs a labelled cloud region "
+    "on the published clips, and selecting one automatically would be inventing an annotation and "
+    "calling it data (docs/validation/reference-stats-2026-09-15.md). The analyser is implemented "
+    "and tested (ME.4 `clutter_slope`); what is missing is a region list somebody has to draw. The "
+    "comparison that *can* be made without one runs end to end in M12.2's acceptance report."
 )
 def test_display_domain_cloud_slope_inside_the_reference_band() -> None:  # pragma: no cover
     raise AssertionError("unreachable")

@@ -308,8 +308,11 @@ def test_two_pixel_target_aliases_and_the_psf_spreads_it(
 
 
 @pytest.mark.skip(
-    reason="ME.5 reference statistics (frame-statistic bands from Anti-UAV410 / Halmstad) "
-    "are not landed yet; this is the Tier 4 hook, not a Tier 3 assertion"
+    reason="ME.5 landed (docs/validation/reference-stats-2026-09-15.md) and the comparison it "
+    "enables is a whole-set acceptance run, not a unit assertion: it lives in M12.2 "
+    "(docs/validation/tier4-2026-09-15.md) and it currently **fails**, with the discriminator "
+    "naming the signal path rather than the physics. Asserting a passing version of that "
+    "comparison here would contradict the report, so this stays a pointer to it."
 )
 def test_frame_statistics_inside_the_reference_bands() -> None:  # pragma: no cover
     raise AssertionError("unreachable")
