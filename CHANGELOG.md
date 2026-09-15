@@ -43,6 +43,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **A camera and scenarios matched to the reference set** (M12.1).
+  `configs/sensors/halmstad_boson_320.yaml` is the Breach PTQ-136's Boson 320×256 at 9.03 mm —
+  24.0° × 19.3°, the publication's stated figures — and **its ISP models the recorder, not the
+  core**. ME.1a established these clips are a Y16 stream somebody converted to 8 bits, so the DDE
+  is off and the palette grey; but the conversion is not the identity (the published frames have a
+  mean near 115 and σ near 75, filling the code range, which truncating a sky-only scene cannot
+  produce), so `agc: linear` stands in for it, ESTIMATED, and is named in the file as the single
+  largest unknown in any comparison against this set.
+- `irsim.validation.scenario` draws sky, range, target size, ΔT and boresight with a **provenance
+  tag on every parameter**, and each scenario is seeded by its own index, so scenario 7 is the same
+  whether ten were drawn or a thousand — without which a failing case can only be reproduced by
+  re-running the whole set. `scripts/generate_matched_scenario.py` renders through the engine-free
+  CPU pipeline into the ME.1 sequence layout with boxes, then **encodes through the publication's
+  own codec** before anything is measured: ME.2b showed x264 at CRF 18 removes 95 % of a clip's
+  temporal noise, so an uncoded render beside a coded clip would measure the encoder.
+- ⚠️ **The sampler's own summary is the uncomfortable result: 0 of 5 parameters are measured.**
+  ME.5 could measure neither the sky distributions nor the target ones, so every prior is `stated`
+  or `estimated`, and every run prints that beside its numbers. A Tier 4 figure from these clips is
+  a comparison against an *assumed* scenario, and that has to travel with it.
+- Caught while wiring it, and worth naming: `build_aerial_gbuffer` reports its boxes on the
+  **supersampled** grid while the written frames are the native one. A box off by the supersample
+  factor lands outside the image, and every box-dependent statistic downstream then measures empty
+  sky while still reporting a number. A test now asserts every generated box is inside its frame.
 - **The Tier 2 lab-bench protocol, written before the camera exists** (M12.4).
   `docs/validation/tier2-bench-protocol.md` gives the SITF, NETD, 3-D-noise and slant-edge benches
   as a procedure — stimulus, frame counts, ROI rule, pass criterion — and

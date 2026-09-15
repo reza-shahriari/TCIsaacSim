@@ -1,0 +1,100 @@
+# FLIR Breach PTQ-136 -- the camera behind the Halmstad reference set (roadmap M12.1).
+# A Boson 320x256 core in a monocular, which is what Svanstrom et al. filmed 365 IR clips with.
+# Schema: docs/physics-model.md §12.2. Its measured statistics: docs/validation/reference-stats-*.md
+#
+# **This file exists to be compared against, not to be a good camera.** Everything in it is chosen
+# to match the *published data*, so a render through it can be put next to a real clip and the
+# difference blamed on the physics rather than on a mismatched sensor. Values marked ESTIMATED are
+# literature or typical figures; values marked VERIFIED were checked against the publisher's own
+# page or measured off the clips themselves (ME.5).
+#
+# **The ISP here is the recorder, not the camera, and that distinction is the point.** ME.1a
+# established that these clips are a Y16 stream the recorder converted to 8-bit: they never met the
+# core's AGC, DDE or palette. Modelling the Boson's plateau equalisation would therefore be
+# modelling a stage that was switched off in the data -- so `dde_gain: 0`, and the palette is grey.
+#
+# But *something* turned 16 bits into 8, and it was not the identity: the published frames have a
+# mean near 115 and a standard deviation near 75, filling the code range, which a straight
+# truncation of a sky-only scene cannot produce. `agc: linear` is this repository's closest model
+# of that conversion -- a linear stretch between the configured percentiles -- and it is
+# **ESTIMATED**. The recorder's real rule is unverified (linear over a fixed window? min-max per
+# frame? per clip?) and is the single largest unknown in any comparison against this set. It is a
+# hashed config field, so an ablation over it is one file away.
+#
+# **The files are 30 fps; the core is 60.** ME.5 measured that with ffprobe on every clip. This
+# file describes the *camera*, so it says 60; a scenario generated for comparison is encoded at 30
+# to match the publication, which `scripts/generate_matched_scenario.py` does explicitly.
+
+sensor:
+  name: halmstad_boson_320
+  band:
+    lambda_min_um: 7.5
+    lambda_max_um: 13.5
+    spectral_response: spectra/responses/boson_vox.csv   # relative to data/; ESTIMATED until measured (M1.3)
+    regime: emissive                             # emissive | reflective | mixed
+
+  optics:
+    f_number: 1.0
+    focal_length_mm: 9.03                        # 24.0 x 19.3 deg on 320x256 at 12 um;
+                                                 # the PTQ-136's stated 24 x 19 deg (VERIFIED
+                                                 # 2026-09-13 against the datasheet)
+    transmittance: 0.92                          # ESTIMATED (germanium + AR coat)
+    housing_temp_mode: coupled                   # fixed | ambient | coupled
+    housing_tau_s: 900.0                         # ESTIMATED -- body/lens assembly lag.
+                                                 # A ~40 g uncooled core in its housing
+                                                 # settles in ~15 min; no published figure.
+    housing_self_heating_k: 4.0                  # ESTIMATED -- steady rise above ambient
+                                                 # from the core's ~500 mW in still air.
+    cold_shield_efficiency: 1.0                  # n/a for uncooled
+    distortion:
+      model: brown_conrady
+      coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]          # ESTIMATED -- calibrate
+    vignetting_cos4: true
+
+  fpa:
+    type: bolometer
+    width: 320
+    height: 256
+    pitch_um: 12.0
+    fill_factor: 0.90                            # ESTIMATED
+    frame_rate_hz: 60
+    bit_depth: 16
+    thermal_time_constant_ms: 10.0               # ESTIMATED (typical VOx 8-12 ms)
+    tcr_per_k: -0.021                            # ESTIMATED (typical VOx)
+
+  noise:
+    netd_mk_at_300k: 50.0                        # "professional" grade; 60 consumer, 40 industrial
+    ratios_3d:                                   # relative to sigma_TVH
+      tvh: 1.00
+      vh:  0.30
+      h:   0.15
+      v:   0.08
+      tv:  0.05
+      th:  0.05
+      t:   0.02
+    fpn_drift_tau_s: 120.0
+    bad_pixel_fraction: 0.0015
+    bad_pixel_cluster_lambda: 1.6
+
+  nuc:
+    mode: shuttered
+    ffc_interval_s: 180
+    ffc_freeze_ms: 700
+    residual_gain_ppm_per_k: 900                 # ESTIMATED
+    residual_offset_mk_per_k: 45                 # ESTIMATED
+
+  isp:
+    agc: linear                                 # the RECORDER's Y16 -> 8-bit conversion, ESTIMATED;
+                                                 # the core's own AGC never ran on this data
+    plateau: 0.012
+    clip_percentiles: [0.005, 0.995]
+    gamma: 1.0
+    dde_gain: 0.0                              # ditto -- no DDE in the published frames
+    polarity: white_hot
+    palette: gray
+
+  outputs:
+    radiance_linear: true
+    apparent_temperature: true
+    dn_16: true
+    display_8: true
