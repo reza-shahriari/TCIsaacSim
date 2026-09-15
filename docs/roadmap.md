@@ -126,17 +126,35 @@ off a rendered frame.
 Ordered by the owner's application order, with one phase before all of them for damage that is live in
 the working tree right now.
 
+**CPU correctness before any acceleration.** The owner's rule, stated 2026-09-15: no GPU or device
+work while the CPU reference still has known defects. The engine-free NumPy pipeline is the oracle
+every fast path is tested against (ADR 0018), so a wrong oracle makes an accelerated path worth less
+than nothing. Consequences, applied throughout this document:
+
+* The **SPG/CUDA shader lane is not scheduled at all.** Legacy `M10.12` and `M10.13a`-`M10.13e` are
+  dropped from the delivery phases; `DC.1` keeps only the *probe* that would tell us whether they are
+  even possible on SPG 0.4.0, and `R2` stays open in the risk register. Nothing depends on them.
+* **No step moves an existing stage onto a device.** Warp stage twins already exist and are already
+  equivalence-tested; making more of the frame device-resident is a speed change and waits.
+* Where a step needs a GPU-capable *library for a capability rather than for speed* — `WM` uses Warp's
+  mesh closest-point query because it is the only exact per-pixel surface parameterisation available
+  without a renderer change — it **runs on the Warp CPU backend by default**, keeps a brute-force NumPy
+  closest point as its oracle (ADR 0018/0061), and is justified by what it makes possible, not by a
+  timing figure. The RTX 5090 numbers quoted in `WM` are a headroom note, not a reason.
+* `WM` is therefore scheduled **behind** the phase-A CPU defects rather than beside them: `AT.1`,
+  `SC.1`, `PT.1` and `PT.2` are the four critical CPU-path defects and none of them needs a GPU.
+
 | phase | contents | exit |
 |---|---|---|
 | **0 — Repair** | `RP.1`–`RP.9`, `PT.3`, `PT.4`, `IG.1`, `IG.5`, `IG.8` | The three shared documents are true and mergeable; no shipped physics result rests on a measured error |
-| **A — Aerial to the bar** | `AT.1`–`AT.4`, `PT.1`, `PT.2`, `PT.5`, `PT.9`, `WM.1`–`WM.3`, `IG.2`, `IG.6`, `IG.13`, `SC.1`–`SC.4`, `GT.1`, `GT.2` | An aerial scene config plus one command produces float32 frames whose target carries a gradient across one prim, with a per-pixel slant path behind it |
-| **B — Maritime to the same bar** | `SE.1`–`SE.3`, `PT.10`, `WM.4`, `IG.12`, `XD.3` | A maritime scene config plus one command produces the same, with the sea model's angular envelope recorded |
+| **A — Aerial to the bar** | `AT.1`–`AT.4`, `PT.1`, `PT.2`, `PT.5`, `PT.9`, `IG.2`, `IG.6`, `IG.13`, `SC.1`–`SC.4`, `GT.1`, `GT.2` — **CPU only** | An aerial scene config plus one command produces float32 frames whose target carries a gradient across one prim, with a per-pixel slant path behind it |
+| **B — Maritime to the same bar** | `SE.1`–`SE.3`, `PT.10`, `WM.1`–`WM.5`, `IG.12`, `XD.3` | A maritime scene config plus one command produces the same, with the sea model's angular envelope recorded |
 | **C — Ground and automotive** | `PT.6`–`PT.8`, `PT.11`–`PT.16`, `WM.6`, `AT.6`–`AT.9`, `XD.10` | Deferred breadth stays deferred (see *Deferred deliberately*); what lands is depth on surfaces already modelled |
 | **X — Cross-cutting, continuous** | `EV.*`, `XD.*`, `DC.*`, `GT.3`–`GT.6`, `SC.5`–`SC.13`, `IG.3`, `IG.4`, `IG.7`, `IG.9`–`IG.11`, `IG.14`, `IG.15` | Runs alongside; `EV` gates nothing but is gated by `PT.9`/`PT.10` for its headline measurement |
 
 **Dependency shape.** Phase 0 blocks nothing technically but blocks *knowing what is true*, and three
 sessions share this tree. `AT.1` and `SC.1` are the two critical-priority physics defects and are
-independent of each other. `WM.1` is a probe and gates `WM.2`–`WM.4`. `EV.9` — the per-point ablation —
+independent of each other. `WM.1` is a probe and gates `WM.2`–`WM.4`, and the whole `WM` lane is gated on phase A closing — it is a capability step, not an acceleration step, but it waits regardless. `EV.9` — the per-point ablation —
 depends on `PT.9` or `PT.10`, because a negative from a feature that is not switched on in the measured
 targets is not a negative about the feature.
 
@@ -268,11 +286,11 @@ Leaving ADR 0087 standing as written will cost another session a week, so WM.5 i
 
 | id | what | verification (red today → green after) | deps | size | phase |
 |---|---|---|---|---|---|
-| WM.1 | **Probe: exact per-pixel (face, u, v) from Warp on this build.** Build a `wp.Mesh` from a prim's own points and indices, seed `mesh_query_point_no_sign` with the position AOV, recover face and barycentrics. A probe script and numbers, not a pipeline. | Recovered face and barycentrics reproduce the M10.1 probe scene's known geometry; the closest-point residual is inside the 3.4 mm position budget; `mesh_eval_position(face, u, v)` returns the queried point. Red today only in the sense that the measurement does not exist — this is the step that settles ADR 0087's premise. | — | M | A |
-| WM.2 | **`TriangleMeshField` in `irsim.thermal`**, engine-free, composing `ThermalField` as `PlanarThermalField` does so the fixed tick and never-mutate-on-query rule carry over. Cells per face with a per-face resolution, Ptex style. `PlanarPatch` stays as the special case. | A sphere under a directional sun holds each face to its own cos θ equilibrium to 1 mK — a single facet fails by the pole-to-terminator span. Conservation: the area-weighted mean matches the per-prim value it replaces to within the forcing difference, so the change is provably a redistribution. | WM.1 | M | A |
-| WM.3 | **`MeshPointBridge`**: per-pixel instance id selects the prim's `wp.Mesh`, the query gives `(face, u, v)`, the field gives the temperature. Additive like `point_bridge`: an unbound prim keeps the per-instance path bit-identically. | Brute-force NumPy closest point is the oracle; Warp and oracle agree on face and on the sampled temperature for 100 % of pixels on a curved fixture. A hit beyond the tolerance raises rather than snapping. A wheel, tyre and exhaust pipe stop being one temperature — the case ADR 0087 lists as Hard. | WM.2 | M | A |
+| WM.1 | **Probe: exact per-pixel (face, u, v) from Warp on this build.** Build a `wp.Mesh` from a prim's own points and indices, seed `mesh_query_point_no_sign` with the position AOV, recover face and barycentrics. A probe script and numbers, not a pipeline. | Recovered face and barycentrics reproduce the M10.1 probe scene's known geometry; the closest-point residual is inside the 3.4 mm position budget; `mesh_eval_position(face, u, v)` returns the queried point. Red today only in the sense that the measurement does not exist — this is the step that settles ADR 0087's premise. | — | M | B |
+| WM.2 | **`TriangleMeshField` in `irsim.thermal`**, engine-free, composing `ThermalField` as `PlanarThermalField` does so the fixed tick and never-mutate-on-query rule carry over. Cells per face with a per-face resolution, Ptex style. `PlanarPatch` stays as the special case. | A sphere under a directional sun holds each face to its own cos θ equilibrium to 1 mK — a single facet fails by the pole-to-terminator span. Conservation: the area-weighted mean matches the per-prim value it replaces to within the forcing difference, so the change is provably a redistribution. | WM.1 | M | B |
+| WM.3 | **`MeshPointBridge`**: per-pixel instance id selects the prim's `wp.Mesh`, the query gives `(face, u, v)`, the field gives the temperature. Additive like `point_bridge`: an unbound prim keeps the per-instance path bit-identically. | Brute-force NumPy closest point is the oracle; Warp and oracle agree on face and on the sampled temperature for 100 % of pixels on a curved fixture. A hit beyond the tolerance raises rather than snapping. A wheel, tyre and exhaust pipe stop being one temperature — the case ADR 0087 lists as Hard. | WM.2 | M | B |
 | WM.4 | **Per-cell geometry from the mesh**: true per-face normals for the solar incidence term, ray-traced sky view factor and self-shadowing via `mesh_query_ray` (0.51 ms per 327 k rays measured). This is ADR 0088's own "revisit when". | The analytic parallel-rectangle form stays the oracle and the Monte Carlo estimator converges to it inside its stated standard error. A hull at 45° shows per-cell view factors varying across the surface where one shared patch normal gives one value. | WM.3 | M | B |
-| WM.5 | **ADR: the surface temperature field lives on the mesh**, superseding ADR 0087's curved-geometry limitation. Records the closest-point parameterisation, why it needs nothing from the renderer, the error budget, and the options rejected with reasons. | A record. The rejected options must be named or they will be rediscovered: closest-point-method narrow bands need a grid finer than a panel's thickness; a UV atlas as the *solver* domain carries metric distortion, seam severing and conservative-rasterisation taxes; transient surfels cannot hold a 48 h spin-up memory. | WM.3 | S | A |
+| WM.5 | **ADR: the surface temperature field lives on the mesh**, superseding ADR 0087's curved-geometry limitation. Records the closest-point parameterisation, why it needs nothing from the renderer, the error budget, and the options rejected with reasons. | A record. The rejected options must be named or they will be rediscovered: closest-point-method narrow bands need a grid finer than a panel's thickness; a UV atlas as the *solver* domain carries metric distortion, seam severing and conservative-rasterisation taxes; transient surfels cannot hold a 48 h spin-up memory. | WM.3 | S | B |
 | WM.6 | **Intrinsic-Delaunay-safe Laplacian** if PT.11's lateral conduction moves onto a mesh. A cotan Laplacian gives negative edge weights whenever two opposite angles sum past π, breaking the discrete maximum principle. | On a deliberately obtuse imported mesh, no cell leaves the range spanned by its neighbours and the forcing; the plain cotan operator fails this and produces a bright speck that looks like a bad pixel. Backward Euler is prefactored once per asset, so the 1 s fixed tick survives. | PT.11, WM.3 | M | C |
 
 ---
