@@ -301,6 +301,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   car arrived, and every patch is one the run itself grew. A car that has stood for hours already
   carries the full patch, which is most of what a real night image of a car park shows. Pinned by a
   test so it is not mistaken for a result.
+- The car scenes encode to **video** (MP.4b), through the same `irsim_eval.video` path the
+  quadrotor and aircraft films use: three streams per run — the bonnet's own span, a 1.6 K window
+  on ambient, and the camera's own AGC — each with the standard caption block and temperature
+  gauge, so the three are comparable frame for frame. Three rather than one because no single
+  linear span shows both features. Measured on a 30-minute run at 1 frame / 30 s, the last frame's
+  gauge reads bay **39.4 °C**, bonnet **19.0 °C** and wing **13.2 °C** — the milestone's claim as
+  two numbers off one prim.
 
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`

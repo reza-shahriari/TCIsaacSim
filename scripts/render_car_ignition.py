@@ -38,6 +38,7 @@ import json
 import pathlib
 import sys
 import time
+from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -86,6 +87,12 @@ parser.add_argument(
     default="gray",
     help="palette for the fixed-span image. Grey by default",
 )
+parser.add_argument("--fps", type=float, default=10.0, help="playback rate of the encoded videos")
+parser.add_argument(
+    "--no-overlay",
+    action="store_true",
+    help="write the bare pictures, with no caption block or temperature gauge",
+)
 parser.add_argument("--rgb", action="store_true", help="also capture the companion visible frame")
 args = parser.parse_args()
 
@@ -103,6 +110,7 @@ def main() -> int:
 
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
     from irsim.io import write_frame
+    from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
     from irsim.materials.library import MaterialLibrary
     from irsim.materials.mapping import MaterialResolver, load_mapping_rules
@@ -110,6 +118,7 @@ def main() -> int:
     from irsim.pipeline.core import PipelineConfig
     from irsim.radiometry.lut_files import load_band_lut_for_config
     from irsim.scene import Scene
+    from irsim_eval.video import encode_mp4, ffmpeg_available, overlay_readout
     from irsim_isaac.car_demo import CameraSetup, build_car_demo, describe
     from irsim_isaac.display_span import DisplaySpan
     from irsim_isaac.pipeline.ir_camera import IrCamera
@@ -117,6 +126,8 @@ def main() -> int:
 
     out_dir = pathlib.Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = out_dir / "frames"
+    frames_dir.mkdir(exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
     spec = sensor.sensor
@@ -252,8 +263,47 @@ def main() -> int:
             # the same mapping the camera's display branch uses and not a second, similar one.
             for name, sp in spans.items():
                 extra[name] = palette[quantise_display(sp.scale(outputs))]
+
+            # The video frames. Defaults bind this frame's numbers at definition time; a closure
+            # over the loop variables would be evaluated later, which is the classic way to
+            # caption every frame with the last frame's values.
+            def readout(image: Any, caption: str, sp: Any, r: dict = row) -> Any:
+                minutes, seconds = divmod(int(r["t_s"]), 60)
+                key = "OFF" if r["engine_bay_k"] - r["t_air_k"] < 0.05 else "RUNNING"
+                return overlay_readout(
+                    np.asarray(image, dtype=np.uint8),
+                    [
+                        f"T+{minutes:02d}:{seconds:02d}   engine {key}",
+                        f"bonnet {r['bonnet_gradient_k']:4.2f} K across one prim"
+                        f"   wheels {r['tyre_rise_k']:+.2f} K",
+                        f"1 frame / {args.frame_period:g} s time-lapse   {caption}",
+                    ],
+                    {
+                        "bay    ": r["engine_bay_k"],
+                        "bonnet ": r["bonnet_hot_k"],
+                        "wing   ": r["bonnet_cold_k"],
+                        "road   ": r["road_near_k"],
+                        "air    ": r["t_air_k"],
+                    },
+                    (sp.low, sp.high) if sp is not None else None,
+                    bare=args.no_overlay,
+                )
+
+            for name, sp in spans.items():
+                write_png(
+                    frames_dir / f"{name}_{index:05d}.png",
+                    readout(extra[name], f"{sp.caption} {args.palette}", sp),
+                )
+            write_png(
+                frames_dir / f"agc_{index:05d}.png",
+                readout(np.asarray(outputs.display8), f"camera {spec.isp.agc}", None),
+            )
         if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
             extra["rgb"] = camera.last_frame.rgb
+            write_png(
+                frames_dir / f"rgb_{index:05d}.png",
+                np.ascontiguousarray(np.asarray(camera.last_frame.rgb)[..., :3]),
+            )
         elif args.rgb and camera.rgb_problem:
             print(f"  RGB not captured: {camera.rgb_problem}", file=sys.stderr)
         written.append(
@@ -298,8 +348,28 @@ def main() -> int:
         f"\n  wheels           {last['tyre_rise_k']:+.3f} K -- a stationary car does not heat its"
         f" tyres; that is §6.6, not a gap"
     )
+    videos: dict[str, str] = {}
+    if ffmpeg_available():
+        streams = [*spans, "agc"] + (["rgb"] if args.rgb else [])
+        for name in streams:
+            if not list(frames_dir.glob(f"{name}_*.png")):
+                continue
+            videos[name] = str(
+                encode_mp4(
+                    str(frames_dir / f"{name}_*.png"),
+                    out_dir / f"car_ignition_{name}.mp4",
+                    fps=args.fps,
+                )
+            )
+        for name, path in videos.items():
+            print(f"  {name:9s} -> {path}")
+    else:
+        print("ffmpeg not found: keeping the PNG sequence in frames/", file=sys.stderr)
+
     summary = {
         "boot_s": round(boot_s, 2),
+        "videos": videos,
+        "fps": args.fps,
         "render_s": round(render_s, 2),
         "frames": len(written),
         "sensor": spec.name,
