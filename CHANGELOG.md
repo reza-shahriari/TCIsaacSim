@@ -43,6 +43,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **`ThermalField`: a fixed-tick solve behind a query that cannot mutate it** (M6.11, §6.4, §1).
+  §6.4's "decouple this from the render loop entirely" is one sentence and two requirements. The
+  solve advances on its own clock — 240 fps and 1 fps agree to 1e-9 — and **a query never changes
+  anything**: 3600 queries between ticks leave the state hash and the tick count bit-identical, and
+  a query past the last tick **raises** rather than advancing. A field that advanced on demand would
+  make the answer depend on how often the renderer asked, which does not show up as an error
+  message; it shows up as a scene that renders differently when you add an output.
+- **⚠️ The 1e-12 interpolation identity cannot be claimed through the query.** Its output is float32,
+  whose spacing at 288 K is 3e-5, so asserting 1e-12 there would be a claim about the narrowing
+  rather than about the interpolation. The two are tested separately: the identity in float64 on the
+  stored ticks, and the boundary on its own.
+- That boundary test is CLAUDE.md #2 run as an experiment rather than quoted as a rule: carrying
+  float32 through every step for 48 h drifts **under 10 mK** from the float64 solve — and by **more
+  than zero**, which the test also asserts, because an experiment that measures no difference is not
+  an experiment. Running time backwards raises: a thermal history is not reversible, and silently
+  re-integrating it would give a different answer (11 tests).
 - **The facet solver, and the spin-up that makes its answer mean anything** (M6.9, M6.10, ADR 0037).
   `FacetSolver` runs §6.1's balance over `(N,)` arrays and is held to **under 0.1 mK** against 64
   separate scalar runs over 6 h — the two are the same arithmetic in a different loop order, not an
