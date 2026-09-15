@@ -43,6 +43,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **§6.4's two-node solver, and the factor of 400 in its stability bound** (M6.8, ADR 0036, spec
+  issue S39). `LumpedTwoNodeSolver` gives a surface somewhere to put the day's heat, which is the
+  difference between a road still warm at midnight and one that is not. R₁₂ → ∞ reproduces M6.7 to
+  **< 0.1 mK**, the equilibrium matches `brentq` to **< 0.1 K**, `expm` on the linearised 2×2 system
+  agrees with 6 h of RK2 to **< 10 mK**, and energy across the pair closes to **1e-6**.
+- **⚠️ §6.4 states its bound correctly and evaluates it wrongly.** The formula
+  `Δt < 2C₁/(h + 4εσT³ + 1/R₁₂)` is right; "lands around 60–200 s for thin painted metal" is not.
+  On §16.2's own car-paint row with §6.4's own R₁₂, **1/R₁₂ = 37 500 W m⁻² K⁻¹** against
+  h + 4εσT³ ≈ 43 — a ratio of **874** — and the bound is **0.2344 s**. The quoted range is the
+  *single-node* bound at high wind: the same formula with the term that dominates it removed.
+- **The bound is not a nuisance to work around; it is telling you something.** A 1.2 mm layer on a
+  conductive substrate equilibrates across itself in a quarter of a second, and resolving that
+  explicitly at a scene tick is not a sensible thing to want. So a thin panel is a **single node
+  with a resistive back boundary** (bound 264 s), and the two-node solver is for surfaces with real
+  depth, where it is comfortable anyway — asphalt 3 456 s, concrete 7 067 s. The guard fires in the
+  **constructor**, because a caller that has chosen a tick has chosen it once, and finding out on
+  frame 4000 that it was unstable is finding out after the scene is rendered.
+- **⚠️ A second correction, also from measurement: the diurnal swing is ordered by areal capacity
+  C = ρcδ, not by thermal inertia P = √(ρck).** P is the right measure for a *semi-infinite* solid;
+  on finite layers with an adiabatic back it is exactly backwards. Car paint has the **highest** P
+  of the three tested (12 800 against concrete's 1 700, because it is backed by steel) and the
+  **largest** swing (58.6 K against 18.1 K), while C — 4.4, 101 and 202 kJ m⁻² K⁻¹ — orders them
+  inversely and exactly. P returns as the right variable once the back boundary is a deep reservoir
+  rather than a wall, which is M6.10's ground case.
+- R₂d defaults to **infinity** and a finite value **requires** T_deep: a back resistance without a
+  deep temperature is a conduction path to an unspecified reservoir, and a plausible default would
+  let a scene lose heat to a number nobody chose, slowly enough to look like physics (11 tests).
 - **§6.1's surface energy balance, its RK2 step and its fixed point** (M6.7, ADR 0036, ADR 0043).
   `irsim.thermal.balance` assembles the solar, longwave, radiative, convective and internal terms
   that already existed in this package into one equation, with a midpoint step and a bisection
