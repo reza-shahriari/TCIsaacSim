@@ -99,6 +99,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - It also settles a scene-design question: a demo meant to show *engine* heat must be shot under
   overcast, where the occlusion nearly cancels. Under a clear sky the car-shaped patch is already
   there in frame 0.
+- **Per-pixel temperature on the Isaac render path** (MP.3, ADR 0087, §13.1/§13.3).
+  `irsim_isaac.pipeline.point_bridge` overlays patch-backed prims onto the per-instance temperature
+  plane: the position AOV gives each pixel a world point, the point selects a cell, and the cell
+  carries the temperature. `IrCamera` takes `surface_fields=`; without it the overlay is not even
+  constructed and every existing scene renders **bit-identically**.
+- The frame conversion is the part that had to be right: M2.4 established the position AOV is
+  *camera* space on this build, so `world_positions` applies the same `camera_to_world` rotation
+  `ray_directions` does rather than deriving a second one. Tested on a camera both moved and
+  rotated, because the readings are indistinguishable on a camera at the origin — read as world,
+  every lookup is displaced by the camera's own position.
+- A pixel that lands on a bound prim but outside all of its patches **raises**. A patch authored
+  smaller than its geometry would otherwise render part of a bonnet as a field and part as a flat
+  value, with a seam that looks like physics.
+- The overlay advances its fields on the **absolute** weather clock, not scene-relative time — the
+  same trap M10.3 pinned for `thermal_surfaces`, where a spun-up field handed relative time returns
+  a plausible temperature from the wrong hour.
 
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`

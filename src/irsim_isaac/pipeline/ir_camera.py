@@ -101,6 +101,11 @@ from irsim_isaac.pipeline.material_ids import (
     overlay_unmapped,
     unmapped_mask,
 )
+from irsim_isaac.pipeline.point_bridge import (
+    PointwiseTemperature,
+    SurfaceBinding,
+    world_positions,
+)
 from irsim_isaac.pipeline.rotor_isaac import RotorMount, build_rotor_veils
 
 __all__ = [
@@ -341,6 +346,7 @@ class IrCamera:
         background_prim_paths: Sequence[str] = (),
         rotor_mounts: Mapping[str, Sequence[RotorMount]] | None = None,
         illumination: SceneIllumination | None = None,
+        surface_fields: Sequence[SurfaceBinding] = (),
         heading_deg: float = 0.0,
         device: str = "cpu",
     ) -> None:
@@ -390,6 +396,12 @@ class IrCamera:
         # mask rather than the facet table. Marking them here rather than in the caller is what
         # stops a stage from rendering water with no temperature at all.
         self._background_paths = frozenset(background_prim_paths)
+        # MP.3: prims whose temperature is a *field* across their surface rather than one
+        # value (ADR 0087). Additive -- it overwrites only the pixels of prims it was given
+        # a patch for, so a camera built without `surface_fields` renders bit-identically to
+        # every frame this project has produced. `None` rather than an empty object so the
+        # per-pixel world positions are not computed for a scene that has no use for them.
+        self.pointwise = PointwiseTemperature(surface_fields) if surface_fields else None
         # How much scene time one capture costs. The sensor's own frame rate by default; an
         # override makes this a **time-lapse camera** -- one frame every N seconds -- which is the
         # honest way to film a process slower than the video that shows it. It is not a speed-up
@@ -578,6 +590,25 @@ class IrCamera:
             azimuth_rad=azimuth,
             strict=self.strict_materials,
         )
+        if self.pointwise is not None:
+            # The patch-backed prims take their own cells. The absolute weather clock, not the
+            # relative one: a `PlanarThermalField` is spun up on the weather axis and `t0_s` is
+            # normally a day into it, so handing it relative time reads a plausible temperature
+            # from the wrong hour (the same trap M10.3 pinned for `thermal_surfaces`).
+            self.pointwise.advance_to(self.scene.t0_s + self._t_rel_s)
+            temperature = self.pointwise.apply(
+                temperature,
+                instance_id,
+                labels,
+                world_positions(
+                    aovs.position,
+                    frame=self.position_frame,
+                    camera_position=self._camera_position,
+                    camera_to_world=self._camera_to_world,
+                ),
+                self.scene.t0_s + self._t_rel_s,
+                strict=self.strict_materials,
+            )
         # `to_gbuffer` validates the M0.6 contract; the stages consume the plane dict.
         # An UNMAPPED prim has no emissivity, and `MaterialTable` refuses to invent one
         # (ADR 0047). In debug mode those pixels are handed to stage 1 as blackbody-equivalent --
