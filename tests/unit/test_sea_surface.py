@@ -52,16 +52,14 @@ def rig():
     return response, BandLUT.build(response), load_nk_table("water")
 
 
-def _sea(rig, wind=5.0, sst=SST_K, cloud=0.0, height=CAMERA_HEIGHT_M, cool_skin_k=0.0):
+def _sea(rig, wind=5.0, sst=SST_K, cloud=0.0, height=CAMERA_HEIGHT_M, **kwargs):
     response, lut, table = rig
     weather = WeatherSeries.constant(
         WeatherSample(T_AIR_K, 0.5, wind, cloud, 0.0, 0.0, 23000.0, 0.0), 3600.0
     )
     atm = LayeredAtmosphere(load_atmosphere_preset("us_standard_clear"), weather, {"lwir": lut})
     sky = SkyModel(atm, load_environment_preset("clear_dry"), "lwir", lut)
-    return sky, SeaModel(
-        sky, table, response, bulk_sst_k=sst, camera_height_m=height, cool_skin_k=cool_skin_k
-    )
+    return sky, SeaModel(sky, table, response, bulk_sst_k=sst, camera_height_m=height, **kwargs)
 
 
 # -- Cox-Munk (MM.2) ----------------------------------------------------------------------
@@ -138,12 +136,18 @@ def test_isothermal_identity_holds_at_every_angle_and_wind(rig, sst, wind) -> No
     """
     _, lut, _ = rig
     sky, sea = _sea(rig, wind=wind, sst=sst)
-    constant = float(lut.lookup(sst, "lb"))
+    # The enclosure is isothermal with the surface that radiates, which is the **skin** -- since
+    # MM.4 that is no longer the bulk SST. Holding the sky at the bulk instead leaves exactly the
+    # cool-skin deficit as a residual (0.09 K at 275 K), which would look like a broken quadrature
+    # and is not one.
+    skin = sea.skin_temperature_k(0.0)
+    assert skin < sst
+    constant = float(lut.lookup(skin, "lb"))
     sky.radiance = lambda t_s, elevation: np.full(np.shape(elevation), constant)  # type: ignore[method-assign]
 
     depression = np.radians(np.array([0.15, 0.5, 1.0, 5.0, 30.0, 60.0, 90.0]))
     reading = lut.apparent_temperature(sea.surface_radiance(0.0, depression), "lb")
-    assert np.max(np.abs(np.asarray(reading, dtype=np.float64) - sst)) < 1e-3
+    assert np.max(np.abs(np.asarray(reading, dtype=np.float64) - skin)) < 1e-3
 
 
 def test_facet_weights_sum_to_one(rig) -> None:
@@ -172,14 +176,20 @@ def test_nadir_reads_just_below_the_sea_surface_temperature(rig) -> None:
 
     reading = float(np.atleast_1d(sea.apparent_temperature_k(0.0, nadir))[0])
     assert reading < SST_K
-    assert SST_K - reading == pytest.approx(0.53, abs=0.15)
+    # Two effects now separate the reading from the authored bulk SST, and they are checked apart
+    # because they have different sizes and different causes: the reflected cold sky (~0.53 K,
+    # below) and MM.4's cool skin (~0.11 K at 5 m/s), which moves the radiating temperature itself.
+    skin = sea.skin_temperature_k(0.0)
+    deficit = SST_K - skin
+    assert 0.05 < deficit < 0.30, deficit
+    assert skin - reading == pytest.approx(0.53, abs=0.15)
 
     eps = float(np.atleast_1d(sea.emissivity(1.0))[0])
-    l_sea = float(lut.lookup(SST_K, "lb"))
+    l_sea = float(lut.lookup(skin, "lb"))
     l_sky = float(np.atleast_1d(sky.radiance(0.0, nadir))[0])
-    dl_dt = float(lut.lookup(SST_K, "dlb_dt"))
+    dl_dt = float(lut.lookup(skin, "dlb_dt"))
     predicted = (1.0 - eps) * (l_sea - l_sky) / dl_dt
-    assert SST_K - reading == pytest.approx(predicted, rel=0.25)
+    assert skin - reading == pytest.approx(predicted, rel=0.25)
 
 
 def test_the_profile_has_a_minimum_rather_than_a_monotone_ramp(rig) -> None:
@@ -316,14 +326,23 @@ def test_a_sky_in_the_other_radiance_form_is_refused(rig) -> None:
     assert SeaModel(sky, table, response, bulk_sst_k=290.0, quantity="lb") is not None
 
 
-def test_a_warmer_skin_than_bulk_is_refused(rig) -> None:
-    """cool_skin_k is a deficit. Under net cooling the skin is never warmer than the water."""
+def test_the_skin_is_derived_from_the_bulk_and_never_authored_beside_it(rig) -> None:
+    """MM.4: the deficit is computed from the scene's own wind and flux, not passed in.
+
+    It used to be a constructor argument defaulting to zero, which meant every maritime scene
+    rendered a skin exactly equal to its bulk SST unless somebody remembered to type a number --
+    and a number typed there could contradict the wind the same scene was using to roughen the
+    surface. There is now nowhere to type it.
+    """
     response, _, table = rig
-    sky, _ = _sea(rig)
-    with pytest.raises(ValueError, match="cannot be negative"):
-        SeaModel(sky, table, response, bulk_sst_k=290.0, cool_skin_k=-0.2)
+    sky, sea = _sea(rig)
+    with pytest.raises(TypeError):
+        SeaModel(sky, table, response, bulk_sst_k=290.0, cool_skin_k=0.2)
     with pytest.raises(ValueError, match="positive absolute temperature"):
         SeaModel(sky, table, response, bulk_sst_k=0.0)
+    with pytest.raises(ValueError, match="come as a pair"):
+        SeaModel(sky, table, response, bulk_sst_k=290.0, latitude_deg=57.0)
+    assert sea.skin_temperature_k(0.0) < sea.bulk_sst_k
 
 
 def test_the_profile_lut_matches_the_exact_evaluation(rig) -> None:

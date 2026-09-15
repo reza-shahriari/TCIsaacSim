@@ -39,6 +39,7 @@ docs/physics-model.md §5.3, §4.2, §7.4; roadmap MM.2, MM.3; ADR 0078, ADR 007
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -49,6 +50,15 @@ from irsim.atmosphere.sky import SkyModel
 from irsim.materials.nk import NKTable, band_directional_emissivity
 from irsim.radiometry.lut import Quantity
 from irsim.radiometry.spectral_response import SpectralResponse
+from irsim.thermal.longwave import longwave_down_from_sample
+from irsim.thermal.sea_skin import (
+    DEFAULT_SEA_SKIN,
+    SeaSkinParams,
+    cool_skin_deficit_k,
+    net_longwave_up_w_m2,
+    warm_layer_k,
+)
+from irsim.thermal.solar import solar_loading, sun_direction, sun_position_utc
 
 __all__ = [
     "EARTH_RADIUS_M",
@@ -156,8 +166,11 @@ class SeaModel:
         response: SpectralResponse,
         bulk_sst_k: float,
         camera_height_m: float = 20.0,
-        cool_skin_k: float = 0.0,
         quantity: Quantity = "lb",
+        skin: SeaSkinParams = DEFAULT_SEA_SKIN,
+        latitude_deg: float | None = None,
+        longitude_deg: float | None = None,
+        solar_absorptivity: float = 0.94,
     ) -> None:
         if not isinstance(sky, SkyModel):
             raise TypeError(
@@ -174,17 +187,23 @@ class SeaModel:
             )
         if bulk_sst_k <= 0.0:
             raise ValueError("bulk_sst_k must be a positive absolute temperature")
-        if cool_skin_k < 0.0:
+        if (latitude_deg is None) != (longitude_deg is None):
             raise ValueError(
-                "cool_skin_k is the deficit of the skin below the bulk and cannot be negative; "
-                "under net cooling the skin is never warmer than the water beneath it"
+                "latitude_deg and longitude_deg come as a pair: the diurnal warm layer needs a "
+                "sun elevation, and half a site does not give one"
             )
+        if not 0.0 <= solar_absorptivity <= 1.0:
+            raise ValueError("solar_absorptivity must lie in [0, 1]")
         self._sky = sky
         self._table = nk_table
         self._response = response
         self._bulk_sst_k = float(bulk_sst_k)
         self._camera_height_m = float(camera_height_m)
-        self._cool_skin_k = float(cool_skin_k)
+        self._skin = skin
+        self._site = (
+            None if latitude_deg is None else (float(latitude_deg), float(longitude_deg or 0.0))
+        )
+        self._alpha_sol = float(solar_absorptivity)
         self._q: Quantity = quantity
         self._eps_lut: NDArray[np.float64] | None = None
         self._profile: dict[float, tuple[NDArray[np.float64], NDArray[np.float64]]] = {}
@@ -211,11 +230,62 @@ class SeaModel:
         return horizon_depression_rad(self._camera_height_m)
 
     # -- surface state ----------------------------------------------------------------------
+    def absorbed_solar_w_m2(self, t_s: float) -> float:
+        """Shortwave the sea absorbs, from the shared weather's DNI/DHI and the sun's elevation.
+
+        Zero without a site, and zero at night. The surface is horizontal, so the direct beam is
+        weighted by ``sin(elevation)`` and the whole diffuse component arrives.
+        """
+        if self._site is None:
+            return 0.0
+        sample = self._sky.weather.at(t_s)
+        when = self._sky.weather.epoch_utc + timedelta(seconds=float(t_s))
+        sun = sun_position_utc(self._site[0], self._site[1], when)
+        if sun.elevation_deg <= 0.0:
+            return 0.0
+        q = solar_loading(
+            np.array([0.0, 0.0, 1.0]),
+            sun_direction(sun.elevation_deg, sun.azimuth_deg),
+            sample.dni_w_m2,
+            sample.dhi_w_m2,
+            1.0,
+        )
+        return float(self._alpha_sol * float(q))
+
+    def net_longwave_up_w_m2(self, t_s: float) -> float:
+        """Net longwave leaving the surface, from the scene's own sky (M6.5).
+
+        Evaluated at the **bulk** temperature rather than at the skin, which is the one place this
+        model is knowingly not self-consistent: the skin is what radiates, and it depends on this
+        flux. The circularity is worth naming and not worth iterating -- a 0.2 K difference in the
+        radiating temperature moves sigma T^4 by 0.3 %, which moves the deficit by well under a
+        millikelvin, three orders below the 50 mK the sensor can see.
+
+        The sea sees the whole sky (V_s = 1) and has nothing else around it, so the surroundings
+        term is the sky term.
+        """
+        sample = self._sky.weather.at(t_s)
+        down = float(longwave_down_from_sample(sample, 1.0, sample.t_air_k))
+        return float(net_longwave_up_w_m2(self._bulk_sst_k, down))
+
+    def cool_skin_deficit_k(self, t_s: float) -> float:
+        """How far the skin sits below the bulk, from the shared weather's wind (MM.4)."""
+        wind = float(self._sky.weather.at(t_s).wind_speed_m_s)
+        return float(cool_skin_deficit_k(self.net_longwave_up_w_m2(t_s), wind, self._skin))
+
+    def warm_layer_k(self, t_s: float) -> float:
+        """How far a calm, sunlit afternoon lifts the skin above the bulk (MM.4)."""
+        wind = float(self._sky.weather.at(t_s).wind_speed_m_s)
+        return float(warm_layer_k(self.absorbed_solar_w_m2(t_s), wind, self._skin))
+
     def skin_temperature_k(self, t_s: float) -> float:
-        """T_skin = T_bulk - cool-skin deficit. MM.4 makes the deficit a function of wind and flux;
-        until then it is whatever was passed in, defaulting to zero, and that is visible here
-        rather than buried."""
-        return self._bulk_sst_k - self._cool_skin_k
+        """T_skin = T_bulk - dT_cool(U, Q_net) + dT_warm(Q_sw, U) -- what the camera sees (MM.4).
+
+        The bulk SST is the authored scenario input because that is the number a maritime scenario
+        actually has; the skin is derived from it here, on the scene's own weather, so a calm-sea
+        skin cannot end up under a 15 m/s wind.
+        """
+        return self._bulk_sst_k - self.cool_skin_deficit_k(t_s) + self.warm_layer_k(t_s)
 
     def tilt_sigma(self, t_s: float) -> float:
         """RMS facet tilt (radians) from the shared weather's wind, isotropic approximation."""

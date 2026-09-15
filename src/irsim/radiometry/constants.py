@@ -110,3 +110,28 @@ TEMPERATURE_MAX_K: Final[float] = 6000.0
 R_SPECIFIC_AIR: Final[float] = 287.0528  # J kg^-1 K^-1
 GAMMA_AIR: Final[float] = 1.4  # ratio of specific heats, dry air
 PRANDTL_AIR: Final[float] = 0.71
+
+# --- Seawater and near-surface air thermophysical properties ----------------
+# Needed by the sea skin-temperature model (MM.4, ADR 0080): the cool-skin deficit is a molecular
+# conduction problem across a sub-millimetre sublayer, so it is set by the kinematic viscosity and
+# the thermal conductivity of the water, and the sublayer thickness is set by the wind stress
+# delivered through the air.
+#
+# Sources and validity. Seawater values are for 35 PSU at ~20 degC, the conditions the cool-skin
+# literature is written for (Saunders 1967; Fairall et al. 1996, JGR 101, 1295): the kinematic
+# viscosity from the Sharqawy et al. (2010) correlation, the thermal conductivity from the same
+# review, the density likewise. All three vary by a few per cent over 0-30 degC, which is small
+# beside the factor-of-two spread in the Saunders proportionality constant itself, so they are
+# treated as constants and the error is recorded in ADR 0080 rather than carried as a temperature
+# dependence nothing else in the model would deserve.
+#
+# The broadband emissivity is the thermal-infrared hemispherical value for seawater, used ONLY in
+# the broadband energy balance that drives the cool skin. It is deliberately not the band-effective
+# emissivity of `configs/materials/water.yaml`, which is what the camera sees in one band at one
+# angle: an energy balance integrates over all wavelengths and the whole hemisphere, and using a
+# band value there would be a different physical quantity wearing the same name.
+KINEMATIC_VISCOSITY_SEAWATER: Final[float] = 1.05e-6  # m^2 s^-1, 35 PSU at 20 degC
+THERMAL_CONDUCTIVITY_SEAWATER: Final[float] = 0.596  # W m^-1 K^-1
+DENSITY_SEAWATER: Final[float] = 1025.0  # kg m^-3
+DENSITY_AIR_SEA_LEVEL: Final[float] = 1.225  # kg m^-3, ISA at 15 degC
+EMISSIVITY_SEAWATER_BROADBAND: Final[float] = 0.98

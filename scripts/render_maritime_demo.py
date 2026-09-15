@@ -171,6 +171,7 @@ def main() -> int:
         )
         return 2
     bulk_sst_k = float(environment.ground.bulk_sst_k or 0.0)
+    spec_site = scene.spec.site
 
     # One SkyModel, one WeatherSeries, and the sea reflects that sky (CLAUDE.md #6, ADR 0078).
     sky = scene.sky_models[spec.band.band_id]
@@ -185,6 +186,12 @@ def main() -> int:
         # by ~1e19 and its apparent temperature pins at the LUT ceiling. `SeaModel` refuses the
         # mismatch now; this is where the right answer comes from.
         quantity=quantity,
+        # MM.4: the scene's own site, so the skin temperature can carry a diurnal warm layer.
+        # Without it the sea still gets its cool skin -- that needs only wind and flux -- but a
+        # calm sunlit afternoon would render as cool as a calm night, which is the one maritime
+        # condition where the sea-sky contrast changes sign.
+        latitude_deg=spec_site.latitude_deg,
+        longitude_deg=spec_site.longitude_deg,
     )
     horizon_deg = math.degrees(sea.horizon_rad)
     wind_m_s = float(scene.weather.at(scene.t0_s).wind_speed_m_s)

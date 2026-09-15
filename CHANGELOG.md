@@ -5,6 +5,60 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Sea skin temperature: the cool skin and the diurnal warm layer** (MM.4, ADR 0080, §6.1/§6.5).
+  A maritime scenario knows its **bulk** SST — that is what a buoy, a ship's intake or a satellite
+  product reports, and it is what `ground.bulk_sst_k` authors. An infrared camera does not see it.
+  It sees the top fraction of a millimetre, and `irsim.thermal.sea_skin` now derives that:
+  `T_skin = T_bulk − ΔT_cool(U, Q_net) + ΔT_warm(Q_sw, U)`.
+- The cool skin is Saunders (1967): the sublayer thickness `δ = λν/u*` with the water-side friction
+  velocity from stress continuity across the surface (`ρ_a C_D U² = ρ_w u*²`), and the deficit is
+  Fourier's law across it. Measured **0.93 mm** at 5 m/s against the ~1 mm the measurements show,
+  and **0.110 K** of deficit under the 79 W/m² of net longwave a clear night over a 290 K sea
+  produces. That is 2–6× a 50 mK NETD, in one direction, across the whole lower half of the frame
+  — so every maritime frame rendered until now has been biased warm by several noise widths.
+- Saunders' form diverges as the wind drops (`u* → 0` gives an infinitely thick sublayer), so δ is
+  bounded at the top of the observed range, 2 mm, through `δ_max tanh(δ/δ_max)` rather than a
+  `min`. The two agree to third order wherever the Saunders term is small, so the wind-stirred
+  regime is untouched; what the smooth form buys is a deficit that stays **strictly** decreasing in
+  wind instead of acquiring a flat shelf and a corner exactly where calm maritime scenes live.
+- The diurnal warm layer is **empirical and labelled as such** everywhere it surfaces. It carries
+  the three properties the observations agree on — proportional to absorbed irradiance, zero at
+  night, gone above ~6 m/s — and claims nothing else. Measured 2.6 K at 950 W/m² and 1 m/s, and
+  exactly zero at night and at or above the cutoff.
+- Under net *warming* the cool-skin deficit is **zero, not negative**. Conduction against an
+  outgoing flux is the mechanism, so it stops when the flux reverses; a surface genuinely warmer
+  than the water beneath it is the warm layer's business, and a signed deficit would count it twice.
+
+### Changed
+- **`SeaModel`'s `cool_skin_k` constructor argument is gone.** It defaulted to zero, so every
+  maritime scene rendered its skin exactly equal to its bulk SST unless somebody remembered to type
+  a number — and a number typed there could contradict the wind the same scene was using to roughen
+  the surface three lines away (CLAUDE.md #6). The deficit now comes from that same
+  `WeatherSeries`, the net longwave from the scene's own sky model (M6.5), and the absorbed solar
+  from the scene's own site and DNI/DHI. There is nowhere left to type a contradicting value.
+- `test_isothermal_identity_holds_at_every_angle_and_wind` now holds the sky at the **skin**
+  temperature rather than the bulk. The enclosure is isothermal with the surface that radiates, and
+  since MM.4 that is no longer the authored SST; holding it at the bulk leaves exactly the
+  cool-skin deficit as a residual (0.09 K at 275 K), which looks like a broken quadrature and is
+  not one.
+
+### Fixed
+- ⚠️ **MM.4's own acceptance criterion is half wrong, and the test records the measurement instead
+  of asserting it.** The step asked that a 1 K bulk-SST error move nadir apparent temperature by
+  > 0.9 K and a 0.2°-depression patch by < 0.15 K. The *ordering* holds with room to spare —
+  measured **0.98 K** at nadir against **0.20 K** at 0.2° — but the 0.15 K threshold is unreachable
+  at **any** camera height. Near-horizon sensitivity is set by slant *range*, not by angle: a 20 m
+  camera's 0.2° ray is 6.8 km out; getting under 0.15 K needs ~13 km of path; and at the ~100 m
+  height where 13 km corresponds to 0.5°, 0.2° is above the horizon and sees no water at all. The
+  useful statement is the regime — SST accuracy matters looking down and stops mattering within a
+  degree of the horizon — not the number.
+- Recorded rather than hidden: `Q_net` is the scene's net **longwave** only. At sea the latent flux
+  is usually the largest term and a full-flux `Q_net` runs roughly twice the longwave-only value,
+  so the modelled deficit is a **lower bound, low by about 2×**. The deficit is exactly linear in
+  `Q_net` (asserted to 1e-12), which is what makes that a bounded omission rather than an unknown
+  one — a caller with the turbulent fluxes passes their sum and nothing else changes.
+
 ### Changed
 - **The painted material class carries a fitted angular model instead of an estimated one**
   (M7.5/M7.6, §4.2, spec issue S40). `car_paint_black`, `car_paint_white`,
