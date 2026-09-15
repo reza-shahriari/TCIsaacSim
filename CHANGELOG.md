@@ -43,6 +43,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **§6.1's surface energy balance, its RK2 step and its fixed point** (M6.7, ADR 0036, ADR 0043).
+  `irsim.thermal.balance` assembles the solar, longwave, radiative, convective and internal terms
+  that already existed in this package into one equation, with a midpoint step and a bisection
+  steady state. Steady state agrees with `brentq` to **< 0.1 K**, ε = 0 gives the closed-form
+  `T_air + (αQ + q)/h` to **1e-9**, and the linearised τ = C/(h + 4εσT³) is recovered from a small
+  perturbation to **1 %**.
+- **⚠️ Energy conservation turned out to be an identity, not a tolerance — once the right quadrature
+  is used.** The midpoint rule *is* `T_{n+1} = T_n + dt·f(T_half)/C`, so `C·ΔT = Σ dt·f(T_half)`
+  holds to **1e-12** over 1000 steps. Accounting the same run with a trapezoid of the endpoint
+  fluxes leaves **2.4e-3** — the difference between two second-order quadratures of a curved
+  integrand, not an error in the step. A test that used the trapezoid and loosened its tolerance
+  until it passed would have been measuring that difference and calling it conservation.
+- **A scene cannot author an emissivity.** `ThermalSpec` has no emissivity field at all, and
+  `ThermalProperties.from_material` reaches through M7.8's total hemispherical integral — two
+  authored copies of ε, in files that are never compared, is two chances for one scene to radiate
+  at 0.95 while the camera sees 0.88. The metal comes through with its sign: bare aluminium's
+  thermal ε *exceeds* its optical one, and it equilibrates further from the air than paint does,
+  because a poor radiator sheds absorbed sun less easily.
+- Two modelling choices stated rather than assumed: Q_LW↓ and εσT⁴ stay **separate terms** as §6.1
+  writes them (folding them into εσ(T⁴ − T_sky⁴) looks tidier and silently multiplies the sky's own
+  emissivity by ε a second time — a test doubles the downwelling and checks the balance moves by
+  exactly that, with no ε on it); and the stability bound is **reported, not enforced**, because a
+  caller stepping a thin panel with a scene-sized tick usually wants the steady state instead. The
+  linearised radiative coefficient is **4.88 W m⁻² K⁻¹** against h = 8 at the night equilibrium, so
+  leaving it out would make the surface 1.6× too slow (16 tests).
 - **Directional emissivity per pixel in stage 1** (M7.14, ADR 0042, §4.2, §13.5). `band_radiance`
   takes `normal_dot_view` and, when the material table carries an M7.10 angle LUT, evaluates ε(θ)
   per pixel. **ρ is re-derived at every angle, never carried**: ε(θ) moves and τ does not, so ρ must
