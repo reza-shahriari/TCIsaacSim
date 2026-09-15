@@ -14,9 +14,21 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from irsim.radiometry.band_average import Spectrum, tabulated
+from irsim.radiometry.band_average import (
+    T_REF_K,
+    Spectrum,
+    WeightingForm,
+    band_average,
+    tabulated,
+)
+from irsim.radiometry.spectral_response import SpectralResponse
 
-__all__ = ["PropertySpectrum", "load_property_spectrum"]
+__all__ = [
+    "PropertySpectrum",
+    "load_property_spectrum",
+    "band_effective",
+    "weighting_for_fpa",
+]
 
 
 @dataclass(frozen=True)
@@ -32,6 +44,42 @@ class PropertySpectrum:
     @property
     def support_um(self) -> tuple[float, float]:
         return float(self.wavelength_um[0]), float(self.wavelength_um[-1])
+
+    def covers(self, response: SpectralResponse, threshold: float = 1e-3) -> bool:
+        """Does this curve span everywhere the response actually responds?
+
+        Judged on the response's ``support(threshold)`` rather than on its file extent: a
+        response file padded with zeros out to 7.0 µm does not need ε(λ) there, and requiring it
+        would refuse perfectly good data. ``threshold = 0`` asks for the file extent instead,
+        which is the stricter rule the material library applies to authored curves.
+        """
+        lo_r, hi_r = response.support_um if threshold <= 0.0 else response.support(threshold)
+        lo_s, hi_s = self.support_um
+        return lo_s <= lo_r and hi_s >= hi_r
+
+    def band_effective(
+        self,
+        response: SpectralResponse,
+        t_ref_k: float = T_REF_K,
+        form: WeightingForm = "energy",
+        threshold: float = 1e-3,
+    ) -> float:
+        """Planck-weighted band-effective value of this property under ``response`` (ADR 0010).
+
+        Refuses a response the curve does not cover. Silently extrapolating the last tabulated
+        value across a band edge is the failure that matters here: it is invisible, it biases in
+        whichever direction the curve happened to be heading, and for a material whose ε falls
+        off a cliff at the band edge -- glass, most paints -- it is a large error that looks like
+        a small one.
+        """
+        if not self.covers(response, threshold):
+            lo_r, hi_r = response.support_um if threshold <= 0.0 else response.support(threshold)
+            raise ValueError(
+                f"{self.path.name} covers {self.support_um[0]}-{self.support_um[1]} um but the "
+                f"response needs {lo_r:.3f}-{hi_r:.3f} um; extend the table rather than letting "
+                f"the band edge be extrapolated"
+            )
+        return band_average(response, self.as_callable, t_ref_k, form)
 
 
 def load_property_spectrum(path: str | os.PathLike[str]) -> PropertySpectrum:
@@ -63,3 +111,29 @@ def load_property_spectrum(path: str | os.PathLike[str]) -> PropertySpectrum:
     if wl[0] <= 0.0:
         raise ValueError(f"{p}: wavelengths must be positive micrometres")
     return PropertySpectrum(wavelength_um=wl, values=v, path=p.resolve())
+
+
+def weighting_for_fpa(fpa_type: str) -> WeightingForm:
+    """Which Planck weighting a band-effective property should use for this detector.
+
+    A bolometer absorbs power, so it averages under B(λ, T); a photon detector counts photons, so
+    it averages under B_q(λ, T). The two differ by hc/λ inside the integral, which for a sloped
+    spectrum is a real difference and not a convention -- and the sign of the difference is fixed:
+    photon weighting leans towards the long-wave end of the band, so a *falling* ε(λ) always
+    averages lower under photon weighting than under energy weighting.
+    """
+    if fpa_type == "bolometer":
+        return "energy"
+    if fpa_type == "photon":
+        return "photon"
+    raise ValueError(f"unknown FPA type {fpa_type!r}")
+
+
+def band_effective(
+    curve: PropertySpectrum,
+    response: SpectralResponse,
+    t_ref_k: float = T_REF_K,
+    form: WeightingForm = "energy",
+) -> float:
+    """Free-function spelling of :meth:`PropertySpectrum.band_effective`."""
+    return curve.band_effective(response, t_ref_k, form)

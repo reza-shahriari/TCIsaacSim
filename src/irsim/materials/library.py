@@ -32,7 +32,7 @@ from irsim.config.bands import NOMINAL_RANGES_UM
 from irsim.config.loader import file_sha256, resolve_data_dir
 from irsim.config.materials import FresnelAngular, MaterialConfig, MaterialSpec
 from irsim.materials.spectra import PropertySpectrum, load_property_spectrum
-from irsim.radiometry.band_average import WeightingForm, band_average
+from irsim.radiometry.band_average import WeightingForm
 from irsim.radiometry.spectral_response import SpectralResponse
 
 __all__ = [
@@ -105,14 +105,17 @@ class Material:
         tau = optical.transmittance(band)
         if self.spectrum is not None:
             resp = response if response is not None else nominal_response(band)
-            lo, hi = resp.support_um
-            s_lo, s_hi = self.spectrum.support_um
-            if lo < s_lo - 1e-9 or hi > s_hi + 1e-9:
+            # threshold 0: the whole response file must be covered, not just where R is
+            # appreciable. A library material is reused across cameras, so the stricter rule is
+            # the right one here -- and it is the *same* rule, in one place (M7.3).
+            if not self.spectrum.covers(resp, threshold=0.0):
+                s_lo, s_hi = self.spectrum.support_um
+                lo, hi = resp.support_um
                 raise ValueError(
                     f"{self.name}: spectral file covers {s_lo}-{s_hi} um, band {band!r} needs "
                     f"{lo}-{hi} um (extend the table rather than extrapolate)"
                 )
-            authored_value = float(band_average(resp, self.spectrum.as_callable, t_ref_k, form))
+            authored_value = float(self.spectrum.band_effective(resp, t_ref_k, form, threshold=0.0))
         else:
             table = optical.emissivity_per_band or optical.reflectance_per_band or {}
             if band not in table:

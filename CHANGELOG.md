@@ -43,6 +43,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Band-effective material properties** (M7.3, ADR 0010, §12.3, §3.1). `PropertySpectrum.band_effective`
+  turns a material's ε(λ) into the number *one camera* sees, and `weighting_for_fpa` decides which
+  Planck weighting from the FPA type rather than from the call site: a bolometer absorbs power and
+  averages under B(λ,T), a photon detector counts photons and averages under B_q(λ,T). The direction
+  of the difference is fixed — photon weighting leans long, so a falling ε(λ) always averages lower
+  under it, and a rising one higher. Both signs are asserted, so the test is about the weighting and
+  not about the curve.
+- **The failure this step is really about is extrapolating a curve past its own support.** For a
+  material whose ε falls off a cliff at a band edge — glass, most paints — carrying the last
+  tabulated value across is a large error that looks like a small one and is biased in whichever
+  direction the curve happened to be heading. A response the curve does not cover is refused, and
+  `MaterialLibrary` now delegates to the same `covers`/`band_effective` pair rather than carrying a
+  second copy of the rule that could drift from it.
+- **⚠️ The roadmap's "step spectrum to 1e-6" is held to 5e-4, and the integrand is why.** A
+  discontinuity is what composite Simpson handles worst: the cut lands inside one 0.01 µm resampling
+  cell and half of it is attributed to the wrong side, a few parts in ten thousand over a 6 µm band
+  (measured 2.5e-4). The exact identities this rests on instead are the flat spectrum (to **1e-12**,
+  under both weightings) and **linearity** — be(αs₁+βs₂) = α·be(s₁)+β·be(s₂) to 1e-12, which a
+  weighted average cannot fake and which fails the moment a normalisation is applied in the wrong
+  place (19 tests).
 - **Tier 3 sensor-chain phenomenology** (M9.9, §15 T3, §16.4 step 9). `tests/unit/test_tier3_sensor_chain.py`
   measures the four things a *camera* does to a picture that a radiometer does not — AGC collapse,
   the FFC freeze, the membrane trail and saturation — each of which is visible in an image and each
