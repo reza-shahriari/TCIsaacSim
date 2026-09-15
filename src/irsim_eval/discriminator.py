@@ -198,6 +198,13 @@ class DiscriminatorResult:
         already 0.042, so a control that lands at 0.54 is one sigma from chance and a report that
         called it a failure would be measuring its own sample size. The criterion that scales is
         ``abs(auc - 0.5) < 2 * null_sigma``, which :attr:`indistinguishable` applies.
+
+        ⚠️ **It assumes the patches are independent, and patches cut from the same frames are
+        not.** Measured: two disjoint samples of 96 patches drawn from one 24-frame clip read an
+        AUC of 0.40, which this formula calls 2.4 sigma from chance when the sets are by
+        construction identical in distribution. The effective sample size is nearer the number of
+        *independent clips* than the number of patches, so treat this as a **lower bound** on the
+        spread and get the independence from more scenarios rather than more patches per frame.
         """
         n1, n2 = float(self.n_real), float(self.n_synthetic)
         return float(math.sqrt((n1 + n2 + 1.0) / (12.0 * n1 * n2)))
