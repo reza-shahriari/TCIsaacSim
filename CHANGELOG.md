@@ -43,6 +43,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Tier 3 reflection phenomenology: what a facet *reads* at 03:00, not what it *is*** (M7.16,
+  §15 T3, §5.3). Every other thermal test asks what temperature a surface reaches; this one asks
+  what the camera reads, which is a different number. The ε 0.90 roof and the glass both read
+  **> 3 K below** their own kinetic temperature under a clear sky, and the ε 0.09 aluminium panel
+  reads **> 20 K below itself**, landing on the identity `Lb⁻¹(ε Lb(T_s) + (1−ε) L_sky,eff)` to
+  **0.05 K**. Overcast cuts every gap and the spread of gaps by more than half.
+- **⚠️ The roof/wall closed form in the roadmap is wrong as written, by 19 %.**
+  `(1−ε)·0.5·(L_ground − L_sky,eff)` assumes the roof and the wall see sky of the *same* effective
+  radiance and differ only in how much of it. They do not: `L_sky,eff` is a tilt-dependent
+  cosine-weighted average over the sky each facet can actually see, and a wall's half is the
+  **warmer half near the horizon**. With the tilt-dependent form the radiance identity closes to
+  **2e-3** and the linearised version to **0.1 K**. Both facets are evaluated at the same kinetic
+  temperature on purpose — in the scene they differ by 2.2 K, and comparing them as they stand
+  would measure the thermal model and the reflection model at once.
+- Two more criteria corrected by measurement rather than by widening a tolerance. Rough asphalt
+  moves **2.0 K**, not "within 1 K": at ε = 0.94 the reflected fraction is 6 %, and this sky is 54 K
+  below air at zenith, so even the roughest, blackest surface in the library is not reflection-free
+  on a clear night. And bare aluminium tracks the sky to **5.5 K** rather than 5 K — the residual is
+  not slop, it is exactly the tenth of its own emission the panel still contributes.
+- This is also the bench that found §6.1's missing ε on `Q_LW↓`, above: the bare-aluminium facet it
+  needed came out 19 K above the air at 03:00 (5 tests).
 - **⚠️ Fixed: the surface balance was absorbing 100 % of the downwelling longwave regardless of
   emissivity.** §6.1 writes **ε Q_LW↓** — "absorbed sky/env" — and M6.7 shipped `Q_LW↓`, with a test
   asserting that was correct. Kirchhoff says a surface absorbs the same fraction of incident
