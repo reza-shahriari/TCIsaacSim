@@ -43,6 +43,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The facet solver, and the spin-up that makes its answer mean anything** (M6.9, M6.10, ADR 0037).
+  `FacetSolver` runs §6.1's balance over `(N,)` arrays and is held to **under 0.1 mK** against 64
+  separate scalar runs over 6 h — the two are the same arithmetic in a different loop order, not an
+  approximation of each other. Shadowing one facet moves it by > 1 K and its neighbours by **exactly
+  zero**, which is the check that vectorising has not accidentally coupled anything.
+- **A surface temperature is a memory.** Asphalt at 06:00 is carrying yesterday afternoon, so
+  starting a scene at the air temperature is wrong by **more than 5 K** on sunlit asphalt at 14:00 —
+  and wrong in a way that decays over hours, across exactly the part of the diurnal cycle a thermal
+  camera is most interesting in. `spin_up` integrates the hours *before* t₀ and returns the state at
+  t₀ itself, so no caller has to advance it afterwards and two callers cannot advance it differently.
+- **48 h is the default and is not adequate for everything, which is reported rather than hidden.**
+  Between a 48 h and a 96 h spin-up: thin steel and asphalt settle to **< 0.5 K**, concrete to
+  **< 1.0 K**. 202 kJ m⁻² K⁻¹ of concrete is still remembering the day before yesterday, and that is
+  a property of concrete rather than a deficiency of the spin-up.
+- **The cache is keyed on what determines the answer and nothing else** — the materials' bytes, the
+  weather hash, t₀, the span and the step. Not the scene, the camera or the frame: two scenes made of
+  the same materials under the same weather at the same hour have the same surface temperatures. A
+  **0.01 K** perturbation of any property changes the key, because properties are hashed as bytes
+  rather than bucketed; a bucketed key is one that occasionally returns someone else's answer.
+- float64 inside, float32 only at `as_float32()`. The balance subtracts terms around 400 W m⁻² to
+  leave a residual of a few, and a diurnal run accumulates ~10⁵ steps of that — in float32 the
+  subtraction alone loses four significant digits before the accumulation starts (10 tests).
 - **§6.4's two-node solver, and the factor of 400 in its stability bound** (M6.8, ADR 0036, spec
   issue S39). `LumpedTwoNodeSolver` gives a surface somewhere to put the day's heat, which is the
   difference between a road still warm at midnight and one that is not. R₁₂ → ∞ reproduces M6.7 to

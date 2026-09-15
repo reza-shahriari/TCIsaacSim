@@ -1,0 +1,257 @@
+"""The same balance over many facets at once, and the spin-up that makes its answer meaningful.
+
+Two things, because they are two halves of one problem. A scene has thousands of surfaces and the
+scalar solver of M6.7/M6.8 is the oracle, not the implementation — so :class:`FacetSolver` runs
+the identical equations over ``(N,)`` arrays, and a test holds it to **0.1 mK** against N separate
+scalar runs rather than to "close enough".
+
+And an initial condition has to come from somewhere. A surface temperature is a *memory* — asphalt
+at 06:00 is carrying yesterday afternoon — so starting a scene at the air temperature is starting
+it wrong by several kelvin and staying wrong for hours. :func:`spin_up` integrates the same facets
+through the preceding day or two and returns the state the weather implies, cached on the things
+that actually determine it.
+
+**float64 inside, float32 only at the boundary.** The balance subtracts numbers around 400 W m⁻²
+to leave a residual of a few, and a diurnal run accumulates ~10⁵ steps of that; in float32 the
+subtraction alone loses four digits before the accumulation starts. The solver refuses a float16
+input outright and works in float64 throughout (CLAUDE.md #2).
+
+docs/physics-model.md §6.4, §15 T1; ADR 0036, ADR 0037
+"""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from irsim.radiometry.constants import SIGMA_SB
+
+__all__ = [
+    "FacetProperties",
+    "FacetForcing",
+    "FacetSolver",
+    "SpinUpResult",
+    "SpinUpCache",
+    "spin_up",
+    "DEFAULT_SPIN_UP_HOURS",
+]
+
+#: §6.4 asks for "a day or two". 48 h is the default because it is where the measurement lands:
+#: 48 h against 96 h differs by under 0.5 K for asphalt and thin steel (ADR 0037).
+DEFAULT_SPIN_UP_HOURS = 48.0
+
+
+def _f64(value: Any, what: str) -> NDArray[np.float64]:
+    arr = np.asarray(value)
+    if arr.dtype == np.float16:
+        raise TypeError(
+            f"{what} is float16 (CLAUDE.md #2): the balance subtracts ~400 W/m² terms to leave a "
+            "few, and float16 has no digits left for the residual"
+        )
+    return np.asarray(arr, dtype=np.float64)
+
+
+@dataclass(frozen=True)
+class FacetProperties:
+    """Per-facet material properties, as ``(N,)`` arrays."""
+
+    heat_capacity_j_m2_k: NDArray[np.float64]
+    emissivity: NDArray[np.float64]
+    solar_absorptivity: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        shapes = {np.shape(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        if len(shapes) != 1:
+            raise ValueError(f"facet property arrays disagree on shape: {sorted(shapes)}")
+        if np.any(self.heat_capacity_j_m2_k <= 0.0):
+            raise ValueError("every facet needs a positive areal heat capacity")
+        for name in ("emissivity", "solar_absorptivity"):
+            arr = getattr(self, name)
+            if np.any(arr < 0.0) or np.any(arr > 1.0):
+                raise ValueError(f"{name} must lie in [0, 1] for every facet")
+
+    @property
+    def n_facets(self) -> int:
+        return int(np.shape(self.heat_capacity_j_m2_k)[0])
+
+    @classmethod
+    def stack(cls, properties: list[Any]) -> FacetProperties:
+        """Pack a list of scalar :class:`~irsim.thermal.balance.ThermalProperties`."""
+        return cls(
+            heat_capacity_j_m2_k=_f64([p.heat_capacity_j_m2_k for p in properties], "capacity"),
+            emissivity=_f64([p.emissivity for p in properties], "emissivity"),
+            solar_absorptivity=_f64([p.solar_absorptivity for p in properties], "absorptivity"),
+        )
+
+    def content_hash(self) -> str:
+        h = hashlib.sha256()
+        for arr in (self.heat_capacity_j_m2_k, self.emissivity, self.solar_absorptivity):
+            h.update(np.ascontiguousarray(arr, dtype=np.float64).tobytes())
+        return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class FacetForcing:
+    """Per-facet forcing at one instant. Scalars broadcast; arrays must be ``(N,)``."""
+
+    t_air_k: Any
+    h_w_m2_k: Any
+    q_solar_w_m2: Any = 0.0
+    q_longwave_down_w_m2: Any = 0.0
+    q_internal_w_m2: Any = 0.0
+
+    def arrays(self, n_facets: int) -> tuple[NDArray[np.float64], ...]:
+        out = []
+        for name in (
+            "t_air_k",
+            "h_w_m2_k",
+            "q_solar_w_m2",
+            "q_longwave_down_w_m2",
+            "q_internal_w_m2",
+        ):
+            arr = _f64(getattr(self, name), name)
+            if arr.ndim == 0:
+                arr = np.full(n_facets, float(arr))
+            elif arr.shape != (n_facets,):
+                raise ValueError(f"{name} has shape {arr.shape}, expected ({n_facets},)")
+            out.append(arr)
+        return tuple(out)
+
+
+class FacetSolver:
+    """§6.1's balance over ``(N,)`` facets, stepped with the same midpoint rule as M6.7."""
+
+    def __init__(self, properties: FacetProperties, initial_k: Any) -> None:
+        self.properties = properties
+        state = _f64(initial_k, "initial temperature")
+        if state.ndim == 0:
+            state = np.full(properties.n_facets, float(state))
+        if state.shape != (properties.n_facets,):
+            raise ValueError(
+                f"initial temperature has shape {state.shape}, expected ({properties.n_facets},)"
+            )
+        if np.any(state <= 0.0):
+            raise ValueError("temperatures must be positive (kelvin)")
+        self._state = state
+
+    @property
+    def temperatures_k(self) -> NDArray[np.float64]:
+        return np.asarray(self._state.copy())
+
+    def net_flux(
+        self, temperatures: NDArray[np.float64], forcing: FacetForcing
+    ) -> NDArray[np.float64]:
+        t_air, h, q_sol, q_lw, q_int = forcing.arrays(self.properties.n_facets)
+        return np.asarray(
+            self.properties.solar_absorptivity * q_sol
+            + q_lw
+            - self.properties.emissivity * SIGMA_SB * temperatures**4
+            - h * (temperatures - t_air)
+            + q_int
+        )
+
+    def advance(self, forcing: FacetForcing, dt_s: float) -> NDArray[np.float64]:
+        if dt_s <= 0.0:
+            raise ValueError("dt_s must be positive")
+        capacity = self.properties.heat_capacity_j_m2_k
+        half = self._state + 0.5 * dt_s * self.net_flux(self._state, forcing) / capacity
+        self._state = self._state + dt_s * self.net_flux(half, forcing) / capacity
+        return self.temperatures_k
+
+    def as_float32(self) -> NDArray[np.float32]:
+        """The boundary: the only place the state is allowed to narrow (CLAUDE.md #2)."""
+        return np.asarray(self._state, dtype=np.float32)
+
+
+# ---------------------------------------------------------------------------------------------
+# spin-up
+# ---------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SpinUpResult:
+    temperatures_k: NDArray[np.float64]
+    hours: float
+    steps: int
+    key: str
+    from_cache: bool = False
+
+
+@dataclass
+class SpinUpCache:
+    """Keyed on what actually determines the answer: the materials, the weather, and t₀.
+
+    Not on the scene, the camera or the frame. Two scenes made of the same materials under the
+    same weather at the same hour have the same surface temperatures, and re-integrating 48 h to
+    rediscover that is the single most expensive thing this package can be asked to do.
+    """
+
+    entries: dict[str, NDArray[np.float64]] = field(default_factory=dict)
+    hits: int = 0
+    misses: int = 0
+
+    def get(self, key: str) -> NDArray[np.float64] | None:
+        value = self.entries.get(key)
+        if value is None:
+            self.misses += 1
+            return None
+        self.hits += 1
+        return np.asarray(value.copy())
+
+    def put(self, key: str, value: NDArray[np.float64]) -> None:
+        self.entries[key] = value.copy()
+
+
+def spin_up_key(
+    properties: FacetProperties, weather_hash: str, t0_s: float, hours: float, dt_s: float
+) -> str:
+    """SHA-256 over the material content, the weather hash, t₀, the span and the step."""
+    h = hashlib.sha256()
+    h.update(properties.content_hash().encode())
+    h.update(weather_hash.encode())
+    for value in (t0_s, hours, dt_s):
+        h.update(np.float64(value).tobytes())
+    return h.hexdigest()
+
+
+def spin_up(
+    properties: FacetProperties,
+    forcing_at: Callable[[float], FacetForcing],
+    weather_hash: str,
+    t0_s: float,
+    hours: float = DEFAULT_SPIN_UP_HOURS,
+    dt_s: float = 60.0,
+    initial_k: Any = None,
+    cache: SpinUpCache | None = None,
+) -> SpinUpResult:
+    """Integrate the facets through ``hours`` of weather *ending* at ``t0_s``.
+
+    The run ends where the scene begins, so what comes back is the state the weather implies at
+    t₀ -- not a state at some earlier time that the caller then has to advance. Starting a scene
+    at the air temperature instead is wrong by several kelvin on a sunlit surface and stays wrong
+    for hours, which is exactly the part of a diurnal cycle a thermal camera is most interesting in.
+    """
+    if hours <= 0.0 or dt_s <= 0.0:
+        raise ValueError("hours and dt_s must be positive")
+    key = spin_up_key(properties, weather_hash, t0_s, hours, dt_s)
+    if cache is not None:
+        cached = cache.get(key)
+        if cached is not None:
+            return SpinUpResult(cached, hours, 0, key, from_cache=True)
+
+    start = t0_s - hours * 3600.0
+    solver = FacetSolver(
+        properties,
+        forcing_at(start).arrays(properties.n_facets)[0] if initial_k is None else initial_k,
+    )
+    steps = int(round(hours * 3600.0 / dt_s))
+    for i in range(steps):
+        solver.advance(forcing_at(start + i * dt_s), dt_s)
+    if cache is not None:
+        cache.put(key, solver.temperatures_k)
+    return SpinUpResult(solver.temperatures_k, hours, steps, key)
