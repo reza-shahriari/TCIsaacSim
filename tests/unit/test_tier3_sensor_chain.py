@@ -376,14 +376,19 @@ def test_a_1000_k_source_clips_at_full_scale_without_wrapping(tophat_lwir_lut: B
 
 
 def test_the_two_open_criteria_are_named_rather_than_silently_absent() -> None:
-    """M9.9's row also asks for an aerial edge-asymmetry band from ME.4 and the ME.6 comparison.
+    """The Tier 3 sensor-chain bench left two criteria open, and they must stay tracked.
 
-    Both need statistics measured from public real imagery, which is not obtainable on this
-    machine (no network; and ADR 0003 records that most of the indexed sets need a manual
-    request anyway). The row lands amber with these two named -- the precedent M10.19 set -- and
-    this test exists so that "amber" has something executable behind it rather than a note.
+    Both -- an aerial edge-asymmetry band and the real-vs-synthetic comparison -- need statistics
+    measured from public real imagery, which is not obtainable on this machine (no network; and
+    ADR 0003 records that most of the indexed sets need a manual request anyway). This test exists
+    so that "open" has something executable behind it rather than a note.
+
+    Roadmap revision 4 retired the legacy `M9.9` id and re-lanes the remainder as `SC.14`; the
+    legacy ids `ME.4` and `ME.6` remain the citations for the two criteria themselves. Pinning the
+    row rather than the prose is what caught the drop: the revision had lost both criteria
+    entirely, and this assertion is the only thing that noticed.
     """
     roadmap = (REPO / "docs" / "roadmap.md").read_text(encoding="utf-8")
-    row = next(line for line in roadmap.splitlines() if line.startswith("| M9.9 "))
+    row = next(line for line in roadmap.splitlines() if line.startswith("| SC.14 "))
     assert "ME.4" in row and "ME.6" in row, "the open dependencies are not named in the row"
-    assert "🟡" in row, "M9.9 must stay amber while ME.4 and ME.6 are open"
+    assert "✅" not in row, "SC.14 must stay open while both criteria are unmeasured"
