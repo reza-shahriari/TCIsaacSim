@@ -1,0 +1,113 @@
+{
+  "camera": "halmstad_boson_320",
+  "clips": 5,
+  "frames": 24,
+  "seed": 20260915,
+  "variants": [
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": -0.2586436084958374,
+      "config_hash": "c803f0d9b8ede206b1b477da5adb662da2671c1aee11cca8394f3b26d7dd356b",
+      "discriminator_auc": 0.49517795138888887,
+      "heaviest_features": [
+        "lag1_autocorrelation",
+        "psd_slope",
+        "gradient_median"
+      ],
+      "histogram_emd_codes": 0.0,
+      "psd_shape_ratio": 1.0,
+      "separable": false,
+      "variant": "full"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": 12.081054382792919,
+      "config_hash": "32653c57f59d03dc4e3433b698530a72d32fc0fe39f929135e38941497cba18d",
+      "discriminator_auc": 0.725234375,
+      "heaviest_features": [
+        "gradient_median",
+        "noise_scale",
+        "gradient_p95_over_median"
+      ],
+      "histogram_emd_codes": 0.03430151939391452,
+      "psd_shape_ratio": 1.0038558936908264,
+      "separable": true,
+      "variant": "noise off"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": 24.776009031655615,
+      "config_hash": "9d3437bcc3723c0007ff5f4735a171994bb6c2f2a09fe4d3ce8d0c4a8dbbe1b3",
+      "discriminator_auc": 0.9619140625,
+      "heaviest_features": [
+        "skew",
+        "psd_slope",
+        "gradient_p95_over_median"
+      ],
+      "histogram_emd_codes": 10.111859321594219,
+      "psd_shape_ratio": 2.9889536508120833,
+      "separable": true,
+      "variant": "optical PSF off"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": -0.2586436084958374,
+      "config_hash": "93e3666bd9858923337c6a35e99c9a79c0481f3b09af457b98d1326b793c2104",
+      "discriminator_auc": 0.49517795138888887,
+      "heaviest_features": [
+        "lag1_autocorrelation",
+        "psd_slope",
+        "gradient_median"
+      ],
+      "histogram_emd_codes": 0.0,
+      "psd_shape_ratio": 1.0,
+      "separable": false,
+      "variant": "bad pixels off"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": -0.2586436084958374,
+      "config_hash": "0673be79ef1755d02b123969e84bc147059e05d360ced974942d7b7ae2c19b3f",
+      "discriminator_auc": 0.49517795138888887,
+      "heaviest_features": [
+        "lag1_autocorrelation",
+        "psd_slope",
+        "gradient_median"
+      ],
+      "histogram_emd_codes": 0.0,
+      "psd_shape_ratio": 1.0,
+      "separable": false,
+      "variant": "NUC residual off"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": 26.818851213969715,
+      "config_hash": "47f6bcc1f2158ee8b0b8b89af9c138d8708402c6d0a4c8ae352c7a4d29befb67",
+      "discriminator_auc": 1.0,
+      "heaviest_features": [
+        "mean",
+        "gradient_p95_over_median",
+        "std"
+      ],
+      "histogram_emd_codes": 61.738418340683026,
+      "psd_shape_ratio": 2.1538949168397554,
+      "separable": true,
+      "variant": "AGC linear -> none"
+    },
+    {
+      "auc_null_sigma": 0.018643602442581664,
+      "auc_z": -0.2586436084958374,
+      "config_hash": "8f24b9245891f411c490a26c8b9d8d674d6e3427b1c9d7b5092e1e868f9ef14a",
+      "discriminator_auc": 0.49517795138888887,
+      "heaviest_features": [
+        "lag1_autocorrelation",
+        "psd_slope",
+        "gradient_median"
+      ],
+      "histogram_emd_codes": 0.0,
+      "psd_shape_ratio": 1.0,
+      "separable": false,
+      "variant": "FFC ideal"
+    }
+  ]
+}
