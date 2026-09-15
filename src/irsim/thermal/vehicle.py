@@ -35,6 +35,8 @@ from numpy.typing import NDArray
 
 __all__ = [
     "VehicleState",
+    "VehicleSourceSolver",
+    "SourceHistory",
     "HeatSourceSpec",
     "VEHICLE_HEAT_SOURCES",
     "HUMAN_BODY",
@@ -195,3 +197,126 @@ class SourceHistory:
 def source_temperature_k(t_air_k: float, delta_t_k: float) -> float:
     """T = T_air + ΔT. The one place ambient enters, so a source cannot drift off the weather."""
     return float(t_air_k + delta_t_k)
+
+
+class VehicleSourceSolver:
+    """§6.6's first-order rise and cool for one vehicle heat source, as a `TemperatureSolver`.
+
+    The §6.6 table and its integrator (:class:`SourceHistory`) have existed since M6.14 and have
+    been reachable only from their own unit tests. The scene schema's `heat_source` solver is ADR
+    0072's **aerial** node, whose law is a *steady-state* relation with no time constant at all,
+    and an engine bay whose entire character is a 750 s warm-up is precisely what that cannot
+    represent. Writing the rise out as a `prescribed` schedule instead -- what the maritime scene
+    had to do for its funnel -- moves a number the model already knows into a YAML file, where it
+    stops tracking the model and becomes a number somebody typed.
+
+    This class is therefore **only an adapter**: the law, and the exact-exponential step that makes
+    the answer independent of the sample spacing, stay in `SourceHistory`. In particular the choice
+    between tau_rise and tau_cool stays there too, and it is made by *direction* -- a source whose
+    load has just dropped is cooling toward a lower target even though the key is still turned,
+    which is the physically meaningful reading and not the one "is the engine on" would give.
+
+    Ambient enters through :func:`source_temperature_k` and nowhere else, so a source cannot drift
+    off the shared weather (CLAUDE.md #6); passing the `WeatherSeries` exposes it on `.weather` for
+    the `Scene`'s identity assertion.
+
+    ``delta_t0_k`` is the rise the node already carries at ``t0_s``: 0 for a vehicle that has stood
+    overnight -- the case the MP.4 demo films -- and non-zero for one that has just parked, which
+    is the far more common thing to photograph in daylight.
+
+    docs/physics-model.md §6.6; ADR 0038, ADR 0089
+    """
+
+    def __init__(
+        self,
+        spec: HeatSourceSpec,
+        ambient: Any,
+        load_s: Any,
+        load: Any,
+        t0_s: float = 0.0,
+        delta_t0_k: float = 0.0,
+    ) -> None:
+        from irsim.thermal.solvers import SolverState
+        from irsim.thermal.weather import WeatherSeries
+
+        self.spec = spec
+        times = np.asarray(load_s, dtype=np.float64)
+        loads = np.asarray(load, dtype=np.float64)
+        if times.ndim != 1 or times.size < 1 or loads.shape != times.shape:
+            raise ValueError("load profile needs 1-D times and loads of equal length")
+        if times.size > 1 and np.any(np.diff(times) <= 0.0):
+            raise ValueError("load profile times must be strictly increasing")
+        if np.any(loads < 0.0) or np.any(loads > 1.0):
+            raise ValueError("load must lie in [0, 1]")
+        if delta_t0_k < 0.0:
+            raise ValueError("delta_t0_k must be non-negative")
+        self._times = times
+        self._loads = loads
+
+        self._weather: WeatherSeries | None = None
+        if isinstance(ambient, WeatherSeries):
+            self._weather = ambient
+            self._ambient: Any = lambda t: ambient.at(t).t_air_k
+        elif callable(ambient):
+            self._ambient = ambient
+        else:
+            const = float(ambient)
+            self._ambient = lambda _t: const
+
+        self._history = SourceHistory(spec, delta_t_k=float(delta_t0_k))
+        # Prime the integrator's clock: its first step only records a time (there is no interval
+        # to integrate yet), and leaving that to the first `advance` would silently drop one tick.
+        self._history.step(VehicleState(t_s=float(t0_s)), load=self.load_at(float(t0_s)))
+        self._state = SolverState(
+            float(t0_s), source_temperature_k(self.ambient_at(float(t0_s)), self.delta_t_k)
+        )
+
+    # -- inputs ------------------------------------------------------------------------------
+
+    @property
+    def weather(self) -> Any:
+        """The shared WeatherSeries when the ambient is the weather's air temperature."""
+        return self._weather
+
+    @property
+    def delta_t_k(self) -> float:
+        """The rise over ambient the node carries -- the actual state variable."""
+        return float(self._history.delta_t_k)
+
+    def ambient_at(self, t_s: float) -> float:
+        return float(self._ambient(float(t_s)))
+
+    def load_at(self, t_s: float) -> float:
+        """The load profile, held flat outside its own span rather than extrapolated."""
+        return float(np.interp(float(t_s), self._times, self._loads))
+
+    # -- the step ----------------------------------------------------------------------------
+
+    def advance(self, t_s: float, dt_s: float) -> float:
+        """Step to ``t_s + dt_s``. The load is taken at the step **midpoint**, so a step that
+        spans the moment the key turns is second order rather than depending on which side of the
+        event the sample happens to land."""
+        from irsim.thermal.solvers import SolverState
+
+        if dt_s < 0.0:
+            raise ValueError("dt_s must be non-negative")
+        t_s = float(t_s)
+        dt = float(dt_s)
+        self._history.step(VehicleState(t_s=t_s + dt), load=self.load_at(t_s + 0.5 * dt))
+        self._state = SolverState(
+            t_s + dt, source_temperature_k(self.ambient_at(t_s + dt), self.delta_t_k)
+        )
+        return self._state.temperature_k
+
+    def temperature(self) -> float:
+        return self._state.temperature_k
+
+    @property
+    def state(self) -> Any:
+        return self._state
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics
+        return (
+            f"VehicleSourceSolver({self.spec.name!r}, dT={self.delta_t_k:.2f} K, "
+            f"T={self._state.temperature_k:.2f} K)"
+        )

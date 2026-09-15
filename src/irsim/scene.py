@@ -38,6 +38,7 @@ from irsim.thermal.aerial import (
     ram_skin_solver,
 )
 from irsim.thermal.solvers import NewtonCoolingSolver, PrescribedSolver, TemperatureSolver
+from irsim.thermal.vehicle import VEHICLE_HEAT_SOURCES, VehicleSourceSolver
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 from irsim.thermal.weather_io import load_weather_csv
 
@@ -52,10 +53,27 @@ def build_target(spec: TargetSpec, weather: WeatherSeries, t0_s: float) -> Tempe
     their schedule is *derived*, from the throttle profile or the airspeed and the shared weather,
     refined until piecewise-linear interpolation reproduces the analytic law to 1 mK, rather than
     typed into the config.
+
+    ``vehicle_source`` is the one that **cannot** be pre-derived (ADR 0089). §6.6's ground-vehicle
+    rows carry a time constant, so the node's temperature depends on its own history and not only
+    on the clock: the same load profile started from a cold engine and from one that parked ten
+    minutes ago gives different curves. It therefore comes back as a stateful
+    :class:`~irsim.thermal.vehicle.VehicleSourceSolver`, which primes itself at ``t0_s``.
     """
     if spec.solver == "newton":
         assert spec.t0_k is not None and spec.tau_s is not None
         return NewtonCoolingSolver(spec.t0_k, spec.tau_s, weather, t0_s=t0_s)
+    if spec.solver == "vehicle_source":
+        assert spec.source is not None and spec.load_s is not None and spec.load is not None
+        # Written in seconds after the scene start; the solvers live on the weather's absolute
+        # axis, so the offset happens here and nowhere else -- as it does for the throttle below.
+        return VehicleSourceSolver(
+            VEHICLE_HEAT_SOURCES[spec.source],
+            weather,
+            t0_s + np.asarray(spec.load_s, dtype=np.float64),
+            spec.load,
+            t0_s=t0_s,
+        )
     if spec.solver in ("airframe", "heat_source", "ram_skin"):
         if spec.solver == "airframe":
             derived = airframe_solver(weather, offset_k=spec.offset_k or 0.0)

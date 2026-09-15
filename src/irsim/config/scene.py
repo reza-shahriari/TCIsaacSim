@@ -39,7 +39,7 @@ __all__ = [
     "load_scene_config",
 ]
 
-SCENE_SCHEMA_VERSION = 5  # v5: the optional `thermal:` block (M6.12)
+SCENE_SCHEMA_VERSION = 6  # v6: the vehicle_source solver (§6.6, ADR 0089)
 #: The oldest version this loader still accepts. v5 added `thermal:` as an **optional** field, so
 #: every v4 document is a valid v5 document and refusing one would be refusing it for a change
 #: that cannot affect it. A range is the honest representation of a backwards-compatible change;
@@ -67,6 +67,13 @@ class TargetSpec(_Frozen):
       ``throttle_s`` → ``throttle`` is the pilot's throttle fraction over time. The temperature is
       T_air(t) + ΔT_max u(t)^n, derived, never authored.
     * ``airframe`` is an unpowered skin at *multirotor* speed: T_air(t) + ``offset_k``.
+    * ``vehicle_source`` is §6.6's **ground-vehicle** node: ``source`` names one of
+      :data:`irsim.thermal.vehicle.VEHICLE_HEAT_SOURCES` (``engine_bay``, ``exhaust_manifold``,
+      ``catalytic_converter``, ``exhaust_pipe``, ``exhaust_tip``, ``brake_disc``, ``tyre``) and
+      ``load_s`` → ``load`` is the duty fraction over time -- 0 before the key turns, 1 at full
+      load. Unlike ``heat_source`` it **has a time constant**, which for these rows is the whole
+      character of the thing: an engine bay is 750 s of warm-up and half an hour of cool-down, and
+      a steady-state law would show the full 65 K in the first frame after ignition.
     * ``ram_skin`` is an unpowered skin fast enough for aerodynamic heating to matter: the
       adiabatic wall temperature T_air (1 + r (gamma-1)/2 M^2) at a constant ``speed_m_s``, with
       the Mach number taken against the shared weather's own air temperature (ADR 0075). At 20 m/s
@@ -81,7 +88,7 @@ class TargetSpec(_Frozen):
     """
 
     name: str = Field(min_length=1)
-    solver: Literal["newton", "prescribed", "heat_source", "airframe", "ram_skin"]
+    solver: Literal["newton", "prescribed", "heat_source", "airframe", "ram_skin", "vehicle_source"]
     t0_k: float | None = Field(default=None, gt=0.0)
     tau_s: float | None = Field(default=None, gt=0.0)
     schedule_s: list[float] | None = None
@@ -90,13 +97,19 @@ class TargetSpec(_Frozen):
     throttle_s: list[float] | None = None
     throttle: list[float] | None = None
     offset_k: float | None = None
+    load_s: list[float] | None = None
+    load: list[float] | None = None
     speed_m_s: float | None = Field(default=None, ge=0.0)
     recovery_factor: float | None = Field(default=None, gt=0.0, le=1.0)
 
     @model_validator(mode="after")
     def _fields_for_solver(self) -> TargetSpec:
+        if self.solver == "vehicle_source":
+            return self._vehicle_fields()
         if self.solver in ("heat_source", "airframe", "ram_skin"):
             return self._aerial_fields()
+        if self.load is not None or self.load_s is not None:
+            raise ValueError(f"target {self.name!r}: only vehicle_source takes a load profile")
         if self.source is not None or self.throttle is not None or self.throttle_s is not None:
             raise ValueError(f"target {self.name!r}: {self.solver} takes no throttle profile")
         if self.offset_k is not None:
@@ -125,12 +138,49 @@ class TargetSpec(_Frozen):
                 raise ValueError(f"target {self.name!r}: prescribed takes no t0_k/tau_s")
         return self
 
+    def _vehicle_fields(self) -> TargetSpec:
+        """Validate §6.6's ground-vehicle node. The source names are checked against the model."""
+        from irsim.thermal.vehicle import VEHICLE_HEAT_SOURCES
+
+        if self.t0_k is not None or self.tau_s is not None:
+            raise ValueError(f"target {self.name!r}: vehicle_source takes no t0_k/tau_s")
+        if self.schedule_s is not None or self.schedule_k is not None:
+            raise ValueError(
+                f"target {self.name!r}: vehicle_source derives its curve from §6.6's table; "
+                "authoring temperatures directly is what this solver exists to replace"
+            )
+        if self.offset_k is not None:
+            raise ValueError(f"target {self.name!r}: only airframe takes offset_k")
+        if self.speed_m_s is not None or self.recovery_factor is not None:
+            raise ValueError(f"target {self.name!r}: only ram_skin takes an airspeed")
+        if self.throttle is not None or self.throttle_s is not None:
+            raise ValueError(
+                f"target {self.name!r}: vehicle_source takes load_s/load, not a throttle profile "
+                "(throttle belongs to the aerial heat_source node, which has no time constant)"
+            )
+        if self.source not in VEHICLE_HEAT_SOURCES:
+            raise ValueError(
+                f"target {self.name!r}: source must be one of "
+                f"{sorted(VEHICLE_HEAT_SOURCES)}, got {self.source!r}"
+            )
+        if not self.load_s or not self.load:
+            raise ValueError(f"target {self.name!r}: vehicle_source needs load_s and load")
+        if len(self.load_s) != len(self.load):
+            raise ValueError(f"target {self.name!r}: load_s and load differ in length")
+        if any(b <= a for a, b in zip(self.load_s[:-1], self.load_s[1:], strict=True)):
+            raise ValueError(f"target {self.name!r}: load_s must be strictly increasing")
+        if any(not 0.0 <= u <= 1.0 for u in self.load):
+            raise ValueError(f"target {self.name!r}: load must lie in [0, 1]")
+        return self
+
     def _aerial_fields(self) -> TargetSpec:
         """Validate the ADR 0072 solvers. The heat-source names are checked against the model."""
         from irsim.thermal.aerial import AERIAL_HEAT_SOURCES
 
         if self.t0_k is not None or self.tau_s is not None:
             raise ValueError(f"target {self.name!r}: {self.solver} takes no t0_k/tau_s")
+        if self.load is not None or self.load_s is not None:
+            raise ValueError(f"target {self.name!r}: only vehicle_source takes a load profile")
         if self.schedule_s is not None or self.schedule_k is not None:
             raise ValueError(
                 f"target {self.name!r}: {self.solver} derives its schedule from the model; "

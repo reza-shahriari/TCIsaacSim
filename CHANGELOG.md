@@ -115,6 +115,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The overlay advances its fields on the **absolute** weather clock, not scene-relative time — the
   same trap M10.3 pinned for `thermal_surfaces`, where a spun-up field handed relative time returns
   a plausible temperature from the wrong hour.
+- **§6.6's vehicle heat sources are reachable from a scene** (MP.4a, ADR 0089, §6.6). Scene schema
+  **v6** gains `solver: vehicle_source` — `source` names a row of `VEHICLE_HEAT_SOURCES` and
+  `load_s`/`load` is the duty fraction over time. The table and its integrator have existed since
+  M6.14 and nothing outside their own unit tests could reach them: `heat_source` is ADR 0072's
+  *aerial* node, whose law is a steady-state relation with **no time constant at all**, so an
+  engine bay authored through it shows its full 65 K in the first frame after ignition.
+- `VehicleSourceSolver` is deliberately only an adapter — the law and its exact-exponential step
+  stay in `SourceHistory`, which already had them. It is the first solver that **cannot** be
+  pre-derived into a `PrescribedSolver`, because a node with a time constant depends on its own
+  history: `delta_t0_k` is how a scene says whether the engine is cold or has just been switched
+  off, which is what makes a daylight scene of a recently parked car a one-parameter change.
+- Held to §6.6's closed form to **1 mK** at five elapsed times; one time constant is 63.2 % of the
+  rise and not the whole of it; a 1 s step and a 200 s step agree to 1e-9; switching off cools on
+  `τ_cool` (1800 s) and not `τ_rise` (750 s); ambient enters in exactly one place, so two nodes
+  50 K apart in air carry identical ΔT. An aerial source name is refused for a vehicle node and
+  neither kind accepts the other's profile.
+- `SCENE_SCHEMA_VERSION` is 6 and the five committed demo configs move with it;
+  `MIN_SCENE_SCHEMA_VERSION` stays at 4, so every older file still loads.
+- **An overcast still-night weather fixture** (`data/weather/overcast_still_48h.csv`). What it is
+  for is what it removes: under thick cloud the sky radiates near air temperature, so every surface
+  settles within a kelvin or two of ambient regardless of material or tilt. That is the only
+  condition under which a car and the asphalt under it look the same in LWIR, which is what an
+  ignition demo needs in frame 0.
 
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`
