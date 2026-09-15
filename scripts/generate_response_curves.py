@@ -109,7 +109,100 @@ def insb(lam: float) -> float:
     return _raised_cosine_down(lam, 4.90, 5.25)
 
 
+# --- Silicon CMOS (NIR, ME/M11 renders) -------------------------------------------------------
+
+#: Silicon's absorption coefficient near its band edge, cm^-1 at 300 K, on a 50 nm grid.
+#: STATUS: ESTIMATED. These are the standard published magnitudes for intrinsic silicon (the
+#: shape everyone plots from Green 2008), reproduced to about 10 % rather than transcribed from a
+#: table this project has in hand. They are used for a *shape* that is then peak-normalised, which
+#: is what makes 10 % on each anchor tolerable: the ratio across the band is what matters, and it
+#: is dominated by the four decades alpha falls over, not by any one point. Replace with a
+#: tabulated source before quoting an absolute quantum efficiency.
+SI_ALPHA_CM1 = {
+    0.70: 1.90e3,
+    0.75: 1.09e3,
+    0.80: 8.50e2,
+    0.85: 5.37e2,
+    0.90: 3.06e2,
+    0.95: 1.60e2,
+    1.00: 6.40e1,
+    1.05: 1.40e1,
+    1.10: 6.00e-1,
+}
+
+#: Photosensitive silicon thickness. A front-illuminated CMOS imager collects from its epitaxial
+#: layer, a few microns deep; this is what makes a silicon NIR camera fall off so hard towards
+#: 1 um, and it is the one number that moves the shape.
+SI_EPI_UM = 6.0
+
+#: Where the IR-cut filter used to be. A NIR camera is a visible sensor with that filter replaced
+#: by a long pass, so the short-wave edge is the *filter*, sharp, and not silicon's own response.
+SI_LONGPASS_UM = (0.72, 0.78)
+
+NIR_SI = dict(
+    edges=(0.70, 1.10),
+    step=0.005,
+    decimals=3,
+    header="""\
+# Generic 1280x1024 silicon CMOS NIR camera, relative spectral response R(lambda), peak-normalised.
+# STATUS: ESTIMATED -- not a measurement of any specific unit. Long-pass filter + silicon epi
+# absorption + optics folded together.
+#
+# Shape (docs/physics-model.md §12.1; the NIR band is reflective, roadmap M11):
+#   * cut-on: raised cosine over 0.72-0.78 um. This is the FILTER, not the detector. A NIR camera
+#     is an ordinary visible imager with its IR-cut filter replaced by a long pass, so the
+#     short-wave edge is an interference coating and is steep; silicon itself responds right
+#     through the visible.
+#   * body: QE(lambda) = 1 - exp(-alpha(lambda) . d) with d = 6 um of epitaxial silicon and
+#     alpha from the band-edge table in the generator, peak-normalised on write (the absolute
+#     peak is QE = 0.431 at 0.775 um; absolute efficiency belongs in fpa.quantum_efficiency,
+#     ADR 0009). There is no plateau. Silicon becomes
+#     transparent as the photon energy approaches its 1.12 eV indirect gap, so the response peaks
+#     at 0.775 um -- where the filter has finished opening and silicon has not yet given up --
+#     and then falls monotonically by 10.6x between 0.80 and 1.00 um (R = 0.926 -> 0.087). That
+#     fall-off is the single most important fact about this band: it is the reason a NIR camera is
+#     a *near*-infrared camera and not a SWIR one, and the reason a NIR scene is lit almost
+#     entirely by the short end of its own band.
+#   * cut-off: the same exponential, which reaches zero of its own accord at 1.107 um (1.12 eV).
+#     No filter is needed or modelled at the long end.
+# Expected error vs a measured curve: the alpha anchors are good to ~10 % and the epi thickness
+# is a design choice that varies by part, so the fall-off rate is the uncertain quantity; the
+# band edges are good to ~0.01 um (filter) and ~0.005 um (gap).
+# Columns: wavelength in MICROMETRES, dimensionless response in [0, 1]. Grid 0.005 um.
+# Authored 2026-09-15.
+wavelength_um,response
+""",
+)
+
+
+def _si_alpha_cm1(lam: float) -> float:
+    """Log-linear interpolation of the band-edge anchors. Log, because alpha falls four decades
+    across this band and a linear interpolation between two anchors would be wrong by more than
+    the anchors themselves are."""
+    keys = sorted(SI_ALPHA_CM1)
+    if lam <= keys[0]:
+        return SI_ALPHA_CM1[keys[0]]
+    if lam >= keys[-1]:
+        return 0.0
+    for lo, hi in zip(keys, keys[1:], strict=False):
+        if lo <= lam <= hi:
+            f = (lam - lo) / (hi - lo)
+            return math.exp((1.0 - f) * math.log(SI_ALPHA_CM1[lo]) + f * math.log(SI_ALPHA_CM1[hi]))
+    return 0.0
+
+
+def nir_si(lam: float) -> float:
+    if lam <= SI_LONGPASS_UM[0] or lam >= 1.107:
+        return 0.0
+    alpha_um1 = _si_alpha_cm1(lam) / 1e4  # cm^-1 -> um^-1
+    qe = 1.0 - math.exp(-alpha_um1 * SI_EPI_UM)
+    if lam < SI_LONGPASS_UM[1]:
+        qe *= _raised_cosine_up(lam, *SI_LONGPASS_UM)
+    return qe
+
+
 CURVES["ingaas"] = {**INGAAS, "fn": ingaas}
+CURVES["nir_si"] = {**NIR_SI, "fn": nir_si}
 CURVES["insb"] = {**INSB, "fn": insb}
 
 
@@ -127,16 +220,19 @@ def main(argv: list[str] | None = None) -> int:
         fn = spec["fn"]  # type: ignore[assignment]
         decimals = int(spec["decimals"])  # type: ignore[arg-type]
         n = int(round((hi - lo) / step)) + 1
-        rows = []
-        peak = 0.0
-        for i in range(n):
-            lam = lo + i * step
-            value = float(fn(lam))  # type: ignore[operator]
-            peak = max(peak, value)
-            rows.append(f"{lam:.{decimals}f},{value:.6f}")
+        samples = [(lo + i * step, float(fn(lo + i * step))) for i in range(n)]  # type: ignore[operator]
+        peak = max(value for _, value in samples)
+        if peak <= 0.0:
+            raise SystemExit(f"{name}: the curve is zero everywhere")
+        # R(lambda) is a peak-normalised *shape* and the loader refuses anything else (ADR 0009:
+        # absolute QE lives in fpa.quantum_efficiency, so that a response file and a detector's
+        # efficiency cannot disagree). Normalising here rather than in each curve means a model
+        # written in physical units -- silicon's QE = 1 - exp(-alpha d), say -- can stay in them.
+        rows = [f"{lam:.{decimals}f},{value / peak:.6f}" for lam, value in samples]
         path = out / f"{name}.csv"
         path.write_text(str(spec["header"]) + "\n".join(rows) + "\n", encoding="utf-8")
-        print(f"wrote {path} ({n} rows), peak {peak:.6f}")
+        where = next(lam for lam, value in samples if value == peak)
+        print(f"wrote {path} ({n} rows), peak {peak:.6f} at {where:.3f} um -> normalised to 1")
     return 0
 
 

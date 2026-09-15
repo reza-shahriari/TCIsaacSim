@@ -43,6 +43,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **A NIR camera: the fourth band** (M11.9). `configs/sensors/example_nir_si_1280.yaml` — a
+  1280×1024 silicon CMOS at 0.75–1.0 µm, reflective, photon FPA — with
+  `data/spectra/responses/nir_si.csv` generated from **silicon's own band-edge physics**:
+  QE = 1 − exp(−α(λ)·d) over 6 µm of epitaxial silicon, α log-interpolated between published
+  near-gap anchors, times the long-pass filter that replaces a visible camera's IR-cut. The curve
+  peaks at 0.775 µm and falls **10.6×** by 1.00 µm, which is the fact that makes NIR a *near*-
+  infrared band rather than a short-wave one.
+- `scripts/generate_response_curves.py` now **peak-normalises on write**, so a curve can be
+  written in physical units while the file stays the peak-1 shape ADR 0009 requires (absolute
+  efficiency belongs in `fpa.quantum_efficiency`, so a response file and a detector's QE cannot
+  disagree). `ingaas.csv` and `insb.csv` regenerate byte-identically.
+- **Bands are data, demonstrated a fourth time.** `band: nir` was already in the registry, so a
+  YAML, a CSV and `make luts` were the entire change — no kernel edit — and the band-scalability
+  guard picked the new config up on its own. The four configured bands' self-emission at 300 K
+  now spans **seventeen orders of magnitude**: NIR/LWIR = 5.2e-17, SWIR/LWIR = 4.2e-9,
+  MWIR/LWIR = 4.1e-2. Emission is still never culled: NIR's 300 → 900 K gain is 1.4e14.
+- §9.4's NETD for this camera evaluates to **1.21e11 K** — a 300 K blackbody delivers 3.7e-10
+  photoelectrons per pixel per 16 ms frame, one electron roughly every seventy-five years — and is
+  recorded and flagged unusable exactly as the SWIR file's 976 K is. `make luts` reports −41 %
+  against a flat top-hat at 300 K, which is the Wien tail putting the emissive integral past the
+  band's long edge, not a bug.
 - **The §15 Tier 5 ablation switches are config now, not keyword arguments** (ME.8, ADR 0083).
   A `fidelity:` block in the sensor file carries `noise`, `optical_psf`, `bad_pixels` and
   `nuc_residual`, all defaulting to `true`. Each of the four already existed — as a keyword

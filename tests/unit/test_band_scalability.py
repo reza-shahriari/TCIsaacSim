@@ -192,6 +192,49 @@ def test_swir_self_emission_becomes_significant_at_exhaust_temperatures(configs)
     assert lwir_gain < 100.0
 
 
+def test_the_nir_config_is_a_photon_fpa_that_claims_no_apparent_temperature(configs) -> None:  # type: ignore[no-untyped-def]
+    nir = configs["example_nir_si_1280"].sensor
+    assert isinstance(nir.fpa, PhotonFpa) and not isinstance(nir.fpa, BolometerFpa)
+    assert nir.fpa.thermal_time_constant_ms is None and nir.fpa.tcr_per_k is None
+    assert nir.band.regime == "reflective"
+    assert nir.outputs.apparent_temperature is False
+
+
+def test_nir_is_the_extreme_case_of_reflective(configs) -> None:  # type: ignore[no-untyped-def]
+    """The fourth band, and the one that makes the point hardest.
+
+    "Reflective" is a statement about how much of the signal is the scene's own emission, and it
+    is quantitative. At 300 K the SWIR band's self-emission is already 1e-9 of the LWIR band's;
+    the NIR band's is smaller again by several more orders, because Planck's Wien tail falls
+    another factor of e^(hc/kT (1/0.9 - 1/1.3)) between the two. A camera whose own band cannot
+    see a 300 K object at all is one for which *every* photon is borrowed -- sun, moon or
+    airglow -- which is what makes the M11.3/M11.4 illumination terms load-bearing rather than a
+    refinement.
+    """
+    bands = {
+        name: load_spectral_response(configs[name].sensor.band.spectral_response)
+        for name in ("example_nir_si_1280", "example_swir_ingaas_640", "flir_boson_640_lwir")
+    }
+    luts = {name: BandLUT.build(response, n=COARSE_N) for name, response in bands.items()}
+
+    def energy_at(name: str, temp: float) -> float:
+        photon_j = H_PLANCK * C_LIGHT / (bands[name].mean_wavelength_um() * 1e-6)
+        return float(luts[name].lookup(temp, "lb_q")[()]) * photon_j
+
+    lwir_300 = float(luts["flir_boson_640_lwir"].lookup(300.0)[()])
+    nir_300 = energy_at("example_nir_si_1280", 300.0)
+    swir_300 = energy_at("example_swir_ingaas_640", 300.0)
+    assert nir_300 / lwir_300 < 1e-12, f"NIR/LWIR at 300 K = {nir_300 / lwir_300:.3e}"
+    assert nir_300 < swir_300 / 1e3, "NIR must be far deeper into the Wien tail than SWIR"
+
+    # ...and, as with SWIR, emission is not culled: the same band lights up at flame temperature,
+    # which is why the regime gates the *illumination* terms and never the emissive one.
+    nir_gain = float(luts["example_nir_si_1280"].lookup(900.0)[()]) / float(
+        luts["example_nir_si_1280"].lookup(300.0)[()]
+    )
+    assert nir_gain > 1e9, f"NIR 300 -> 900 K gain = {nir_gain:.3e}"
+
+
 # ---------------------------------------------------------------------------------------------
 # static half: the core may not know a band's name or its edges
 # ---------------------------------------------------------------------------------------------

@@ -1,0 +1,125 @@
+# Generic 1280x1024 silicon CMOS NIR camera (uncooled, reflective band).
+# Schema: docs/physics-model.md §12.2, §12.1. Band registry: irsim.config.bands, `nir` = 0.75-1.0 um.
+#
+# Nothing here is a measurement of a specific unit. Every ESTIMATED value is a typical figure from
+# the class of 1280x1024 NIR-enhanced global-shutter machine-vision sensors (ON Semi PYTHON 1300,
+# Sony IMX/Pregius parts, Basler ace and similar cores); replace them before relying on results.
+#
+# This is the fourth band in the repository and, like the third, it required no change to any
+# kernel: it classifies as NIR by overlap (irsim.config.bands), takes the reflective illumination
+# path by regime, and `make luts` generates its LUT with the same command as the LWIR one.
+#
+# **What is physically different about this band.** It is the shortest and the most purely
+# reflective of the four. At 300 K a blackbody's emission at 0.9 um is around 1e-19 of its
+# emission at 10 um, so self-emission is not merely small here -- it is absent to any precision
+# that matters, and everything the camera sees is reflected sunlight, moonlight or airglow. The
+# thermal chain still runs (surface temperature still drives the emissive term, because the code
+# does not special-case bands), and it still contributes nothing.
+#
+# One consequence is worth knowing before reading a LUT report for this band. `make luts` compares
+# the response-weighted band integral against a flat top-hat over the nominal 0.75-1.0 um and
+# reports **-41 % at 300 K and -71 % at 600 K**, which looks alarming and is correct: in the Wien
+# tail Planck rises by e^16 across this band at 300 K, so the emissive integral is dominated by
+# the long edge -- where the response has fallen to 0.087 -- and by the tail past 1.0 um that the
+# top-hat does not cover at all. It says nothing about the reflective path, where the solar
+# spectrum is nearly flat across the band and the response shape is what decides the answer.
+
+sensor:
+  name: example_nir_si_1280
+  band:
+    lambda_min_um: 0.75
+    lambda_max_um: 1.0
+    spectral_response: spectra/responses/nir_si.csv  # relative to data/; ESTIMATED
+    regime: reflective                           # emissive | reflective | mixed
+
+  optics:
+    f_number: 1.4                                # ESTIMATED -- typical fast C-mount lens
+    focal_length_mm: 12.0                        # 28.7 deg HFOV on 1280 x 4.8 um
+    transmittance: 0.92                          # ESTIMATED -- coated glass, good in the NIR
+    housing_temp_mode: ambient                   # fixed | ambient | coupled
+    housing_self_heating_k: 0.0                  # the housing's own emission in this band is
+                                                 # ~1e-19 of the scene signal, so the node's
+                                                 # temperature cannot matter; ambient is the
+                                                 # honest setting rather than a modelling choice
+    cold_shield_efficiency: 1.0                  # n/a -- silicon CMOS is uncooled, no dewar
+    distortion:
+      model: brown_conrady
+      coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]          # ESTIMATED -- calibrate
+    vignetting_cos4: true
+
+  fpa:
+    type: photon
+    width: 1280
+    height: 1024
+    pitch_um: 4.8                                # ESTIMATED -- 1280x1024 global-shutter class
+    fill_factor: 0.60                            # ESTIMATED -- front-illuminated with microlens
+    frame_rate_hz: 60
+    bit_depth: 12                                # ESTIMATED -- 12-bit is the usual CMOS ADC
+    quantum_efficiency: 0.43                     # band-average; agrees with the generated curve,
+                                                 # whose peak QE is 0.431 at 0.775 um from 6 um
+                                                 # of epitaxial silicon (generate_response_curves)
+    well_capacity_e: 1.0e4                       # ESTIMATED -- small pixels hold few electrons,
+                                                 # which is the real dynamic-range limit here
+    integration_time_ms: 16.0                    # fits the 16.667 ms frame period
+    dark_current_model: arrhenius
+    read_noise_e: 7.0                            # ESTIMATED -- a mature silicon ROIC is quiet,
+                                                 # 17x better than the InGaAs part in this repo
+    dark_current:
+      i_ref_a_per_pixel: 1.6e-18                 # ESTIMATED -- 10 e-/px/s at 300 K
+      t_ref_k: 300.0
+      band_gap_ev: 1.12                          # silicon, indirect
+
+  noise:
+    # NOT A DATASHEET FIGURE AND NOT USABLE AS ONE -- but not invented either. §9.4 defines NETD
+    # against a 300 K blackbody, and this band's answer is worth stating because it is the most
+    # extreme case in the repository: a 300 K hemisphere-filling blackbody delivers
+    # **3.7e-10 photoelectrons per pixel per 16 ms frame** through this camera -- one electron
+    # roughly every seventy-five years -- against 7 e- of read noise. Evaluating §9.4 on the
+    # camera's own numbers,
+    #     NETD = sigma_read / (A_d . pi/(4F^2+1) . tau . QE . t_int . dLb_q/dT) = 1.21e11 K,
+    # which is not a sensitivity but a restatement of "thermal contrast does not exist at 0.9 um".
+    # Compare the SWIR file's 976 K: eight orders of magnitude of the same physics.
+    # The schema requires the field because it was written for emissive bands; M11.6's
+    # electron-space budget (quantum_efficiency, well_capacity_e, read_noise_e, dark_current
+    # above) is what actually sets this camera's noise, and §9.4's cross-check is skipped for a
+    # reflective band where the definition is vacuous (ADR 0025 addendum). Nothing in the NIR path
+    # may anchor to this field.
+    netd_mk_at_300k: 1.211e14                    # DERIVED 2026-09-15 from this file's own numbers
+    ratios_3d:                                   # relative to sigma_TVH; ESTIMATED
+      tvh: 1.00
+      vh:  0.15                                  # silicon FPN is well corrected on-chip
+      h:   0.06
+      v:   0.04
+      tv:  0.03
+      th:  0.03
+      t:   0.02
+    fpn_drift_tau_s: 600.0                       # ESTIMATED -- no membrane and a stable die
+    bad_pixel_fraction: 0.00002                  # ESTIMATED -- silicon is the mature technology
+                                                 # here; 100x better than the InGaAs array
+    bad_pixel_cluster_lambda: 1.1
+
+  nuc:
+    mode: shutterless                            # a CMOS imager has no mechanical shutter
+    ffc_interval_s: 600                          # unused by the shutterless path; kept in range
+    ffc_freeze_ms: 0
+    residual_gain_ppm_per_k: 300                 # ESTIMATED -- on-chip correction, low drift
+    residual_offset_mk_per_k: 0                  # mK/K is an emissive-band unit; this camera's
+                                                 # shutterless residual lives in the gain term
+    shutterless_tau_s: 120.0
+
+  isp:
+    agc: plateau_equalization
+    plateau: 0.012
+    clip_percentiles: [0.005, 0.995]
+    gamma: 1.0
+    dde_gain: 0.25
+    polarity: white_hot
+    palette: gray
+
+  outputs:
+    radiance_linear: true
+    apparent_temperature: false                  # meaningless in a reflective band: inverting Lb
+                                                 # does not give the scene temperature when the
+                                                 # signal is reflected sunlight (§12.1)
+    dn_16: true
+    display_8: true

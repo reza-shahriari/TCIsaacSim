@@ -1,0 +1,108 @@
+# Generic 1280x1024 silicon CMOS NIR camera, relative spectral response R(lambda), peak-normalised.
+# STATUS: ESTIMATED -- not a measurement of any specific unit. Long-pass filter + silicon epi
+# absorption + optics folded together.
+#
+# Shape (docs/physics-model.md §12.1; the NIR band is reflective, roadmap M11):
+#   * cut-on: raised cosine over 0.72-0.78 um. This is the FILTER, not the detector. A NIR camera
+#     is an ordinary visible imager with its IR-cut filter replaced by a long pass, so the
+#     short-wave edge is an interference coating and is steep; silicon itself responds right
+#     through the visible.
+#   * body: QE(lambda) = 1 - exp(-alpha(lambda) . d) with d = 6 um of epitaxial silicon and
+#     alpha from the band-edge table in the generator, peak-normalised on write (the absolute
+#     peak is QE = 0.431 at 0.775 um; absolute efficiency belongs in fpa.quantum_efficiency,
+#     ADR 0009). There is no plateau. Silicon becomes
+#     transparent as the photon energy approaches its 1.12 eV indirect gap, so the response peaks
+#     at 0.775 um -- where the filter has finished opening and silicon has not yet given up --
+#     and then falls monotonically by 10.6x between 0.80 and 1.00 um (R = 0.926 -> 0.087). That
+#     fall-off is the single most important fact about this band: it is the reason a NIR camera is
+#     a *near*-infrared camera and not a SWIR one, and the reason a NIR scene is lit almost
+#     entirely by the short end of its own band.
+#   * cut-off: the same exponential, which reaches zero of its own accord at 1.107 um (1.12 eV).
+#     No filter is needed or modelled at the long end.
+# Expected error vs a measured curve: the alpha anchors are good to ~10 % and the epi thickness
+# is a design choice that varies by part, so the fall-off rate is the uncertain quantity; the
+# band edges are good to ~0.01 um (filter) and ~0.005 um (gap).
+# Columns: wavelength in MICROMETRES, dimensionless response in [0, 1]. Grid 0.005 um.
+# Authored 2026-09-15.
+wavelength_um,response
+0.700,0.000000
+0.705,0.000000
+0.710,0.000000
+0.715,0.000000
+0.720,0.000000
+0.725,0.022847
+0.730,0.086701
+0.735,0.182771
+0.740,0.300592
+0.745,0.428914
+0.750,0.556576
+0.755,0.688339
+0.760,0.805707
+0.765,0.900590
+0.770,0.966717
+0.775,1.000000
+0.780,0.998737
+0.785,0.980343
+0.790,0.962153
+0.795,0.944173
+0.800,0.926404
+0.805,0.894160
+0.810,0.862667
+0.815,0.831938
+0.820,0.801983
+0.825,0.772809
+0.830,0.744420
+0.835,0.716820
+0.840,0.690006
+0.845,0.663978
+0.850,0.638729
+0.855,0.608861
+0.860,0.580138
+0.865,0.552543
+0.870,0.526054
+0.875,0.500649
+0.880,0.476302
+0.885,0.452987
+0.890,0.430676
+0.895,0.409340
+0.900,0.388949
+0.905,0.366574
+0.910,0.345368
+0.915,0.325285
+0.920,0.306277
+0.925,0.288298
+0.930,0.271301
+0.935,0.255243
+0.940,0.240079
+0.945,0.225765
+0.950,0.212261
+0.955,0.194480
+0.960,0.178124
+0.965,0.163090
+0.970,0.149281
+0.975,0.136604
+0.980,0.124972
+0.985,0.114304
+0.990,0.104525
+0.995,0.095565
+1.000,0.087357
+1.005,0.075242
+1.010,0.064783
+1.015,0.055760
+1.020,0.047980
+1.025,0.041275
+1.030,0.035500
+1.035,0.030528
+1.040,0.026248
+1.045,0.022565
+1.050,0.019397
+1.055,0.014172
+1.060,0.010351
+1.065,0.007559
+1.070,0.005519
+1.075,0.004029
+1.080,0.002941
+1.085,0.002147
+1.090,0.001567
+1.095,0.001144
+1.100,0.000000
