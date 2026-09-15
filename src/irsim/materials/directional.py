@@ -96,11 +96,35 @@ def directional_emissivity(
     from irsim.materials.nk import band_directional_emissivity, load_nk_table
 
     if response is None:
-        raise ValueError(
-            f"{material.name}: Level A needs the camera's own R(λ) -- ε_B(θ) is a band average "
-            "of a spectral Fresnel curve, so it cannot be formed without a band"
-        )
-    table = load_nk_table(material.spec.optical.angular_model.n_k_file, data_dir)
-    return np.asarray(
-        band_directional_emissivity(table, response, c64, t_ref_k, form), dtype=np.float32
+        # A nominal top-hat over the band's §12.1 range, the same fallback `band_properties`
+        # uses. Level A needs *a* band because ε_B(θ) is a band average of a spectral Fresnel
+        # curve; it does not need the caller to have a camera in hand, and a thermal solver
+        # integrating over bands genuinely does not.
+        from irsim.materials.library import nominal_response
+
+        response = nominal_response(band)
+    # The library already resolved the path against the data root when it loaded the material;
+    # re-resolving the raw `n_k_file` string here would need a second copy of that rule, and the
+    # two would differ the first time a material moved.
+    source = (
+        material.n_k_path
+        if material.n_k_path is not None
+        else (material.spec.optical.angular_model.n_k_file)
     )
+    table = load_nk_table(str(source), data_dir)
+    shape = np.asarray(band_directional_emissivity(table, response, c64, t_ref_k, form))
+    at_normal = float(band_directional_emissivity(table, response, 1.0, t_ref_k, form))
+    if not at_normal > 0.0:
+        raise ValueError(f"{material.name}: Level A gives zero emissivity at normal incidence")
+    # **Level A supplies the shape; the authored band value supplies the magnitude.**
+    #
+    # Ideal Fresnel from an n/k table describes a clean, optically smooth interface. Real surfaces
+    # are neither: §16.2 gives bare aluminium ε = 0.09 in LWIR, while a Drude metal gives 0.012 --
+    # an oxide layer and a little roughness are worth almost an order of magnitude. Taking the
+    # table's absolute value would fix a ~30 % error in angular *shape* by introducing an 8x error
+    # in the emissivity itself, which is a bad trade in the obvious direction.
+    #
+    # Scaling also makes Level A consistent with B and C, which both already take ε₀ from the
+    # authored band value. Without it, ε(0) would mean one thing for a Fresnel material and
+    # another for every other material in the library.
+    return np.asarray(np.clip(epsilon_b * shape / at_normal, 0.0, 1.0), dtype=np.float32)

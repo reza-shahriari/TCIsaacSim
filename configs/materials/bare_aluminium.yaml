@@ -5,7 +5,7 @@ material:
   name: bare_aluminium
   source: literature
   reference: "docs/physics-model.md section 16.2; NIR/SWIR ESTIMATED"
-  description: "Trim, wheels, unpainted aircraft skin; Level C angular model until M7.6 (metals rise toward grazing)"
+  description: "Trim, wheels, unpainted aircraft skin; Level A (Fresnel) because a metal's emissivity RISES toward grazing and no Level B (a, p) can represent that"
   thermal:
     density_kg_m3: 2700
     specific_heat_j_kgk: 900
@@ -15,4 +15,8 @@ material:
   optical:
     emissivity_per_band: {nir: 0.08, swir: 0.05, mwir: 0.06, lwir: 0.09}
     roughness_per_band: {nir: 0.10, swir: 0.08, mwir: 0.05, lwir: 0.03}
-    angular_model: {type: constant}
+    # Level A, not constant: §4.2 permits a constant only above ε = 0.93 and this is 0.09, and
+    # Level B cannot help either because a metal's ε rises with angle (M7.6 refuses to fit it).
+    # The table supplies the SHAPE; the emissivity_per_band values above supply the magnitude --
+    # ideal Drude aluminium is ε = 0.012 at 10 µm, and §16.2's 0.09 is a real oxidised surface.
+    angular_model: {type: fresnel, n_k_file: nk/aluminium.csv}

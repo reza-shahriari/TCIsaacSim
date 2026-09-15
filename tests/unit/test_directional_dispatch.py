@@ -127,29 +127,97 @@ def test_the_limb_is_darker_than_the_centre_for_every_dielectric(library, boson)
 # ---------------------------------------------------------------------------------------------
 
 
-def test_level_c_is_refused_below_the_section_4_2_bound(library, boson) -> None:  # type: ignore[no-untyped-def]
-    """⚠️ The committed library violates §4.2 once, and this pins it rather than hiding it.
+def _with_constant_angular(material):  # type: ignore[no-untyped-def]
+    """The same material, forced to Level C, so the guard can be exercised on a real ε."""
+    from irsim.config.materials import ConstantAngular
 
-    `bare_aluminium` declares `angular_model: constant` with ε_LWIR far below 0.93 — and it is a
-    *metal*, whose ε rises with angle, so a constant is wrong in the one direction Level B cannot
-    fix either (M7.6 refuses to fit it). The correct model is Level A, which needs an aluminium
-    n/k table; M7.5 has shipped only water so far. Until it does, any scene that needs bare
-    metal's ε(θ) raises here instead of quietly rendering a flat limb.
+    optical = material.spec.optical.model_copy(
+        update={"angular_model": ConstantAngular(type="constant")}
+    )
+    return type(material)(
+        spec=material.spec.model_copy(update={"optical": optical}),
+        path=material.path,
+        spectrum=material.spectrum,
+        n_k_path=material.n_k_path,
+    )
+
+
+def test_level_c_is_refused_below_the_section_4_2_bound(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """⚠️ Enforcing this bound changed two committed materials, which is the point of enforcing it.
+
+    `bare_aluminium` declared `constant` at ε_LWIR = 0.09 and `asphalt_dry` at ε_NIR = 0.92, both
+    under §4.2's 0.93. Aluminium is now Level A — a metal's ε *rises* with angle, so Level B
+    cannot represent it at any (a, p) either — and asphalt is Level B with a ≈ 0, which is what
+    §4.2 itself prescribes for rough dielectrics. The guard is exercised here on a material forced
+    back to Level C, so it keeps its ability to fail now that nothing in the library trips it.
     """
-    aluminium = library["bare_aluminium"]
-    assert angular_level(aluminium) == "C"
-    assert float(aluminium.band_properties("lwir", boson).emissivity) < LEVEL_C_MIN_EPSILON
+    forced = _with_constant_angular(library["glass_windshield"])
+    assert float(forced.band_properties("lwir", boson).emissivity) < LEVEL_C_MIN_EPSILON
     with pytest.raises(ValueError, match="§4.2"):
-        _dispatch(aluminium, "lwir", np.float32(1.0), boson)
+        _dispatch(forced, "lwir", np.float32(1.0), boson)
 
 
 def test_level_c_is_allowed_for_a_rough_high_emissivity_surface(library, boson) -> None:  # type: ignore[no-untyped-def]
-    """The other side of the bound: asphalt is exactly what §4.2 permits a constant for."""
-    asphalt = library["asphalt_dry"]
-    assert angular_level(asphalt) == "C"
-    assert float(asphalt.band_properties("lwir", boson).emissivity) >= LEVEL_C_MIN_EPSILON
-    values = _dispatch(asphalt, "lwir", np.linspace(1.0, 0.0, 9, dtype=np.float32), boson)
-    assert float(values.std()) == 0.0, "a constant model must be constant"
+    """The other side of the bound: human skin at ε = 0.98 is exactly what a constant is for."""
+    forced = _with_constant_angular(library["human_skin"])
+    assert float(forced.band_properties("lwir", boson).emissivity) >= LEVEL_C_MIN_EPSILON
+    values = _dispatch(forced, "lwir", np.linspace(1.0, 0.0, 9, dtype=np.float32), boson)
+    assert len(set(values.tolist())) == 1, "a constant model must return one value, bit for bit"
+
+
+def test_no_committed_material_relies_on_an_illegal_constant(library, boson) -> None:
+    """A survey, so a new material that gets this wrong fails here and not in a render."""
+    for name in library.names:
+        material = library[name]
+        if angular_level(material) != "C":
+            continue
+        for band in ("nir", "swir", "mwir", "lwir"):
+            epsilon = float(material.band_properties(band).emissivity)
+            assert epsilon >= LEVEL_C_MIN_EPSILON, f"{name} band {band}: ε = {epsilon}"
+
+
+def test_the_metal_is_the_only_material_whose_emissivity_rises_with_angle(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """§4.2's dielectric/metal split, as a property of the whole committed library.
+
+    Bare aluminium goes 0.090 at normal to 0.146 at 70°; everything else falls. This is why it
+    needs Level A: the sign of its angular slope is one Level B cannot produce.
+    """
+    rising = []
+    for name in library.names:
+        material = library[name]
+        centre = float(_dispatch(material, "lwir", np.float32(1.0), boson))
+        limb = float(_dispatch(material, "lwir", np.float32(COS_70), boson))
+        if limb > centre:
+            rising.append(name)
+    assert rising == ["bare_aluminium"], rising
+    aluminium = library["bare_aluminium"]
+    assert float(_dispatch(aluminium, "lwir", np.float32(1.0), boson)) == pytest.approx(
+        0.09, abs=1e-6
+    )
+    assert float(_dispatch(aluminium, "lwir", np.float32(COS_70), boson)) == pytest.approx(
+        0.146, abs=0.01
+    )
+
+
+def test_level_a_takes_its_magnitude_from_the_authored_band_value(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """⚠️ The table supplies the **shape**; the material supplies the **magnitude**.
+
+    Ideal Drude aluminium is ε = 0.012 at 10 µm and §16.2 gives bare aluminium 0.09 — an oxide
+    layer and a little roughness are worth almost an order of magnitude. Taking the table's
+    absolute value would fix a ~30 % error in angular shape by introducing an 8× error in the
+    emissivity itself. Scaling also keeps ε(0) meaning the same thing at all three levels.
+    """
+    from irsim.materials.nk import band_directional_emissivity, load_nk_table
+
+    aluminium = library["bare_aluminium"]
+    authored = float(aluminium.band_properties("lwir", boson).emissivity)
+    table = load_nk_table(str(aluminium.n_k_path), DATA)
+    raw = float(band_directional_emissivity(table, boson, 1.0))
+    assert raw < 0.02, "the ideal-metal model should be far below the authored value"
+    assert authored / raw > 5.0
+    assert float(_dispatch(aluminium, "lwir", np.float32(1.0), boson)) == pytest.approx(
+        authored, abs=1e-6
+    )
 
 
 # ---------------------------------------------------------------------------------------------

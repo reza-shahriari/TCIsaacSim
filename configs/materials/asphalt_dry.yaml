@@ -13,4 +13,8 @@ material:
   optical:
     emissivity_per_band: {nir: 0.92, swir: 0.90, mwir: 0.92, lwir: 0.94}
     roughness_per_band: {nir: 0.80, swir: 0.80, mwir: 0.75, lwir: 0.70}
-    angular_model: {type: constant}
+    # §4.2: "nearly flat (a → 0) for rough dielectrics like asphalt and vegetation". Level B with
+    # a small a rather than `constant`, because the constant is only licensed above ε = 0.93 and
+    # asphalt's NIR and MWIR values sit just under it. ESTIMATED: a is the small residual falloff
+    # a rough dielectric still has, not a fitted value -- there is no n/k table for asphalt.
+    angular_model: {type: empirical, a: 0.05, p: 4}
