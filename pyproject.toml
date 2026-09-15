@@ -70,5 +70,18 @@ strict = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["scipy.*", "matplotlib.*", "omni.*", "pxr.*", "isaacsim.*", "warp.*", "carb.*"]
+module = [
+    "scipy.*",
+    "matplotlib.*",
+    "omni.*",
+    "pxr.*",
+    "isaacsim.*",
+    "warp.*",
+    "carb.*",
+    # ROS 2 is a system-level install (sourced setup.bash), not a pip package this project can
+    # depend on, so it is never present for a type check. M10.10b's bridge imports it lazily in
+    # exactly one function and everything else about the messages is checked without it.
+    "rclpy.*",
+    "sensor_msgs.*",
+]
 ignore_missing_imports = true

@@ -34,7 +34,61 @@ from irsim_eval.discriminator import gap_score
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
+def _load_sequences(directory: pathlib.Path, limit: int | None) -> list[np.ndarray]:
+    """Frames from the ME.1 canonical layout -- one or many sequences under ``directory``.
+
+    This is what `generate_matched_scenario.py` writes, so a synthetic set needs no conversion
+    step between being rendered and being compared, and nothing can go wrong in one.
+    """
+    from irsim_eval.data import read_sequence
+
+    roots = sorted(d for d in directory.iterdir() if (d / "index.json").is_file())
+    if (directory / "index.json").is_file() and not roots:
+        roots = [directory]
+    frames: list[np.ndarray] = []
+    for root in roots:
+        for frame in read_sequence(root):
+            frames.append(np.asarray(frame.image))
+            if limit is not None and len(frames) >= limit:
+                return frames
+    return frames
+
+
+def _load_dataset_clips(name: str, limit: int, max_frames: int) -> list[np.ndarray]:
+    """Decode real clips straight out of the indexed archive -- no conversion step on disk.
+
+    Reads exactly what ME.5 measured: the luma plane, at the rate the container states (never the
+    index's), with the missing colour-range flag left alone rather than guessed at.
+    """
+    import tempfile
+    import zipfile
+
+    from irsim_eval.decode import decode_gray8
+    from irsim_eval.fetch import target_dir
+
+    archives = sorted(target_dir(name).glob("*.zip"))
+    if not archives:
+        raise SystemExit(
+            f"no archive for {name}; fetch it with scripts/fetch_validation_data.py --set {name}"
+        )
+    frames: list[np.ndarray] = []
+    with zipfile.ZipFile(archives[0]) as zf:
+        members = sorted(
+            n for n in zf.namelist() if "/Video_IR/" in n and n.lower().endswith(".mp4")
+        )[:limit]
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = pathlib.Path(tmp) / "clip.mp4"
+            for member in members:
+                scratch.write_bytes(zf.read(member))
+                frames.extend(decode_gray8(scratch, max_frames=max_frames))
+    return frames
+
+
 def _load_frames(directory: pathlib.Path, limit: int | None) -> list[np.ndarray]:
+    if (directory / "index.json").is_file() or any(
+        (d / "index.json").is_file() for d in directory.iterdir() if d.is_dir()
+    ):
+        return _load_sequences(directory, limit)
     paths = sorted(p for p in directory.iterdir() if p.suffix.lower() in {".npy", ".png"})
     if limit is not None:
         paths = paths[:limit]
@@ -142,6 +196,13 @@ def _run(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--real", type=pathlib.Path)
+    parser.add_argument(
+        "--real-from-set",
+        default=None,
+        help="decode real clips straight out of an indexed archive (e.g. halmstad_drone_detection)",
+    )
+    parser.add_argument("--real-clips", type=int, default=6)
+    parser.add_argument("--real-frames-per-clip", type=int, default=60)
     parser.add_argument("--synthetic", type=pathlib.Path)
     parser.add_argument("--self-test", action="store_true", help="synthetic vs itself: the control")
     parser.add_argument("--limit", type=int, default=None, help="frames per set")
@@ -155,11 +216,21 @@ def main(argv: list[str] | None = None) -> int:
         real, synthetic = _self_test_frames(args.seed)
         label = "self-test (synthetic vs itself)"
     else:
-        if not (args.real and args.synthetic):
-            parser.error("--real and --synthetic are required unless --self-test is given")
-        real = _load_frames(args.real, args.limit)
+        if not args.synthetic or not (args.real or args.real_from_set):
+            parser.error(
+                "--synthetic and one of --real / --real-from-set are required "
+                "unless --self-test is given"
+            )
+        if args.real_from_set:
+            real = _load_dataset_clips(
+                args.real_from_set, args.real_clips, args.real_frames_per_clip
+            )
+            source = f"{args.real_from_set} ({args.real_clips} clips)"
+        else:
+            real = _load_frames(args.real, args.limit)
+            source = str(args.real)
         synthetic = _load_frames(args.synthetic, args.limit)
-        label = f"{args.real} vs {args.synthetic}"
+        label = f"{source} vs {args.synthetic}"
 
     report = _run(
         real,

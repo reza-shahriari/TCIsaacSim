@@ -43,6 +43,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **ROS 2 message construction, checked without a ROS graph** (M10.10b).
+  `irsim_isaac.ros2_bridge` builds `CameraInfo` and the four `Image` messages as plain data, so the
+  part most likely to be wrong — the arithmetic — is testable on any machine, and `publish_frame` is
+  the single function that imports `rclpy`. It raises naming the dependency rather than an
+  `ImportError` from inside a library nobody asked for: ROS 2 is a system-level install, not a pip
+  package this project can add for you, and it is not present here.
+- Intrinsics are derived from the sensor's own blocks (`fx = f/p`) and never authored, so a camera
+  and its `CameraInfo` cannot disagree. The principal point is `width/2` — the project's pixel-edge
+  convention — because `(width − 1)/2` is invisible in a preview and a systematic half-pixel bias in
+  anything that triangulates. The stamp is **integer nanoseconds**, which survives 3600.0000005 s
+  where a float second at hour scale would not.
+- Encodings follow non-negotiable #2 on the wire: `32FC1` for apparent temperature and radiance,
+  `mono16` for the ADC plane because it *is* integer counts, `rgba8` for the ISP's picture. A
+  float16 apparent-temperature plane is **refused** — at 300 K that grid is 0.25 K coarse, five
+  times a 50 mK NETD, so a subscriber would be reading a camera five times worse than the one that
+  sent it — while float64 is narrowed. An output the config switched off is **skipped, not zeroed**:
+  a black `apparent_t` topic is indistinguishable from a scene at absolute zero.
 - **A camera and scenarios matched to the reference set** (M12.1).
   `configs/sensors/halmstad_boson_320.yaml` is the Breach PTQ-136's Boson 320×256 at 9.03 mm —
   24.0° × 19.3°, the publication's stated figures — and **its ISP models the recorder, not the
