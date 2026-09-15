@@ -43,6 +43,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Level B angular emissivity and its fitter** (M7.6, ADR 0042, §4.2). `emissivity_empirical` is
+  §4.2's ε(θ) = ε₀[1 − a(1 − cos θ)^p], and `fit_empirical` / `fit_from_nk` / `fit_band_level_b`
+  bake (a, p) per material class against Level A, searching §4.2's p ∈ {4, 5, 6} exhaustively (a is
+  linear given p, so each candidate is one least-squares solve and the optimum over the set is
+  exact). Measured: water **rms 0.0009**, glass 0.0034, paint 0.0034 over 0–70°.
+- **⚠️ The rejection criterion had to change, and that is the finding.** An absolute residual bar
+  does **not** catch a metal. Aluminium's ε *rises* with angle — 0.019 at normal to 0.030 at 70° —
+  which Level B cannot represent at any a ≥ 0, but because ε never exceeds 0.03 a completely wrong
+  flat shape fits to **rms 0.0034**, comfortably inside the 0.02 the roadmap asks for. An error bar
+  is meaningless on a quantity that small. The fit now checks the monotonic **direction** first, on
+  a scale relative to ε₀, and refuses a rising curve whatever its residual. Left as it was, the limb
+  of every metal panel would have rendered darker when it should be brighter, and nothing would have
+  complained. `bake_angular_models` **returns** its refusals rather than swallowing them, because a
+  silently missing entry becomes a silently constant ε.
+- **One dispatch for ε(θ), on the level the material declares** (M7.7, §4.2, §13.3).
+  `directional_emissivity` selects Fresnel / empirical / constant per `angular_model`, takes and
+  returns float32, refuses float16, uses ǀcos θǀ so a back-facing normal is not physics, and is
+  finite at grazing. It is the CPU oracle the kernel's ε(θ) will be compared against.
+- **⚠️ Enforcing §4.2's Level C bound found a violation in the committed library.**
+  `bare_aluminium` declares `angular_model: constant` with ε_LWIR far below the 0.93 §4.2 permits —
+  and it is a metal, so Level B cannot fit it either. It now **raises**, naming Level A as the fix,
+  rather than quietly rendering a flat limb; the aluminium n/k table M7.5 still owes is now a
+  blocking dependency for any scene needing bare metal's ε(θ). Asphalt, which is exactly what §4.2
+  permits a constant for, passes.
+- **⚠️ And the fit must see the band, not a representative wavelength.** Fitting water at 10 µm and
+  comparing against the Boson band average is **0.0275** at 70° — past the 0.02 acceptance
+  criterion, so it is a real error and not a rounding one. `fit_band_level_b` fits against the
+  band-averaged Level A curve, and a test pins that the single-wavelength route fails (27 tests).
 - **Band-effective material properties** (M7.3, ADR 0010, §12.3, §3.1). `PropertySpectrum.band_effective`
   turns a material's ε(λ) into the number *one camera* sees, and `weighting_for_fpa` decides which
   Planck weighting from the FPA type rather than from the call site: a bolometer absorbs power and
