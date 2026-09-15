@@ -44,7 +44,11 @@ def test_the_water_table_loads_with_provenance(water) -> None:
     """A table with no `# source:` is unusable, so the loader treats provenance as data."""
     assert "Segelstein" in water.source
     assert "1981" in water.source
-    assert water.support_um == (2.0, 15.6)
+    # EXTENDED 2026-09-15 from 2.0 um down to 0.65 um, re-truncated from the same Segelstein
+    # download, because a maritime scene in SWIR or NIR needs water's reflectance over 0.7-1.8 um
+    # and the loader refuses to extrapolate. The 365 rows at and above 2.0 um are unchanged.
+    assert water.support_um == (0.6501, 15.6)
+    assert water.wavelength_um.size == 535
     assert np.all(np.diff(water.wavelength_um) > 0)
     assert np.all(water.n > 0) and np.all(water.k >= 0)
 
@@ -86,11 +90,22 @@ def test_n_and_k_are_interpolated_separately(water) -> None:
 
 
 def test_outside_the_table_raises_rather_than_extrapolating(water) -> None:
-    """20 µm from a 15.6 µm table is a fabricated number, and fabricated numbers propagate."""
+    """20 µm from a 15.6 µm table is a fabricated number, and fabricated numbers propagate.
+
+    This refusal is not theoretical: it is what stopped a maritime SWIR render outright rather
+    than letting it invent water's optical constants, and extending the table from the published
+    source was the fix. The bound below the band moved from 2.0 µm to 0.65 µm; the behaviour did
+    not.
+    """
     with pytest.raises(ValueError, match="outside the table"):
         water.at(20.0)
     with pytest.raises(ValueError, match="outside the table"):
-        water.at(1.0)
+        water.at(0.4)
+    # ...and the range a reflective band actually needs is inside it now.
+    for lam in (0.75, 1.0, 1.55, 1.8):
+        n, k = water.at(lam)
+        assert 1.29 < float(n) < 1.34, (lam, n)
+        assert 0.0 <= float(k) < 1e-3, (lam, k)
 
 
 def test_fresnel_from_table_agrees_with_the_direct_call(water) -> None:

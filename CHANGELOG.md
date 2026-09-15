@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Water's n/k table extended to 0.65 µm** (M7.5). A maritime scene in SWIR or NIR needs water's
+  Fresnel reflectance over 0.7–1.8 µm, and the loader **refuses to extrapolate** an n/k table rather
+  than invent optical constants — so a ship render in those bands failed outright until the range
+  existed. That refusal is the correct behaviour and it caught a real gap. The fix is a
+  re-truncation of the same published download the file already cites (Segelstein 1981), and all
+  **365 rows at and above 2.0 µm are byte-identical** to the previous file, which is the check that
+  this is the same table and not a second compilation stitched onto the first.
+- What the new range means for the sea: reflectance there is set by n alone — k runs from 1.6e-7 at
+  0.75 µm to 3.6e-4 at the 1.45 µm band, and at those values the absorption term changes R by less
+  than 1e-6 — and n itself moves only 1.3272 → 1.3034 across 0.75–1.80 µm, so normal-incidence
+  reflectance varies between 0.0201 and 0.0192. The sea is the same dark, strongly angle-dependent
+  mirror in every reflective band that it is in the visible.
 - **The AOV semantics probe is closed (M2.4, ADR 0014 addendum, §13.3/§5.3(a)).** The M2 gate spike
   left three channels open because its unlit, static, front-parallel ramp could not exercise them.
   M10.1 measured all three on a lit, tilted, moving scene; what remained was not an experiment but
