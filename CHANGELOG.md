@@ -43,6 +43,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Tier 3 sensor-chain phenomenology** (M9.9, §15 T3, §16.4 step 9). `tests/unit/test_tier3_sensor_chain.py`
+  measures the four things a *camera* does to a picture that a radiometer does not — AGC collapse,
+  the FFC freeze, the membrane trail and saturation — each of which is visible in an image and each
+  of which a radiometrically perfect frame scaled linearly would hide.
+- **AGC collapse**, on a 300/303 K pair with a 5 % 450 K plume: `linear` keeps **1.54 %** of the
+  pair's contrast (231 codes → 3.6), `plateau_equalization` keeps **76.3 %** (128 → 98), and
+  `plateau_local` 8×8 keeps **144 %** — the local operator *raises* pair contrast under the plume,
+  though from a smaller C0 (14.4 codes), because it has already spent the global gradient on local
+  detail. That is the most recognisable artefact of real thermal video and the one most often left
+  out of a simulator.
+- **The FFC freeze reports 42 frozen frames and a viewer sees 43 bit-identical pictures**, because
+  the frame the shutter held is itself the first of the run. Both numbers are asserted: it is an
+  off-by-one that only shows up when someone counts frames in a clip. The pattern reset is measured
+  on frame-averaged, flat-field-subtracted planes, because a single frame's spatial std is dominated
+  by per-pixel temporal noise (13.6 DN at this camera's NETD) and by cos⁴ vignetting, neither of
+  which an FFC touches.
+- **The membrane trail is a geometric series** with ratio **0.1888754 / 0.1888748 / 0.1888791 /
+  0.1888502 / 0.1888628** against e^{−dt/τ} = **0.1888756** — five terms to about 1e-5 — and the
+  cooled MWIR config leaves none at all, which is §16's "lateral motion smears LWIR, not cooled
+  MWIR" in its across-frame half. ⚠️ Getting there needed one correction: **the baseline must be the
+  settled signal.** Using the last measured frame leaves 19 % of its own residual in it, shifting
+  every term by the same amount and biasing the third ratio low by 2e-4 — exactly the size of the
+  effect being resolved.
+- A 1000 K source **clips at 65535** with DN monotone in scene temperature all the way up, so
+  nothing wraps; uint16 arithmetic that wrapped would turn the hottest thing in the scene into the
+  coldest.
+- **⚠️ Two of the row's six criteria are open and named rather than dropped**: the aerial
+  edge-asymmetry band needs ME.4's statistics of real imagery and the last criterion needs ME.6.
+  Both wait on public data this machine cannot fetch. A test asserts the roadmap row stays amber
+  while they are, so "amber" has something executable behind it instead of a note (9 tests).
 - **Tier 3 multi-band phenomenology, and the architecture claim** (M11.8, §15 T3, §5.2, §16.4 step 10).
   `tests/unit/test_tier3_multiband.py` runs LWIR, SWIR and MWIR against one prescribed facet scene
   (M6's solver is a later step, so the noon and 03:00 temperatures are authored inputs; the tests
