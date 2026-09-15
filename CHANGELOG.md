@@ -6,6 +6,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Tier 3 maritime phenomenology, on frames rather than on models** (MM.8, §15 T3, ADR 0078).
+  `irsim.validation.maritime_scene` is the maritime twin of MS.8's aerial fixture: sky above a
+  **spherical** horizon (0.1436° down at 20 m, three Boson pixels below where a flat-earth scene
+  would put it), sea below it taking `SeaModel.apparent_temperature_k` at each ray's own
+  depression, and vessels resolved or sub-pixel. `tests/unit/test_tier3_maritime.py` runs whole
+  frames through `run_frame`.
+- Sea and sky are **both background**, at `distance_m = 0`. The sea profile already contains its
+  own atmospheric path, so a non-zero distance would send stage 2 over the same 7 km again — an
+  error that would render as a plausibly hazier sea rather than as a bug. The rendered sea matches
+  the sea model's **un-tabulated** profile to **0.34 mK** through the whole chain, which is the
+  test that catches it.
+- A sea built on a different `SkyModel` than the frame's sky pixels now **raises**. The sea is
+  mostly reflected sky, so two sky models means a horizon with different weather on each side of
+  it — CLAUDE.md #6 in its most literal form, and it would render perfectly plausibly.
+
+### Fixed
+- ⚠️ **Two of MM.8's three written criteria are backwards, and the tests measure rather than assert
+  them.** Both assumed the sea behaves like an overcast *ground* scene, which MM.3 had already
+  found it does not (ADR 0078):
+- **"Sea near the horizon reads colder than sea close in" — it reads 2.89 K warmer.** The
+  profile's coldest point is an interior trough about 5° down, so a near-horizon frame sits on its
+  *rising* side (1.2 K of the span), and the atmospheric path then roughly doubles that because the
+  far ray is 7 km of air pulling toward T_air while the close ray is 530 m. The criterion is true
+  only of sea past the trough, not of the band a shore or mast camera actually works in. A
+  wide-field frame reproduces the trough directly: minimum at 4.9°, more than 1 K warmer at both
+  ends.
+- **"Overcast collapses that span below 20 % of clear" — it collapses to 57 %.** An overcast sky
+  stops the reflection varying with angle, but the cloud base is still colder than the water and
+  the atmospheric path does not care about cloud at all. Consistent with the surface-only 50–95 %
+  `test_sea_surface.py` already pinned.
+- The third criterion holds, and is the one that matters for detection: **polarity flips with
+  range.** A 289.5 K vessel reads **+1.27 K** against the sea at 574 m and **−0.86 K** at 7.9 km —
+  same vessel, opposite sign, with a contrast null somewhere between where it is invisible at any
+  sensitivity. A 310 K control stays bright at every range, so the flip is a property of that
+  vessel temperature and not of range itself.
+
+### Changed
+- MM.8 is **partly done**: the public-imagery half is blocked on data, not on effort. No public
+  maritime LWIR set is in `data/validation/datasets.yaml` — the six indexed sets are aerial or
+  single-frame, and only Halmstad states a licence at all (ME.1a) — so ME.2–ME.4's statistics have
+  nothing maritime to run over. Indexing one is the unblocking step.
+
+### Added
 - **Sea skin temperature: the cool skin and the diurnal warm layer** (MM.4, ADR 0080, §6.1/§6.5).
   A maritime scenario knows its **bulk** SST — that is what a buoy, a ship's intake or a satellite
   product reports, and it is what `ground.bulk_sst_k` authors. An infrared camera does not see it.
