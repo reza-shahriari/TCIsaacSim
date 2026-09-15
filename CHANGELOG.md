@@ -175,6 +175,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settles within a kelvin or two of ambient regardless of material or tilt. That is the only
   condition under which a car and the asphalt under it look the same in LWIR, which is what an
   ignition demo needs in frame 0.
+- **A car that starts its engine, filmed in LWIR** (MP.4b, ADR 0087/0088/0089).
+  `irsim_isaac.car_demo` + `scripts/render_car_ignition.py` + two scene configs. This is the scene
+  point-wise temperature exists for, and the number it produces is the milestone's claim: the
+  bonnet is **one USD prim**, flat to under a millikelvin in frame 0, and **6.3 K across** after
+  30 minutes — 127 NETD of structure that a per-prim bridge has one number to represent. The
+  falloff toward the wings is ADR 0088's configuration factor to the bay below, computed from the
+  bay's dimensions rather than authored as a Gaussian.
+- **The wheels do not warm, and the readout says so.** §6.6 makes tyre heating flexing work and
+  brake heating kinetic energy; a car idling in a car park is doing neither, so its tyres sit at
+  ambient (+0.000 K) however long it idles. It is printed beside the bonnet's rise because it is
+  the result a viewer disbelieves, and a test pins it so a later change cannot quietly "fix" it.
+- **What the field holds is not what the camera sees, and both are reported.** The road patch is
+  **1.30 K** in the field and only **0.15 K** (3 NETD) reaches the sensor: the warmest asphalt is
+  directly *under* the car and a 45° view cannot see it. Quoting the field number about an image
+  would have been the easy mistake.
+- **Two scenes, one engine.** `car_ignition_overcast_night.yaml` and `car_ignition_clear_night.yaml`
+  run the *same* §6.6 node on the *same* load profile and differ only in the sky. Measured after
+  30 minutes the road patch is **+4.13 K** under a clear sky against **+1.47 K** under overcast —
+  nearly three times, from the sky alone, because a clear night's car blocks a 40–50 K depression
+  (ADR 0088). A model that added the car's emission without removing the sky it occludes would
+  report the same number for both. The bonnet moves the *other* way (5.85 vs 6.50 K), since the
+  skin radiates to that sky too, which is the cross-check that this is the sky and not a scale.
+- Two fixed display spans are written beside the camera's own AGC output, because no single linear
+  span shows both features: the bonnet spans 6 K and the road patch under 1 K. They are anchored on
+  the first frame's **own median apparent temperature**, not on T_air — the two differ by ~0.9 K
+  here (ε 0.95 asphalt reflecting a cooler sky, plus 27 m of path), and a span centred on air
+  temperature renders the whole picture below its floor and black.
+- Found and fixed while getting the first frame out: the stage up axis had to be set to **+Y**
+  (Kit defaults to +Z, which gives `azimuth_from_rays` an up vector parallel to its own forward
+  and raises); `world_positions` now reuses `gbuffer_isaac`'s own plane validator rather than a
+  private copy, because the annotator delivers (H, W, **4**); and the render script reads its clock
+  *before* `get_outputs`, which advances it on the way out — on a time-lapse that labelled every
+  row with the state of the row after it.
+- ⚠️ **Known limit (MP.5).** §12.3 solves the asphalt as one surface, so the ground field inherits
+  a *uniform* spun-up state — the road as it would be with no car on it. Frame 0 is the moment the
+  car arrived, and every patch is one the run itself grew. A car that has stood for hours already
+  carries the full patch, which is most of what a real night image of a car park shows. Pinned by a
+  test so it is not mistaken for a result.
 
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`

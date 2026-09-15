@@ -1,0 +1,99 @@
+# The SAME car and the same key, under a clear cold sky instead of thick overcast. Schema v6.
+# Roadmap MP.4b; ADR 0088 is what the pair exists to show.
+#
+# Run this beside `car_ignition_overcast_night.yaml` and the difference is not the engine -- the
+# engine is identical, the same §6.6 node on the same load profile. The difference is the SKY, and
+# it lands on the road.
+#
+# Under a clear night the sky radiates 40-50 K below ambient. Every upward-facing surface in the
+# scene is losing heat to it, and the car standing over the asphalt BLOCKS it: the road under the
+# car sees a 286 K car instead of a 245 K sky, so it stops cooling while the road around it keeps
+# going. The result is the warm car-shaped patch that anyone who has looked at a thermal image of
+# a car park at night has seen -- and it is there in frame 0, before the key has turned, because
+# it is not engine heat at all. ADR 0088's occlusion term is the whole of it; a model that added
+# the car's own emission without removing the sky it occludes cannot produce this.
+#
+# So the pair separates two mechanisms that look alike in a single frame:
+#   overcast -> the sky is near ambient, the occlusion nearly cancels, and what appears after the
+#               key turns is ENGINE heat, on a genuinely flat frame 0
+#   clear    -> the occlusion dominates, growing a patch nearly 3x the overcast one over the same
+#               run, and the engine is a minor addition to it
+#
+# Use the overcast scene to demonstrate the point-wise bonnet gradient; use this one to
+# demonstrate what a car does to the ground it stands on. The site and start hour match the
+# overcast scene so only the weather differs.
+#
+# ⚠️ KNOWN LIMIT, and it matters most here. §12.3 solves the asphalt as ONE surface, so the ground
+# field inherits a uniform spun-up state -- the road as it would be with no car on it. Frame 0 is
+# therefore the moment this car arrived, and every patch below is one the run itself grew. A car
+# that has stood for hours would already carry the full patch, which is what a real night image of
+# a car park shows. Fixing it means spinning the field up with the car present; MP.5.
+#
+# ⚠️ `clear_midlat_summer_48h` declares "local = UTC+2" in its own header, so 01:00Z is 03:00
+# local -- the same pre-dawn hour, on a night that has been radiating to space since sunset.
+
+schema_version: 6
+scene:
+  name: car_ignition_clear_night
+  description: "The same car and key, under a clear cold sky: the patch is there before the engine"
+  weather_file: weather/clear_midlat_summer_48h.csv
+  atmosphere_preset: us_standard_clear
+  environment_preset: clear_dry
+  site: {latitude_deg: 45.0, longitude_deg: 30.0, altitude_m: 120.0}
+  start_utc: "2024-06-22T01:00:00Z"
+
+  targets:
+    # ---- the shell -------------------------------------------------------------------------
+    # `airframe` with no offset is exactly T_air(t), and under overcast that is what an unpowered
+    # panel that has stood all night actually is: the sky it radiates to is within a few kelvin of
+    # the air, so the balance's solution is ambient to well under a kelvin. On a CLEAR night this
+    # would be wrong by 5-8 K and these panels would need the §12.3 energy balance instead.
+    - {name: shell, solver: airframe, offset_k: 0.0}
+    - {name: glass, solver: airframe, offset_k: 0.0}
+
+    # The bonnet's per-prim value. Every pixel of it is overwritten by the MP.1 field (ADR 0087),
+    # so this is the fallback a non-strict render would fall back TO, and a guard: if the field
+    # ever failed to bind, the bonnet would go flat at ambient rather than quietly wrong.
+    - {name: bonnet_fallback, solver: airframe, offset_k: 0.0}
+
+    # ---- the wheels ------------------------------------------------------------------------
+    # §6.6's tyre row at zero load, which is to say: ambient. A stationary car does not warm its
+    # tyres however long it idles -- tyre heating is flexing work and brake heating is kinetic
+    # energy, and neither is happening in a car park (ADR 0089). What the wheels DO get is a
+    # little radiation from the bay through the arch, which the front pair picks up as a field.
+    - {name: tyre, solver: vehicle_source, source: tyre, load_s: [0.0, 1800.0], load: [0.0, 0.0]}
+
+    # ---- the engine ------------------------------------------------------------------------
+    # THE SUBJECT. §6.6's engine_bay row, derived and not typed: +65 K at full load with a 750 s
+    # rise. The key turns at t = 30 s so the film opens on a genuinely cold car, and the load is
+    # 0.45 rather than 1.0 because this is an idle in a car park, not a climb at full throttle.
+    - name: engine_bay
+      solver: vehicle_source
+      source: engine_bay
+      load_s: [0.0, 29.9, 30.0, 1800.0]
+      load:   [0.0,  0.0,  0.45,   0.45]
+
+    # The exhaust run under the floor: faster (tau 360 s) and hotter than the bay, which is what
+    # puts a warm STRIPE on the asphalt rather than a uniform blob.
+    - name: exhaust_pipe
+      solver: vehicle_source
+      source: exhaust_pipe
+      load_s: [0.0, 29.9, 30.0, 1800.0]
+      load:   [0.0,  0.0,  0.40,   0.40]
+
+    # The underbody as a whole: warmed by the bay and the transmission, and the surface that
+    # actually faces the road. ESTIMATED as the bay's row at a third of its load.
+    - name: underbody
+      solver: vehicle_source
+      source: engine_bay
+      load_s: [0.0, 29.9, 30.0, 1800.0]
+      load:   [0.0,  0.0,  0.18,   0.18]
+
+  # The road is solved, not prescribed: §12.3's energy balance on the shared weather, spun up 48 h
+  # so it carries yesterday rather than starting at the air temperature. The MP.1 field inherits
+  # this surface's material and its spun-up state, and adds the car's own radiation per cell.
+  thermal:
+    spin_up_hours: 48.0
+    tick_s: 60.0
+    surfaces:
+      - {name: asphalt, material: asphalt_dry, tilt_deg: 0.0}

@@ -310,6 +310,11 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
   configuration factor puts an engine bay's heat onto the bonnet above it as a computed falloff,
   and a warm body onto the ground below it -- single-bounce, isothermal over the radiating
   rectangle, and parallel surfaces only.
+- **A surface field is not spun up with the scene on it** (MP.5). `spin_up` runs over §12.3's
+  surfaces, so a `PlanarThermalField` starts from the *uniform* answer -- the road as it would be
+  with nothing standing on it. Frame 0 of the MP.4b car scenes is therefore the moment the car
+  arrived, and every ground patch is one the run itself grew. A real night image of a car park is
+  mostly the opposite: vehicles that have stood for hours carrying their full patch.
 - **Point-wise temperature is a projection, so it covers near-planar surfaces only** (ADR 0087). A
   road, a bonnet, a roof or a deck can carry a field, parameterised by the per-pixel world position
   AOV. A wheel, a tyre, an exhaust pipe or a mast is not near-planar and still takes **one

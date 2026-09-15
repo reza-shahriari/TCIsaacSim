@@ -1,0 +1,715 @@
+"""A car on asphalt that starts its engine: the scene point-wise temperature exists for.
+
+docs/physics-model.md §6.1, §6.6, §13; roadmap MP.4b; ADR 0087 (the field), ADR 0088 (the spatial
+sources and the sky a body blocks), ADR 0089 (the `vehicle_source` solver).
+
+Every frame this project rendered before ADR 0087 carried **one temperature per prim**, and this
+stage is the cheapest scene that makes that visible as an error rather than as an opinion. The
+bonnet is a single USD prim. By the end of the run it is several kelvin hotter over the engine
+block than at its wings, and a per-prim bridge renders that as one flat value.
+
+Three things happen after the key turns, and they are three different mechanisms:
+
+* **The bonnet gains a gradient.** The engine bay is a hot cavity under the skin; ADR 0088's
+  configuration factor decides how much of it each cell of the bonnet sees, so the falloff toward
+  the wings is *computed from the bay's dimensions* rather than authored as a Gaussian.
+* **The asphalt under the car warms.** Same kernel, pointing down: the underbody, the bay's own
+  floor and the exhaust run radiate onto the road, and the exhaust's narrow rectangle is what makes
+  a stripe rather than a blob. It is slow -- asphalt's time constant is about an hour -- so this is
+  a few tenths of a kelvin, which at a 50 mK NETD is still several noise-equivalent steps.
+* **The wheels do essentially nothing, and that is the physics.** §6.6 makes tyre heating flexing
+  work and brake heating kinetic energy. A car idling in a car park is doing neither, so its tyres
+  stay at ambient however long it idles; the front pair picks up a little radiation through the
+  arch and nothing else. The readout prints the wheels' rise beside the bonnet's so the difference
+  is stated rather than left to be noticed.
+
+**What is modelled coarsely, and where that shows.** The engine bay is one isothermal rectangle at
+§6.6's node temperature, standing in for a cluttered cavity that is also convecting hot air onto
+the skin; treating it as a near-blackbody radiator is how that convective share is absorbed, and it
+is why its emissivity is authored high. A real bay is hottest at the manifold and this one is not
+hot anywhere in particular. The bonnet is a flat patch and a real bonnet has a crown, which ADR
+0087 bounds: 60 mm of camber over a 1.2 m patch displaces a sample by under a third of a cell.
+
+The stage frame is :mod:`irsim_isaac.airframe`'s: **+X right, +Y up, -Z forward**, so the car faces
+-Z and its bonnet is at negative Z.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from irsim.radiometry.constants import SIGMA_SB
+from irsim.scene import Scene
+from irsim.thermal.convection import DEFAULT_CONVECTION, convection_coefficient
+from irsim.thermal.facets import FacetForcing, FacetProperties
+from irsim.thermal.longwave import longwave_down
+from irsim.thermal.spatial_sources import (
+    RadiantRectangle,
+    occluded_longwave_flux,
+    patch_view_factors,
+)
+from irsim.thermal.surface_field import PlanarPatch, PlanarThermalField
+from irsim_isaac.airframe import Part
+
+__all__ = [
+    "CarGeometry",
+    "CameraSetup",
+    "CarDemoScene",
+    "bonnet_patch",
+    "ground_patch",
+    "build_bonnet_field",
+    "build_ground_field",
+    "build_car_demo",
+    "describe",
+]
+
+EX = np.array([1.0, 0.0, 0.0])
+EY = np.array([0.0, 1.0, 0.0])
+EZ = np.array([0.0, 0.0, 1.0])
+
+#: Emissivity of the engine bay seen as a cavity. High on purpose: a cluttered, multiply
+#: reflecting enclosure has a near-unity apparent emissivity, and treating it as one is also how
+#: the convective share of the bay-to-skin coupling is absorbed into a radiative model (ADR 0088).
+BAY_CAVITY_EMISSIVITY = 0.95
+#: A dirty painted underbody. ESTIMATED.
+UNDERBODY_EMISSIVITY = 0.88
+
+
+@dataclass(frozen=True)
+class CarGeometry:
+    """A generic mid-size saloon, in metres. Every number ESTIMATED but ordinary.
+
+    The bonnet is a **separate prim** from the shell because it is the surface that carries the
+    field; the rest of the shell is one box and takes one temperature, which is the point of
+    contrast. The engine block is not geometry at all -- it is never seen -- it is the radiating
+    rectangle of ADR 0088, and giving it a prim would put a hot box in the picture that no camera
+    looking at a closed car can see.
+    """
+
+    length_m: float = 4.35
+    width_m: float = 1.80
+    wheel_radius_m: float = 0.32
+    wheel_width_m: float = 0.22
+    body_height_m: float = 0.72
+    cabin_length_m: float = 2.05
+    cabin_width_m: float = 1.70
+    cabin_height_m: float = 0.52
+    bonnet_length_m: float = 1.30
+    bonnet_inset_m: float = 0.08  # from each side of the shell
+    bonnet_thickness_m: float = 0.06
+    #: The bay cavity under the bonnet: how far below the skin, and how much of it there is.
+    bay_drop_m: float = 0.20
+    bay_half_width_m: float = 0.50
+    bay_half_length_m: float = 0.45
+
+    @property
+    def floor_y_m(self) -> float:
+        """Underside of the shell -- what faces the road."""
+        return self.wheel_radius_m - 0.04
+
+    @property
+    def bonnet_y_m(self) -> float:
+        """Top of the shell box, where the bonnet skin sits."""
+        return self.floor_y_m + self.body_height_m
+
+    @property
+    def bonnet_centre_z_m(self) -> float:
+        return -0.5 * self.length_m + 0.5 * self.bonnet_length_m + 0.25
+
+    @property
+    def bonnet_half_width_m(self) -> float:
+        return 0.5 * self.width_m - self.bonnet_inset_m
+
+    def parts(self) -> tuple[Part, ...]:
+        """The renderable prims and the thermal node each falls back to."""
+        half_len = 0.5 * self.length_m
+        shell_y = self.floor_y_m + 0.5 * self.body_height_m
+        cabin_y = self.bonnet_y_m + 0.5 * self.cabin_height_m
+        wheel_z = half_len - 1.05
+        wheel_x = 0.5 * self.width_m - 0.5 * self.wheel_width_m
+        parts = [
+            Part(
+                name="shell",
+                kind="box",
+                centre_m=(0.0, shell_y, 0.0),
+                size_m=(self.width_m, self.body_height_m, self.length_m),
+                material="car_paint_black",
+                thermal_node="shell",
+            ),
+            Part(
+                name="bonnet",
+                kind="box",
+                centre_m=(
+                    0.0,
+                    self.bonnet_y_m + 0.5 * self.bonnet_thickness_m,
+                    self.bonnet_centre_z_m,
+                ),
+                size_m=(
+                    2.0 * self.bonnet_half_width_m,
+                    self.bonnet_thickness_m,
+                    self.bonnet_length_m,
+                ),
+                material="car_paint_black",
+                thermal_node="bonnet_fallback",
+            ),
+            Part(
+                name="cabin",
+                kind="box",
+                centre_m=(0.0, cabin_y, 0.45),
+                size_m=(self.cabin_width_m, self.cabin_height_m, self.cabin_length_m),
+                material="car_paint_black",
+                thermal_node="shell",
+            ),
+            Part(
+                name="windscreen",
+                kind="box",
+                centre_m=(0.0, cabin_y, 0.45 - 0.5 * self.cabin_length_m),
+                size_m=(self.cabin_width_m - 0.06, self.cabin_height_m - 0.06, 0.05),
+                material="glass_windshield",
+                thermal_node="glass",
+                rotate_xyz_deg=(28.0, 0.0, 0.0),
+            ),
+        ]
+        for name, sx, sz in (
+            ("wheel_fl", -1.0, -1.0),
+            ("wheel_fr", 1.0, -1.0),
+            ("wheel_rl", -1.0, 1.0),
+            ("wheel_rr", 1.0, 1.0),
+        ):
+            parts.append(
+                Part(
+                    name=name,
+                    kind="cylinder",
+                    centre_m=(sx * wheel_x, self.wheel_radius_m, sz * wheel_z),
+                    size_m=(
+                        self.wheel_width_m,
+                        2.0 * self.wheel_radius_m,
+                        2.0 * self.wheel_radius_m,
+                    ),
+                    material="rubber_tyre",
+                    thermal_node="tyre",
+                    axis="X",
+                )
+            )
+        return tuple(parts)
+
+    # -- the radiators (ADR 0088) --------------------------------------------------------------
+
+    def engine_bay(self) -> RadiantRectangle:
+        """The hot cavity under the bonnet, facing **up** at the skin."""
+        return RadiantRectangle(
+            centre_m=np.array([0.0, self.bonnet_y_m - self.bay_drop_m, self.bonnet_centre_z_m]),
+            u_axis=EX,
+            v_axis=EZ,
+            half_u_m=self.bay_half_width_m,
+            half_v_m=self.bay_half_length_m,
+            emissivity=BAY_CAVITY_EMISSIVITY,
+        )
+
+    def ground_radiators(self) -> tuple[tuple[str, RadiantRectangle], ...]:
+        """What the road sees, each paired with the scene target that gives its temperature.
+
+        Three rather than one because the picture they make differs: a broad warm footprint from
+        the underbody, a brighter pool under the engine, and a narrow **stripe** from the exhaust
+        run, which is the feature that says "this car has been running" rather than "this car is
+        warm".
+        """
+        y = self.floor_y_m
+        return (
+            (
+                "underbody",
+                RadiantRectangle(
+                    centre_m=np.array([0.0, y, 0.15]),
+                    u_axis=EX,
+                    v_axis=EZ,
+                    half_u_m=0.5 * self.width_m - 0.08,
+                    half_v_m=0.5 * self.length_m - 0.25,
+                    emissivity=UNDERBODY_EMISSIVITY,
+                ),
+            ),
+            (
+                "engine_bay",
+                RadiantRectangle(
+                    centre_m=np.array([0.0, y + 0.10, self.bonnet_centre_z_m]),
+                    u_axis=EX,
+                    v_axis=EZ,
+                    half_u_m=0.36,
+                    half_v_m=0.40,
+                    emissivity=BAY_CAVITY_EMISSIVITY,
+                ),
+            ),
+            (
+                "exhaust_pipe",
+                RadiantRectangle(
+                    centre_m=np.array([0.26, y - 0.04, 0.55]),
+                    u_axis=EX,
+                    v_axis=EZ,
+                    half_u_m=0.055,
+                    half_v_m=1.30,
+                    emissivity=0.80,  # oxidised steel pipe
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CameraSetup:
+    """Where the camera stands. A depression angle and a range, not a position to be checked."""
+
+    depression_deg: float = 45.0
+    range_m: float = 27.0
+    azimuth_deg: float = 22.0  # a few degrees off the nose, so the bonnet is not foreshortened away
+    aim_height_m: float = 0.8
+
+    def position_m(self) -> tuple[float, float, float]:
+        d = math.radians(self.depression_deg)
+        a = math.radians(self.azimuth_deg)
+        horizontal = self.range_m * math.cos(d)
+        return (
+            horizontal * math.sin(a),
+            self.aim_height_m + self.range_m * math.sin(d),
+            horizontal * math.cos(a),
+        )
+
+    def basis(self) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+        """``(forward, right, up)`` for a camera at :meth:`position_m` aimed at the car."""
+        eye = np.asarray(self.position_m(), dtype=np.float64)
+        aim = np.array([0.0, self.aim_height_m, 0.0])
+        forward = aim - eye
+        forward /= np.linalg.norm(forward)
+        right = np.cross(forward, np.array([0.0, 1.0, 0.0]))
+        right /= np.linalg.norm(right)
+        return forward, right, np.asarray(np.cross(right, forward))
+
+    def ground_footprint_m(
+        self, vfov_deg: float, hfov_deg: float
+    ) -> tuple[float, float, float, float]:
+        """``(x_min, x_max, z_min, z_max)`` of the road the frame covers, at y = 0.
+
+        Computed from the frustum's **corner rays**, not from a span about the boresight. An
+        estimate along the axes is wrong as soon as the camera is off the nose -- the azimuth
+        rotates the footprint, so its bounding box is wider than either field of view implies, and
+        the corners are the part that escapes. A patch smaller than the frame makes
+        `PointwiseTemperature` raise, which is the right failure and a tedious one to meet half an
+        hour into a Kit session, so this is measured rather than guessed.
+
+        Rays at or above the horizon are dropped; with none left the camera is not looking at the
+        ground at all and that is an error, not an empty box.
+        """
+        eye = np.asarray(self.position_m(), dtype=np.float64)
+        forward, right, up = self.basis()
+        tan_h = math.tan(math.radians(0.5 * hfov_deg))
+        tan_v = math.tan(math.radians(0.5 * vfov_deg))
+        hits = []
+        for sh in (-1.0, 1.0):
+            for sv in (-1.0, 1.0):
+                d = forward + sh * tan_h * right + sv * tan_v * up
+                if d[1] >= -1e-9:
+                    continue
+                hits.append(eye + d * (-eye[1] / d[1]))
+        if not hits:
+            raise ValueError(
+                f"no frustum corner reaches the ground from {self.depression_deg} deg "
+                f"depression with a {vfov_deg} deg vertical field: this camera sees only sky"
+            )
+        pts = np.stack(hits)
+        return (
+            float(pts[:, 0].min()),
+            float(pts[:, 0].max()),
+            float(pts[:, 2].min()),
+            float(pts[:, 2].max()),
+        )
+
+
+# ---------------------------------------------------------------------------------------------
+# the patches
+# ---------------------------------------------------------------------------------------------
+
+
+def bonnet_patch(geom: CarGeometry, cell_m: float = 0.07) -> PlanarPatch:
+    """A grid over the bonnet skin, in world space (the car does not move in this scene)."""
+    n_u = max(2, int(round(2.0 * geom.bonnet_half_width_m / cell_m)))
+    n_v = max(2, int(round(geom.bonnet_length_m / cell_m)))
+    du = 2.0 * geom.bonnet_half_width_m / n_u
+    dv = geom.bonnet_length_m / n_v
+    return PlanarPatch(
+        origin_m=np.array(
+            [
+                -geom.bonnet_half_width_m,
+                geom.bonnet_y_m + geom.bonnet_thickness_m,
+                geom.bonnet_centre_z_m - 0.5 * geom.bonnet_length_m,
+            ]
+        ),
+        u_axis=EX,
+        v_axis=EZ,
+        n_u=n_u,
+        n_v=n_v,
+        du_m=du,
+        dv_m=dv,
+        # Enough to claim the skin's own thickness and a little camber, and far too little to
+        # reach the cabin roof 0.5 m above or the road 1 m below (ADR 0087's slab rule).
+        thickness_m=0.12,
+    )
+
+
+def ground_patch(bounds_m: tuple[float, float, float, float], cell_m: float = 0.30) -> PlanarPatch:
+    """A grid over the road spanning ``(x_min, x_max, z_min, z_max)``.
+
+    The bounds come from :meth:`CameraSetup.ground_footprint_m` widened to include the car, so the
+    patch is placed where the *camera* looks rather than centred on the origin and hoped for.
+    """
+    x0, x1, z0, z1 = (float(v) for v in bounds_m)
+    across = x1 - x0
+    along = z1 - z0
+    if across <= 0.0 or along <= 0.0:
+        raise ValueError(f"road bounds must be increasing in each axis, got {bounds_m}")
+    n_u = max(2, int(round(across / cell_m)))
+    n_v = max(2, int(round(along / cell_m)))
+    return PlanarPatch(
+        origin_m=np.array([x0, 0.0, z0]),
+        u_axis=EX,
+        v_axis=EZ,
+        n_u=n_u,
+        n_v=n_v,
+        du_m=across / n_u,
+        dv_m=along / n_v,
+        # The road is flat, and a thin slab is what stops it claiming the car standing on it.
+        thickness_m=0.10,
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# the fields
+# ---------------------------------------------------------------------------------------------
+
+
+def _weather_forcing(scene: Scene, sky_view: NDArray[np.float64], surface_t_guess_k: float) -> Any:
+    """The environment half of §6.1, shared by both fields: air, convection, downwelling sky."""
+
+    def at(t_abs_s: float) -> tuple[float, NDArray[np.float64], NDArray[np.float64]]:
+        sample = scene.weather.at(t_abs_s)
+        h = convection_coefficient(
+            surface_t_guess_k - sample.t_air_k,
+            sample.wind_speed_m_s,
+            0.0,
+            DEFAULT_CONVECTION,
+        )
+        q_lw = longwave_down(
+            sample.t_air_k,
+            sample.vapour_pressure_hpa,
+            sample.cloud_fraction,
+            sky_view,
+            sample.t_air_k,
+        )
+        return float(sample.t_air_k), np.broadcast_to(h, sky_view.shape), np.asarray(q_lw)
+
+    return at
+
+
+def build_bonnet_field(
+    scene: Scene,
+    geom: CarGeometry,
+    *,
+    emissivity: float,
+    heat_capacity_j_m2_k: float = 8_000.0,
+    solar_absorptivity: float = 0.90,
+    cell_m: float = 0.07,
+    tick_s: float = 10.0,
+) -> PlanarThermalField:
+    """The bonnet skin: §6.1 per cell, with the bay's radiation weighted by ADR 0088's view factor.
+
+    **The bay's reference is the bay at ambient**, so a cold engine contributes exactly zero and
+    the bonnet's temperature in frame 0 is set by its own top-side balance alone. Without that
+    reference the underside would appear to exchange with a body at 0 K and the panel would start
+    the film 30 K too cold, which is both wrong and, after AGC, not obviously wrong.
+    """
+    patch = bonnet_patch(geom, cell_m=cell_m)
+    view = patch_view_factors(patch, geom.engine_bay())
+    sky_view = np.ones(patch.n_cells)  # a bonnet faces straight up
+    environment = _weather_forcing(scene, sky_view, 290.0)
+    bay = geom.engine_bay()
+
+    def forcing_at(t_abs_s: float) -> FacetForcing:
+        t_air, h, q_lw = environment(t_abs_s)
+        t_bay = scene.targets["engine_bay"].temperature()
+        reference = bay.emissivity * SIGMA_SB * t_air**4
+        q_int = occluded_longwave_flux(
+            view,
+            t_bay,
+            emissivity,
+            source_emissivity=bay.emissivity,
+            longwave_down_w_m2=reference,
+            sky_view=sky_view,
+        )
+        return FacetForcing(
+            t_air_k=t_air,
+            h_w_m2_k=h,
+            q_longwave_down_w_m2=q_lw,
+            q_internal_w_m2=q_int,
+        )
+
+    properties = FacetProperties(
+        heat_capacity_j_m2_k=np.full(patch.n_cells, heat_capacity_j_m2_k),
+        emissivity=np.full(patch.n_cells, emissivity),
+        solar_absorptivity=np.full(patch.n_cells, solar_absorptivity),
+    )
+    initial = np.full(patch.n_cells, scene.weather.at(scene.t0_s).t_air_k)
+    return PlanarThermalField(patch, properties, forcing_at, scene.t0_s, initial, tick_s)
+
+
+def build_ground_field(
+    scene: Scene,
+    geom: CarGeometry,
+    patch: PlanarPatch,
+    *,
+    emissivity: float,
+    heat_capacity_j_m2_k: float,
+    solar_absorptivity: float,
+    initial_k: float,
+    tick_s: float = 30.0,
+) -> PlanarThermalField:
+    """The road: §12.3's solved asphalt per cell, plus what the car standing on it radiates down.
+
+    Here the occlusion term is the real one (ADR 0088): the car takes away the sky each cell was
+    seeing. Under this scene's overcast that nearly cancels the car's own emission, which is why
+    the patch is a few tenths of a kelvin rather than the several kelvin a clear night would give.
+    """
+    sky_view = np.ones(patch.n_cells)
+    environment = _weather_forcing(scene, sky_view, initial_k)
+    radiators = geom.ground_radiators()
+    views = tuple((name, patch_view_factors(patch, rect), rect) for name, rect in radiators)
+
+    def forcing_at(t_abs_s: float) -> FacetForcing:
+        t_air, h, q_lw = environment(t_abs_s)
+        q_int = np.zeros(patch.n_cells)
+        for name, view, rect in views:
+            q_int = q_int + occluded_longwave_flux(
+                view,
+                scene.targets[name].temperature(),
+                emissivity,
+                source_emissivity=rect.emissivity,
+                longwave_down_w_m2=q_lw,
+                sky_view=sky_view,
+            )
+        return FacetForcing(
+            t_air_k=t_air,
+            h_w_m2_k=h,
+            q_longwave_down_w_m2=q_lw,
+            q_internal_w_m2=q_int,
+        )
+
+    properties = FacetProperties(
+        heat_capacity_j_m2_k=np.full(patch.n_cells, heat_capacity_j_m2_k),
+        emissivity=np.full(patch.n_cells, emissivity),
+        solar_absorptivity=np.full(patch.n_cells, solar_absorptivity),
+    )
+    initial = np.full(patch.n_cells, initial_k)
+    return PlanarThermalField(patch, properties, forcing_at, scene.t0_s, initial, tick_s)
+
+
+@dataclass
+class CarDemoScene:
+    """What a render script needs: the prim map, the fields and the camera."""
+
+    geometry: CarGeometry
+    camera: CameraSetup
+    prim_to_target: dict[str, str] = field(default_factory=dict)
+    bonnet_field: PlanarThermalField | None = None
+    ground_field: PlanarThermalField | None = None
+    car_root: str = "/World/Car"
+    road_path: str = "/World/Road"
+    camera_path: str = "/World/IrCamera"
+    up_axis: str = "Y"
+
+    def surface_bindings(self) -> list[Any]:
+        """The MP.3 bindings: which prim takes which field."""
+        from irsim_isaac.pipeline.point_bridge import SurfaceBinding
+
+        out = []
+        if self.bonnet_field is not None:
+            out.append(SurfaceBinding(f"{self.car_root}/bonnet", self.bonnet_field))
+        if self.ground_field is not None:
+            out.append(SurfaceBinding(self.road_path, self.ground_field))
+        return out
+
+
+# ---------------------------------------------------------------------------------------------
+# the stage
+# ---------------------------------------------------------------------------------------------
+
+
+def build_car_demo(
+    scene: Scene,
+    *,
+    geometry: CarGeometry | None = None,
+    camera: CameraSetup | None = None,
+    vfov_deg: float = 24.8,
+    hfov_deg: float = 30.7,
+    road_margin_m: float = 4.0,
+    ground_cell_m: float = 0.30,
+    bonnet_cell_m: float = 0.07,
+    bonnet_emissivity: float = 0.92,
+    asphalt_emissivity: float = 0.95,
+    asphalt_capacity_j_m2_k: float = 60_000.0,
+    asphalt_absorptivity: float = 0.88,
+    stage: Any = None,
+    author: bool = True,
+) -> CarDemoScene:
+    """Author the stage and build both fields. ``author=False`` builds the physics only.
+
+    The road is sized from the **camera**, not chosen: a patch smaller than the frame makes
+    `PointwiseTemperature` raise, which is the right failure and a tedious one to meet at render
+    time. The margin is added on top of the computed span.
+    """
+    geom = geometry or CarGeometry()
+    cam = camera or CameraSetup()
+    x0, x1, z0, z1 = cam.ground_footprint_m(vfov_deg, hfov_deg)
+    # The union with the car's own footprint, so the patch holds the radiators even if the camera
+    # is later moved somewhere that does not see them.
+    half_w = 0.5 * geom.width_m
+    half_l = 0.5 * geom.length_m
+    bounds = (
+        min(x0, -half_w) - road_margin_m,
+        max(x1, half_w) + road_margin_m,
+        min(z0, -half_l) - road_margin_m,
+        max(z1, half_l) + road_margin_m,
+    )
+    road_grid = ground_patch(bounds, cell_m=ground_cell_m)
+    demo = CarDemoScene(geometry=geom, camera=cam)
+
+    # §12.3 solved the asphalt as one surface; the field starts from that spun-up state, so the
+    # road does not begin the film at the air temperature having forgotten yesterday (M6.10).
+    asphalt_k = scene.surface_temperature_k("asphalt", scene.t0_s)
+
+    demo.bonnet_field = build_bonnet_field(
+        scene, geom, emissivity=bonnet_emissivity, cell_m=bonnet_cell_m
+    )
+    demo.ground_field = build_ground_field(
+        scene,
+        geom,
+        road_grid,
+        emissivity=asphalt_emissivity,
+        heat_capacity_j_m2_k=asphalt_capacity_j_m2_k,
+        solar_absorptivity=asphalt_absorptivity,
+        initial_k=asphalt_k,
+    )
+
+    demo.prim_to_target = {
+        f"{demo.car_root}/{part.name}": part.thermal_node for part in geom.parts()
+    }
+    demo.prim_to_target[demo.road_path] = "asphalt"
+
+    if author:
+        from pxr import UsdGeom
+
+        from irsim_isaac.airframe import author_parts
+        from irsim_isaac.stage import bind_visible_look
+
+        # +Y up, as every other stage in this repository and as `airframe.Part` assumes. It is not
+        # cosmetic: Kit's default is +Z, and with it `azimuth_from_rays` gets an up vector parallel
+        # to its own default forward and raises -- which is the loud version of the failure. The
+        # quiet version is a scene whose geometry is on its side while the radiometry is not.
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.y)
+        author_parts(stage, demo.car_root, geom.parts(), look_binder=bind_visible_look)
+        _author_road(stage, demo.road_path, road_grid)
+        _author_camera(stage, demo.camera_path, cam)
+    return demo
+
+
+def _author_road(stage: Any, path: str, grid: PlanarPatch) -> None:
+    """A thin slab whose **top face is y = 0**, which is the plane the ground patch lives on.
+
+    A slab rather than a `UsdGeom.Plane` because a plane is single-sided and this build's normals
+    AOV is read two-sided (`orient_to_viewer`); a box removes the question.
+    """
+    from pxr import Gf, Sdf, UsdGeom
+
+    from irsim_isaac.stage import bind_visible_look
+
+    thickness = 0.04
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    cube.CreateExtentAttr([Gf.Vec3f(-0.5, -0.5, -0.5), Gf.Vec3f(0.5, 0.5, 0.5)])
+    xform = UsdGeom.Xformable(cube)
+    xform.ClearXformOpOrder()
+    across_m, along_m = grid.extent_m
+    centre_x = float(grid.origin_m[0] + 0.5 * across_m)
+    centre_z = float(grid.origin_m[2] + 0.5 * along_m)
+    xform.AddTranslateOp().Set(Gf.Vec3d(centre_x, -0.5 * thickness, centre_z))
+    xform.AddScaleOp().Set(Gf.Vec3f(float(across_m), thickness, float(along_m)))
+    prim = cube.GetPrim()
+    prim.CreateAttribute("thermal:material", Sdf.ValueTypeNames.String).Set("asphalt_dry")
+    bind_visible_look(stage, cube, "asphalt_dry")
+
+
+def _author_camera(stage: Any, path: str, cam: CameraSetup) -> None:
+    """Place the camera and aim it at the car. `IrCamera` writes its optics, not its pose.
+
+    The aim is an **azimuth/elevation** construction (`look_at_quaternion`) rather than the minimal
+    rotation onto the boresight: the minimal rotation rolls the horizon, and this frame has a road
+    running across it whose edge would tilt for no reason a viewer could name.
+    """
+    from pxr import Gf, UsdGeom
+
+    from irsim_isaac.aircraft_pass import look_at_quaternion
+
+    eye = np.asarray(cam.position_m(), dtype=np.float64)
+    aim = np.array([0.0, cam.aim_height_m, 0.0])
+    q = look_at_quaternion(aim - eye)
+    camera = UsdGeom.Camera.Define(stage, path)
+    xform = UsdGeom.Xformable(camera)
+    xform.ClearXformOpOrder()
+    xform.AddTranslateOp().Set(Gf.Vec3d(*(float(v) for v in eye)))
+    xform.AddOrientOp().Set(Gf.Quatf(float(q[0]), Gf.Vec3f(*(float(v) for v in q[1:]))))
+    camera.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 1.0e5))
+
+
+# ---------------------------------------------------------------------------------------------
+# the readout
+# ---------------------------------------------------------------------------------------------
+
+
+def describe(demo: CarDemoScene, scene: Scene, t_abs_s: float) -> dict[str, Any]:
+    """What the scene is doing at one instant, in physical units, for the render script to print.
+
+    It reports the **wheels beside the bonnet** on purpose. A viewer expects a running car's wheels
+    to glow, and in a car park they do not: §6.6 makes tyre heating flexing work and brake heating
+    kinetic energy, and a stationary vehicle is doing neither. Printing the number is how the model
+    says so instead of leaving a viewer to conclude the wheels are broken.
+    """
+    bonnet = demo.bonnet_field
+    ground = demo.ground_field
+    if bonnet is None or ground is None:  # pragma: no cover - build_car_demo always sets both
+        raise RuntimeError("describe needs a built demo")
+    t_air = float(scene.weather.at(t_abs_s).t_air_k)
+    b = np.asarray(bonnet.temperature_at(t_abs_s), dtype=np.float64)
+    g = np.asarray(ground.temperature_at(t_abs_s), dtype=np.float64)
+
+    # "Far" road: the outer tenth of the patch, which no radiator reaches.
+    grid = ground.patch
+    centres = grid.cell_centres()
+    distance = np.linalg.norm(centres[:, [0, 2]] - np.array([0.0, 0.15]), axis=1)
+    far = distance > 0.9 * distance.max()
+    near = distance < 1.6
+
+    return {
+        "t_s": float(t_abs_s - scene.t0_s),
+        "t_air_k": t_air,
+        "engine_bay_k": float(scene.targets["engine_bay"].temperature()),
+        "exhaust_pipe_k": float(scene.targets["exhaust_pipe"].temperature()),
+        "underbody_k": float(scene.targets["underbody"].temperature()),
+        "tyre_k": float(scene.targets["tyre"].temperature()),
+        "tyre_rise_k": float(scene.targets["tyre"].temperature() - t_air),
+        "bonnet_hot_k": float(b.max()),
+        "bonnet_cold_k": float(b.min()),
+        "bonnet_gradient_k": float(b.max() - b.min()),
+        "bonnet_rise_k": float(b.max() - t_air),
+        "road_near_k": float(g[near].max()) if near.any() else float("nan"),
+        "road_far_k": float(g[far].mean()),
+        "road_patch_k": float(g[near].max() - g[far].mean()) if near.any() else float("nan"),
+    }

@@ -31,6 +31,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from irsim.thermal.surface_field import PlanarThermalField
+from irsim_isaac.pipeline.gbuffer_isaac import _as_f64_plane
 from irsim_isaac.pipeline.material_ids import BACKGROUND_INSTANCE_ID, labels_to_paths
 
 __all__ = ["SurfaceBinding", "PointwiseTemperature", "world_positions"]
@@ -50,11 +51,10 @@ def world_positions(
     ``frame="camera"`` (what M2.4 measured on this build) rotates by ``camera_to_world`` and adds
     the camera's own position; ``frame="world"`` passes through.
     """
-    pos = np.asarray(position, dtype=np.float64)
-    if pos.ndim != 3 or pos.shape[-1] != 3:
-        raise ValueError(f"position must be (H, W, 3), got {pos.shape}")
-    if pos.dtype == np.float16:  # pragma: no cover - the reader never produces one
-        raise TypeError("a float16 position plane cannot resolve a thermal cell (CLAUDE.md #2)")
+    # The same validation `ray_directions` applies, from the same helper rather than a second
+    # copy: the annotator delivers (H, W, 4) with an unused alpha, and a private reimplementation
+    # here would be one more place for the channel count or the float16 rule to drift.
+    pos = _as_f64_plane("position", position, 3, precision_critical=True)
     if frame == "world":
         return pos
     if frame != "camera":
