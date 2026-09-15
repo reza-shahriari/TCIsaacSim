@@ -40,6 +40,20 @@ __all__ = [
     "CLOSURE_GUARD",
 ]
 
+#: The cos θ grid the angle LUT is sampled on: uniform in **cos θ**, not in θ. A kernel has `n·v`
+#: in hand and would have to call acos to index an angle-uniform table; uniform in cos θ makes the
+#: lookup a multiply and a floor.
+#:
+#: The spacing that buys is uneven in angle, and in the unhelpful direction: one step of Δcos is
+#: ~10° near normal, where ε is flat, and ~1° near grazing, where it is falling off a cliff. So
+#: the node count is set by measurement rather than by taste -- at 33 nodes a Level A material
+#: (water, whose ε runs to zero at grazing) interpolates 0.0048 from the exact dispatch, which is
+#: a quarter of the 0.02 §4.2 allows Level B itself; at 65 it is 0.0012. Inside §4.2's own 70°
+#: bound every material lands within 2e-4, two orders below that 0.02, so the packing is nowhere
+#: near the limiting approximation in the chain. The whole table
+#: is 19 x 65 float32.
+ANGLE_LUT_COS: NDArray[np.float32] = np.linspace(1.0, 0.0, 65, dtype=np.float32)
+
 UNMAPPED_MATERIAL_ID = 0
 UNMAPPED_NAME = "UNMAPPED"
 THERMAL_COLUMNS: tuple[str, ...] = (
@@ -72,6 +86,12 @@ class MaterialTable:
     angular_a: NDArray[np.float32] | None = None
     angular_p: NDArray[np.float32] | None = None
     roughness: NDArray[np.float32] | None = None
+    #: (n_ids, n_angles) float32 ε(θ) for **every** material, sampled on :data:`ANGLE_LUT_COS`
+    #: (M7.10). One table for all three §4.2 levels, so a kernel does a single lookup instead of
+    #: branching on a material's angular model -- and so a Fresnel material, which needs an n/k
+    #: file and a band average, can be evaluated on a GPU that has neither. The (a, p) columns
+    #: stay because §4.2's "two instructions in a shader" is cheaper still where it applies.
+    angle_lut: NDArray[np.float32] | None = None
     thermal: dict[str, NDArray[np.float32]] = field(default_factory=dict)
     names: tuple[str, ...] = ()  # index = id; names[0] == UNMAPPED_NAME when set
     library_hash: str = ""
@@ -85,8 +105,37 @@ class MaterialTable:
                 raise TypeError(f"{name} must be float32, got {arr.dtype}")
             if arr.shape != (n,):
                 raise ValueError(f"{name} has shape {arr.shape}, expected ({n},)")
+        if self.angle_lut is not None:
+            if self.angle_lut.dtype == np.float16:
+                raise TypeError("angle_lut is float16 (CLAUDE.md #2): the table is float32")
+            if self.angle_lut.dtype != np.float32:
+                raise TypeError(f"angle_lut must be float32, got {self.angle_lut.dtype}")
+            if self.angle_lut.shape != (n, ANGLE_LUT_COS.size):
+                raise ValueError(
+                    f"angle_lut has shape {self.angle_lut.shape}, expected "
+                    f"({n}, {ANGLE_LUT_COS.size})"
+                )
         if self.names and (len(self.names) != n or self.names[0] != UNMAPPED_NAME):
             raise ValueError("names must have one entry per id with names[0] == 'UNMAPPED'")
+
+    def epsilon_at(self, material_id: Any, cos_theta: Any) -> NDArray[np.float32]:
+        """ε(θ) by linear interpolation in the packed LUT -- what the kernel will do.
+
+        Takes ǀcos θǀ, like every other angular path in this project: two sides of a thin panel
+        have the same emissivity.
+        """
+        if self.angle_lut is None:
+            raise ValueError("this table was packed without an angle LUT (M7.10)")
+        ids = np.asarray(material_id)
+        c = np.abs(np.asarray(cos_theta, dtype=np.float32))
+        grid = ANGLE_LUT_COS[::-1].astype(np.float64)
+        rows = self.angle_lut[ids][..., ::-1].astype(np.float64)
+        position = np.interp(c.astype(np.float64), grid, np.arange(grid.size, dtype=np.float64))
+        lo = np.clip(np.floor(position).astype(np.intp), 0, grid.size - 2)
+        frac = position - lo
+        taken_lo = np.take_along_axis(rows, lo[..., None], axis=-1)[..., 0]
+        taken_hi = np.take_along_axis(rows, (lo + 1)[..., None], axis=-1)[..., 0]
+        return np.asarray(taken_lo + frac * (taken_hi - taken_lo), dtype=np.float32)
 
     def _columns(self) -> dict[str, NDArray[np.float32]]:
         cols: dict[str, NDArray[np.float32]] = {"emissivity": self.emissivity}
@@ -127,8 +176,15 @@ class MaterialTable:
         band: str,
         response: SpectralResponse | None = None,
         form: WeightingForm = "energy",
+        angle_lut: bool = False,
+        data_dir: object = None,
     ) -> MaterialTable:
-        """Pack every material of the library for one band; ids 1..N in sorted-name order."""
+        """Pack every material of the library for one band; ids 1..N in sorted-name order.
+
+        ``angle_lut=True`` additionally samples ε(θ) for every material through the M7.7 level
+        dispatch (M7.10). Off by default because it costs a Fresnel band average per material and
+        because every table packed before M7.10 must keep hashing the same.
+        """
         from irsim.config.materials import EmpiricalAngular
 
         names = sorted(library.names)
@@ -155,9 +211,19 @@ class MaterialTable:
             t = m.spec.thermal
             for key in THERMAL_COLUMNS:
                 thermal[key][i] = getattr(t, key)
+        lut = None
+        if angle_lut:
+            from irsim.materials.directional import directional_emissivity
+
+            lut = np.full((n, ANGLE_LUT_COS.size), np.nan, dtype=np.float32)
+            for i, name in enumerate(names, start=1):
+                lut[i] = directional_emissivity(
+                    library[name], band, ANGLE_LUT_COS, response, form=form, data_dir=data_dir
+                )
         return cls(
             emissivity=eps,
             band_id=band,
+            angle_lut=lut,
             reflectance=rho,
             transmittance=tau,
             angular_a=a,
@@ -175,6 +241,8 @@ class MaterialTable:
         npz = base.with_suffix(".npz")
         side = base.with_suffix(".json")
         columns: dict[str, Any] = {k.replace(".", "__"): v for k, v in self._columns().items()}
+        if self.angle_lut is not None:
+            columns["angle_lut"] = self.angle_lut
         np.savez(str(npz), **columns)
         side.write_text(
             json.dumps(
@@ -184,6 +252,9 @@ class MaterialTable:
                     "names": list(self.names),
                     "library_hash": self.library_hash,
                     "columns": sorted(self._columns()),
+                    "angle_lut": None
+                    if self.angle_lut is None
+                    else {"n_angles": int(self.angle_lut.shape[1])},
                 },
                 indent=2,
             )
@@ -222,6 +293,7 @@ class MaterialTable:
             angular_a=arrays.get("angular_a"),
             angular_p=arrays.get("angular_p"),
             roughness=arrays.get("roughness"),
+            angle_lut=arrays.get("angle_lut"),
             thermal=thermal,
             names=tuple(meta["names"]),
             library_hash=str(meta["library_hash"]),

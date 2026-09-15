@@ -43,6 +43,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Angular columns in the packed material table** (M7.10, §13.3, §13.5). The table gains an
+  `angle_lut` carrying ε(θ) for **every** material, not just the Level A ones — a kernel cannot
+  branch on §4.2's level, because a Fresnel material needs an n/k file and a Planck-weighted band
+  average and a GPU has neither. The (a, p) columns stay alongside it, since §4.2's "two
+  instructions in a shader" is cheaper still where it applies.
+- **The grid is uniform in cos θ, and the node count was measured rather than chosen.** A kernel has
+  `n·v` in hand, so a cos-uniform grid makes the lookup a multiply and a floor instead of an `acos`
+  — but the spacing that buys is uneven in angle, and in the unhelpful direction: ~10° per step near
+  normal where ε is flat, ~1° near grazing where it is falling off a cliff. At 33 nodes water
+  interpolates 0.0048 from the exact dispatch; at 65 it is 0.0012, and **inside §4.2's own 70° bound
+  every material lands within 2e-4** — two orders below the 0.02 Level B itself is allowed, so the
+  packing is nowhere near the limiting approximation.
+- **⚠️ Recorded, not chased: bare aluminium's ε reaches 0.96 within 0.2° of grazing**, and the LUT
+  reads 0.18 there. A metal's reflectance goes to 1 at exactly 90°, so its emissivity goes to 0 — but
+  it passes through a sub-degree maximum on the way. §4.2 claims nothing past 70°, a pixel at 89.8°
+  incidence has essentially zero projected area, and resolving it would cost the kernel the `acos`
+  the grid exists to avoid. A renderer that needs it calls the dispatch directly.
+- Closure survives float32 packing to **1e-6** across all 19 materials, and the counter-test matters:
+  the same library packed in **float16 breaks closure by ~1e-3**, so the float32 result is a property
+  of float32 and not of the numbers happening to be round. Packing the LUT is off by default, so every
+  table packed before M7.10 hashes and loads unchanged (24 tests).
 - **Material library v0 — §16.2's fifteen, with provenance** (M7.9, §16.2, §12.3, §4.3, §4.4). Nine
   new materials (concrete, rusted steel, tyre rubber, cotton, leaf, dry and wet soil, water, snow)
   bring the library to **19**, and each of the fifteen §16.2 rows is reproduced *exactly* — ε_LWIR,
