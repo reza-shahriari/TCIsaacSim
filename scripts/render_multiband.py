@@ -36,12 +36,15 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: $IRSIM_PYTHON when set (ADR 0002) and only falls back to this process's interpreter.
 DEFAULT_PYTHON = os.environ.get("IRSIM_PYTHON") or sys.executable
 
-#: scene -> (render script, extra arguments, frame count). The maritime demo is a short static
-#: scene by design (MM.7); the two aerial ones are flights.
+#: scene -> (render script, extra arguments, frame count). Every scene is filmed, so every count
+#: has to be long enough to *watch*: the ship's 8 predates the maritime script encoding video at
+#: all, and at 30 fps it is a quarter-second clip. The maritime camera is static where the two
+#: aerial ones fly, so its 90 frames buy less motion -- but the sea state, the AGC and the noise
+#: all move, and those are what a still frame cannot show.
 SCENES: dict[str, tuple[str, list[str], int]] = {
     "drone": ("render_quad_flight.py", [], 150),
     "airplane": ("render_aircraft_pass.py", [], 150),
-    "ship": ("render_maritime_demo.py", [], 8),
+    "ship": ("render_maritime_demo.py", [], 90),
 }
 
 #: band -> (sensor config, extra arguments). `--integration-ms` appears only where the camera's own
@@ -188,6 +191,38 @@ def contact_sheet(scene: str, root: pathlib.Path) -> pathlib.Path | None:
     return path
 
 
+def merged_index(
+    root: pathlib.Path, status: dict[str, str], sheets: dict[str, str]
+) -> dict[str, dict[str, str]]:
+    """Fold this run's results into whatever `index.json` already records.
+
+    The manifest describes the *output tree*, not the invocation that last touched it, and the
+    two diverge the moment anyone passes `--scene` or `--band`: re-rendering the ship alone used
+    to leave an index.json claiming the directory held four ship renders and nothing else, while
+    twelve videos sat next to it. Entries this run produced win -- a scene re-rendered from ok to
+    failed must say failed -- and entries it did not touch are carried through.
+
+    A missing or unreadable index is treated as an empty one. It is a convenience file that any
+    run can rebuild, so refusing to start because it is corrupt would trade a real render for a
+    bookkeeping error.
+    """
+    previous: dict[str, dict[str, str]] = {}
+    try:
+        loaded = json.loads((root / "index.json").read_text("utf-8"))
+        if isinstance(loaded, dict):
+            previous = loaded
+    except (OSError, ValueError):
+        previous = {}
+
+    def fold(key: str, fresh: dict[str, str]) -> dict[str, str]:
+        kept = previous.get(key)
+        merged = dict(kept) if isinstance(kept, dict) else {}
+        merged.update(fresh)
+        return merged
+
+    return {"renders": fold("renders", status), "contact_sheets": fold("contact_sheets", sheets)}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scene", action="append", choices=sorted(SCENES))
@@ -220,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"contact sheet: {path}")
     root.mkdir(parents=True, exist_ok=True)
     (root / "index.json").write_text(
-        json.dumps({"renders": status, "contact_sheets": sheets}, indent=2, sort_keys=True),
+        json.dumps(merged_index(root, status, sheets), indent=2, sort_keys=True),
         "utf-8",
     )
     failed = [k for k, v in status.items() if v != "ok"]

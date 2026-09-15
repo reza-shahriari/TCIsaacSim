@@ -22,6 +22,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it — CLAUDE.md #6 in its most literal form, and it would render perfectly plausibly.
 
 ### Fixed
+- **The multi-band manifest described the last invocation, not the output tree** (M10.24).
+  `outputs/multiband/index.json` was overwritten wholesale on every run, so re-rendering the ship
+  alone left a manifest claiming the directory held four ship renders while twelve videos and
+  three contact sheets sat next to it. It merges now: entries this run produced win — a scene that
+  goes from ok to failed must read failed — and entries it did not touch are carried through. A
+  missing or unreadable index is treated as an empty one, because a convenience file any run can
+  rebuild must never be able to discard a completed render.
+- **The ship rendered a quarter-second clip by default.** Its frame count was 8, authored when the
+  maritime script exported loose per-frame files and encoded no video at all; at 30 fps that is
+  unwatchable beside the two 150-frame aerial flights. It is 90 now. The maritime camera is static,
+  so those frames buy less motion than a flight does — but the sea state, the AGC and the noise all
+  move, and those are exactly what a still frame cannot show. A test pins every scene's default at
+  three seconds or more, since a default clip that cannot be played is a defect in the driver
+  rather than a choice about the scene.
+- The driver had **no tests**; it has ten, and they run without Isaac Sim or a GPU because the
+  merge and the scene table are the two parts of it that do not.
 - ⚠️ **Two of MM.8's three written criteria are backwards, and the tests measure rather than assert
   them.** Both assumed the sea behaves like an overcast *ground* scene, which MM.3 had already
   found it does not (ADR 0078):
