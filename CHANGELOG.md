@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The full multi-band matrix ran**: twelve renders — four bands of the drone, the airplane and
+  the ship, each with its registered visible companion (M10.24). Final state is zero saturated
+  pixels in any of them. The comparison is the deliverable: a quadrotor is four hot motor bells on
+  a cold sky in LWIR and a dark silhouette on a bright sky in NIR, and an aircraft shows **1615 px
+  of nozzle in MWIR against 195 px in LWIR** at the same instant and aspect.
+- Running all twelve at once is what found five defects that no single-band render could have
+  exposed — a missing `--rt-subframes`, a display span still written in kelvin for bands that have
+  no apparent temperature, a contact sheet that only read videos, and the two radiometric bugs
+  above. That is the argument for the driver script existing rather than twelve invocations.
 - **Water's n/k table extended to 0.65 µm** (M7.5). A maritime scene in SWIR or NIR needs water's
   Fresnel reflectance over 0.7–1.8 µm, and the loader **refuses to extrapolate** an n/k table rather
   than invent optical constants — so a ship render in those bands failed outright until the range
