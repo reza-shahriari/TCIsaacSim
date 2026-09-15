@@ -47,3 +47,8 @@ scene:
       # the same panel, parked and at 100 km/h -- forced convection, nothing else
       - {name: hood_still,    material: car_paint_black,  tilt_deg: 0.0}
       - {name: hood_moving,   material: car_paint_black,  tilt_deg: 0.0, vehicle_speed_m_s: 28.0}
+      # the reflection pair (M7.16): the same paint facing up and facing sideways, so the only
+      # difference is how much of the sky each one sees -- V_s = 1 against V_s = 1/2
+      - {name: wall_black,    material: car_paint_black,  tilt_deg: 90.0, azimuth_deg: 0.0}
+      # and the mirror: eps 0.09 in LWIR, so it shows the sky rather than itself
+      - {name: alu_panel,     material: bare_aluminium,   tilt_deg: 0.0}

@@ -10,10 +10,14 @@ Two things it deliberately does **not** do:
   the material's *optical* data through M7.8's total hemispherical emissivity, which is the only
   number §6.1 can correctly use (ADR 0043). A `thermal:` block that could carry its own ε would
   let one scene radiate at 0.95 while the camera sees 0.88, and nothing would catch it.
-* **It does not write the Stefan–Boltzmann term as a net exchange.** `Q_LW↓` and `ε σ T⁴` are
-  separate terms, as §6.1 writes them, because the downwelling side depends on sky emissivity and
-  cloud and the upwelling side does not; folding them into `εσ(T⁴ − T_sky⁴)` looks tidier and
-  silently multiplies the sky's own emissivity by ε a second time.
+* **It absorbs the downwelling longwave with ε, exactly as §6.1 writes it** — the term is
+  `ε Q_LW↓`, "absorbed sky/env", not `Q_LW↓`. Kirchhoff: a surface absorbs the same fraction of
+  incident longwave that it emits. Dropping that ε is invisible on a painted surface (10 % of one
+  term) and catastrophic on a metal, where it hands a panel with ε = 0.09 the full ~320 W m⁻² of
+  sky radiation while letting it emit only a tenth of a blackbody — a 19 K error at 03:00, which
+  is how this was found. `ε Q_LW↓ − ε σ T⁴` is algebraically the net-exchange form
+  `ε σ (ε_sky T_air⁴ − T⁴)`; the two terms are kept apart here only because Q_LW↓ arrives from
+  §6.5 already carrying the sky's own emissivity, cloud and view factor.
 
 The integrator is **RK2 (midpoint)**, per ADR 0036. The equation is stiff in the sense that a thin
 panel's time constant is seconds while a scene's tick is minutes, so the step is guarded rather
@@ -111,10 +115,11 @@ def net_flux(
     if np.any(t <= 0.0):
         raise ValueError("temperature must be positive (kelvin)")
     absorbed = properties.solar_absorptivity * forcing.q_solar_w_m2
+    absorbed_longwave = properties.emissivity * forcing.q_longwave_down_w_m2
     emitted = properties.emissivity * SIGMA_SB * t**4
     convected = forcing.h_w_m2_k * (t - forcing.t_air_k)
     return np.asarray(
-        absorbed + forcing.q_longwave_down_w_m2 - emitted - convected + forcing.q_internal_w_m2
+        absorbed + absorbed_longwave - emitted - convected + forcing.q_internal_w_m2
     )
 
 

@@ -147,9 +147,11 @@ class FacetSolver:
         self, temperatures: NDArray[np.float64], forcing: FacetForcing
     ) -> NDArray[np.float64]:
         t_air, h, q_sol, q_lw, q_int = forcing.arrays(self.properties.n_facets)
+        # eps multiplies BOTH the absorbed sky radiation and the emitted term, as §6.1 writes
+        # it. Kirchhoff: a surface absorbs the same fraction of incident longwave that it emits.
         return np.asarray(
             self.properties.solar_absorptivity * q_sol
-            + q_lw
+            + self.properties.emissivity * q_lw
             - self.properties.emissivity * SIGMA_SB * temperatures**4
             - h * (temperatures - t_air)
             + q_int

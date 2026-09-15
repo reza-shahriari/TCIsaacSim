@@ -43,19 +43,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **⚠️ Fixed: the surface balance was absorbing 100 % of the downwelling longwave regardless of
+  emissivity.** §6.1 writes **ε Q_LW↓** — "absorbed sky/env" — and M6.7 shipped `Q_LW↓`, with a test
+  asserting that was correct. Kirchhoff says a surface absorbs the same fraction of incident
+  longwave that it emits; dropping that ε is invisible on a painted surface (10 % of one term) and
+  catastrophic on a metal, where it hands a panel with ε = 0.09 the full ~320 W m⁻² of sky radiation
+  while letting it emit only a tenth of a blackbody.
+- **It was found by looking at a number that could not be true, not by re-reading the spec.** Adding
+  a bare-aluminium facet for M7.16 put it at **19 K above the air at 03:00** — a mirror, at night,
+  with no heat source. After the fix it sits **0.8 K below air**, which is what a surface that barely
+  exchanges radiatively does. The reasoning in the original test was also wrong in a specific way
+  worth naming: it argued that folding the terms into `εσ(T⁴ − T_sky⁴)` would "multiply the sky's
+  emissivity by ε a second time". It would not — the *sky's* emissivity sets the incident flux and
+  the *surface's* sets how much is absorbed, and both are needed. The folded form is algebraically
+  identical to the corrected one.
+- Everything downstream moved and the ordering did not: sunlit asphalt now peaks at **59.0 °C**
+  (was 60.1), the dawn contrast collapse is **13.2 K → 1.39 K** (an 89 % drop), and overcast halves
+  the swing while cutting the night spread by **25 %** rather than the quoted 30 % — because each
+  surface's response to the sky is now scaled by its own ε, so the low-ε surfaces contributing most
+  of the night spread are also the least moved by cloud. That damping is the corrected physics
+  showing up in an ensemble statistic.
 - **Tier 3 diurnal phenomenology on the facet scene** (M6.13, §6.3, §15 T3). Eleven facets, mostly
   in pairs that differ in exactly one thing, driven by 48 h of weather. Sunlit asphalt peaks at
-  **14:10 local at 60.1 °C**; the hood at 100 km/h is **26.4 K** colder than the parked one at
-  14:00; dry soil is **7.9 K** above wet at 14:00 and *below* it at dawn; shade is > 3 K colder by
+  **14:10 local at 59.0 °C**; the hood at 100 km/h is **26.4 K** colder than the parked one at
+  14:00; dry soil is **7.2 K** above wet at 14:00 and *below* it at dawn; shade is > 3 K colder by
   day and within **1 K** at night; black and white paint agree to **0.2 K** at 03:00 and differ by
   **> 20 K** at 13:00; overcast cuts both the swing and the mean night spread by > 30 %; doubling
   the wind lowers the peak by > 1 K; and the surface falls **below** the air on a clear night.
 - **§6.3's own acceptance test — "does the scene go flat?" — is measured on the scene-wide spread
   rather than on a chosen pair**, because a pair's crossing time moves by a couple of hours
   depending which pair you pick, and the operational claim is about the picture. **At dawn the scene
-  collapses from 12.7 K of spread to 0.88 K — a 93 % drop.**
+  collapses from 13.2 K of spread to 1.39 K — an 89 % drop.**
 - **⚠️ There is no dusk collapse, and that is recorded rather than engineered away.** At sunset the
-  spread is still 5.5 K and decays monotonically through the night to the dawn minimum. Each pair
+  spread is still 5.6 K and decays monotonically through the night to the dawn minimum. Each pair
   *does* cross — one to three hours before sunset — but they cross at different times, so the
   ensemble never passes through a common point. A dusk flat needs a facet set whose members share a
   solar absorptivity as well as differing in mass; this one deliberately does not, because its pairs
@@ -85,8 +105,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   curve still looks like a diurnal curve, and every time-of-day statement about it is wrong. A test
   now pins the sunlit-minus-shaded peak (which isolates the direct beam) against the file's own DNI
   peak, and a counter-test confirms a mismatched site shifts it by hours. With the site corrected to
-  +30°E, sunlit asphalt peaks at **14:15 local at 60.1 °C**, black roof at **66.2 °C** against
-  white's **37.4 °C**, and shaded asphalt 31.7 K below sunlit.
+  +30°E, sunlit asphalt peaks at **14:10 local at 59.0 °C**, black roof at **64.2 °C** against
+  white's **35.3 °C**, and shaded asphalt 31.7 K below sunlit.
 - **⚠️ A 48 h weather file cannot supply 48 h of weather *before* t₀.** The spin-up therefore wraps
   into the series it has — it is asking "what would this surface look like after a couple of days of
   weather like this", and the synthetic files are a whole number of days long so the wrap lands at

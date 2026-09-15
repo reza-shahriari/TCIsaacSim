@@ -64,7 +64,7 @@ def test_the_net_flux_is_the_sum_of_section_6_1s_five_terms() -> None:
     t = 310.0
     expected = (
         PAINT.solar_absorptivity * NOON.q_solar_w_m2
-        + NOON.q_longwave_down_w_m2
+        + PAINT.emissivity * NOON.q_longwave_down_w_m2
         - PAINT.emissivity * SIGMA_SB * t**4
         - NOON.h_w_m2_k * (t - NOON.t_air_k)
         + NOON.q_internal_w_m2
@@ -79,17 +79,43 @@ def test_the_flux_is_strictly_decreasing_in_temperature() -> None:
     assert np.all(np.diff(flux) < 0.0)
 
 
-def test_the_longwave_terms_are_not_folded_into_a_net_exchange() -> None:
-    """§6.1 writes Q_LW↓ and εσT⁴ separately, and folding them into εσ(T⁴ − T_sky⁴) would
-    multiply the sky's own emissivity by ε a second time.
+def test_the_downwelling_longwave_is_absorbed_with_epsilon() -> None:
+    """⚠️ §6.1 writes **ε Q_LW↓**, "absorbed sky/env" — and the first version of this module wrote
+    `Q_LW↓`, with a test asserting that was correct.
 
-    Doubling the downwelling must move the balance by exactly that amount, with no ε on it.
+    Kirchhoff: a surface absorbs the same fraction of incident longwave that it emits. Dropping
+    that ε is invisible on a painted surface — 10 % of one term — and catastrophic on a metal,
+    where it hands a panel with ε = 0.09 the full ~320 W m⁻² of sky radiation while letting it
+    emit only a tenth of a blackbody. That put an aluminium panel **19 K above the air at 03:00**
+    in the M6.13 facet scene, which is how it was found: not by re-reading §6.1, but by looking at
+    a number that could not be true.
+
+    `ε Q_LW↓ − ε σ T⁴` is algebraically the net-exchange form `ε σ (ε_sky T_air⁴ − T⁴)`. The two
+    terms are kept apart in the code only because Q_LW↓ arrives from §6.5 already carrying the
+    sky's own emissivity, its cloud fraction and the facet's view factor.
     """
     import dataclasses
 
     doubled = dataclasses.replace(NIGHT, q_longwave_down_w_m2=2.0 * NIGHT.q_longwave_down_w_m2)
     delta = float(net_flux(300.0, PAINT, doubled)) - float(net_flux(300.0, PAINT, NIGHT))
-    assert delta == pytest.approx(NIGHT.q_longwave_down_w_m2, rel=1e-12)
+    assert delta == pytest.approx(PAINT.emissivity * NIGHT.q_longwave_down_w_m2, rel=1e-12)
+
+    # a low-emissivity surface is nearly deaf to the sky, which is the whole point
+    mirror = ThermalProperties(
+        heat_capacity_j_m2_k=5000.0, emissivity=0.09, solar_absorptivity=0.15
+    )
+    mirror_delta = float(net_flux(300.0, mirror, doubled)) - float(net_flux(300.0, mirror, NIGHT))
+    assert mirror_delta < 0.15 * delta
+
+    # and the two forms agree: eps Q_LW - eps sigma T^4 == eps sigma (eps_sky T_air^4 - T^4)
+    from irsim.radiometry.constants import SIGMA_SB
+
+    eps_sky = NIGHT.q_longwave_down_w_m2 / (SIGMA_SB * NIGHT.t_air_k**4)
+    separate = (
+        PAINT.emissivity * NIGHT.q_longwave_down_w_m2 - PAINT.emissivity * SIGMA_SB * 300.0**4
+    )
+    folded = PAINT.emissivity * SIGMA_SB * (eps_sky * NIGHT.t_air_k**4 - 300.0**4)
+    assert separate == pytest.approx(folded, rel=1e-12)
 
 
 def test_bad_inputs_are_refused() -> None:
@@ -265,6 +291,17 @@ def test_the_metal_is_the_one_material_whose_thermal_epsilon_exceeds_its_optical
         library["bare_aluminium"].band_properties("lwir").emissivity
     )
     # and it is still a poor radiator, so it equilibrates far closer to the air than paint does
-    from_air_metal = abs(steady_state_temperature(aluminium, NOON) - NOON.t_air_k)
-    from_air_paint = abs(steady_state_temperature(PAINT, NOON) - NOON.t_air_k)
-    assert from_air_metal > from_air_paint, "a poor radiator sheds absorbed sun less easily"
+    # A poor radiator is nearly deaf to the sky: on a **passive** clear night it sits far closer
+    # to the air than a painted panel does, because both its absorbed and its emitted longwave
+    # are scaled by 0.11. NIGHT carries 50 W/m² of internal heat, and with that the ordering
+    # reverses -- the mirror cannot shed it and runs 4.6 K *above* air while the paint sits 2.5 K
+    # below. Both are right, and which one you measure depends on whether the surface is doing
+    # anything, so the passive case is the one that says something about emissivity.
+    import dataclasses
+
+    passive = dataclasses.replace(NIGHT, q_internal_w_m2=0.0)
+    metal_night = abs(steady_state_temperature(aluminium, passive) - passive.t_air_k)
+    paint_night = abs(steady_state_temperature(PAINT, passive) - passive.t_air_k)
+    assert metal_night < paint_night, "a passive mirror should track the air, not the sky"
+    powered_metal = steady_state_temperature(aluminium, NIGHT) - NIGHT.t_air_k
+    assert powered_metal > 3.0, "and with internal heat it cannot shed, it runs hot"

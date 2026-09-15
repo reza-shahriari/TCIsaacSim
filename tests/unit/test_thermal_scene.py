@@ -61,6 +61,8 @@ def test_the_committed_facet_scene_validates_and_builds(scene: Scene) -> None:
         "steel_panel",
         "hood_still",
         "hood_moving",
+        "wall_black",
+        "alu_panel",
     )
 
 
@@ -198,9 +200,11 @@ def test_the_scene_field_starts_spun_up_rather_than_transient(scene: Scene) -> N
     t_air = float(np.asarray(scene.weather.at(scene.t0_s).t_air_k))
     first = scene.thermal.temperature_at(scene.t0_s)
     assert np.any(np.abs(first.astype(np.float64) - t_air) > 1.0)
-    # the slow surfaces are *above* the air at midnight, which is what "still warm at midnight" is
-    concrete = scene.surface_temperature_k("concrete", scene.t0_s)
-    assert concrete > t_air + 1.0
+    # the surfaces span 7.7 K at midnight while the air is one number: that spread *is* the memory
+    assert float(np.ptp(first.astype(np.float64))) > 5.0
+    # the heaviest surface is still above the air; the lightest is well below it
+    assert scene.surface_temperature_k("soil_wet", scene.t0_s) > t_air + 1.0
+    assert scene.surface_temperature_k("roof_black", scene.t0_s) < t_air - 1.0
 
 
 def test_the_query_is_const_and_named(scene: Scene) -> None:
