@@ -306,7 +306,10 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
 - No 3-D conduction. Engine bay and exhaust are prescribed, not solved. A `PlanarThermalField`
   (ADR 0087) gives a surface a temperature *field* rather than one value, but its cells are still
   independent §6.1 facets: heat spreads across a panel only insofar as the *forcing* spreads, not by
-  lateral conduction within the skin.
+  lateral conduction within the skin. What *does* spread across a panel is the forcing: ADR 0088's
+  configuration factor puts an engine bay's heat onto the bonnet above it as a computed falloff,
+  and a warm body onto the ground below it -- single-bounce, isothermal over the radiating
+  rectangle, and parallel surfaces only.
 - **Point-wise temperature is a projection, so it covers near-planar surfaces only** (ADR 0087). A
   road, a bonnet, a roof or a deck can carry a field, parameterised by the per-pixel world position
   AOV. A wheel, a tyre, an exhaust pipe or a mast is not near-planar and still takes **one

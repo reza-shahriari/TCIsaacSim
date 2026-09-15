@@ -79,6 +79,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is exact for near-planar surfaces (road, bonnet, roof, deck) and a wheel or an exhaust pipe still
   takes one temperature per prim. Lifting that needs a UV or per-triangle AOV this build does not
   expose (ADR 0014).
+- **Heat sources that vary across a surface** (MP.2, ADR 0088, §6.1/§6.6).
+  `irsim.thermal.spatial_sources` supplies the per-cell forcing MP.1's field had no way to differ
+  by. An engine bay radiating up onto a bonnet and a warm underbody radiating down onto asphalt are
+  the *same* geometry problem — a plane element exchanging with a parallel rectangle — so one
+  closed-form configuration factor (Howell C-11, superposed over four signed corners for an
+  arbitrary offset) serves both, and the bonnet's falloff is **computed from the block's dimensions**
+  rather than authored as a Gaussian with a fitted width.
+- The constant is verified against a brute-force quadrature of the defining integral rather than
+  taken from memory: a view factor wrong by a factor of two gives a gradient of exactly the right
+  shape and half the right size, which no image would reveal. Non-parallel geometry raises.
+- **A hot body over a surface also blocks the sky that surface was seeing**, and
+  `occluded_longwave_flux` returns the net change rather than the source term alone. This is not a
+  correction, it is the dominant term on a clear night: a 295 K underbody over asphalt adds about
+  half the naive source-only figure under a 245 K clear sky and about a tenth of it under an
+  overcast 288 K one. It is why a parked car leaves a warm car-shaped patch on asphalt **before its
+  engine has ever run** — a familiar feature of night parking-lot imagery that a source-only model
+  cannot produce at all, and one that now falls out of the geometry.
+- It also settles a scene-design question: a demo meant to show *engine* heat must be shot under
+  overcast, where the occlusion nearly cancels. Under a clear sky the car-shaped patch is already
+  there in frame 0.
 
 ### Fixed
 - **The bolometer membrane IIR is on `run_frame`'s path** (M9.13, ADR 0082, §9.2). `BolometerLowPass`

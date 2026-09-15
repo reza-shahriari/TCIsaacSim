@@ -46,6 +46,13 @@ from irsim.thermal.solvers import (
     SolverState,
     TemperatureSolver,
 )
+from irsim.thermal.spatial_sources import (
+    RadiantRectangle,
+    corner_view_factor,
+    occluded_longwave_flux,
+    patch_view_factors,
+    view_factor_to_parallel_rectangle,
+)
 from irsim.thermal.surface_field import PlanarPatch, PlanarThermalField
 from irsim.thermal.weather import WEATHER_FIELDS, WeatherSample, WeatherSeries, seconds_since
 from irsim.thermal.weather_io import load_weather_csv, synthetic_clear_day, write_weather_csv
@@ -63,6 +70,11 @@ __all__ = [
     "refine_nodes",
     "throttle_profile",
     "PlanarPatch",
+    "RadiantRectangle",
+    "corner_view_factor",
+    "occluded_longwave_flux",
+    "patch_view_factors",
+    "view_factor_to_parallel_rectangle",
     "PlanarThermalField",
     "SOLVER_TYPES",
     "NewtonCoolingSolver",
