@@ -350,6 +350,46 @@ class MaterialTable:
             )
         return eps, np.maximum(rho, np.float32(0.0)), tau
 
+    def directional_properties_for(
+        self,
+        material_id: NDArray[np.integer],
+        cos_theta: Any,
+        sky_mask: NDArray[np.bool_] | None = None,
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        """Per-pixel (ε(θ), ρ, τ) from the packed angle LUT, closing to 1 at every angle.
+
+        **ρ is re-derived at each angle, never carried.** ε(θ) moves and τ does not, so ρ must
+        absorb the difference or the pixel stops conserving energy the moment the surface tilts --
+        a per-pixel closure failure that grows towards the limb, which is exactly where a
+        directional model is supposed to be improving things.
+
+        τ is held angle-independent, which is an approximation and a stated one: a real
+        transmittance falls towards grazing too. It is first order in the same sense §4.2's Level
+        B is, and the materials with τ > 0 in this library (glass in SWIR, a leaf in NIR) are
+        looked at near normal far more often than at the limb.
+
+        Pixels under ``sky_mask`` keep the blackbody-equivalent ε = 1, ρ = τ = 0 of
+        :meth:`properties_for`: the G-buffer carries the *apparent* sky temperature there, which
+        is a radiance dressed as a temperature and has no surface to have an angle to.
+        """
+        if self.angle_lut is None:
+            raise ValueError(
+                "this table was packed without an angle LUT; pass angle_lut=True to "
+                "MaterialTable.from_library (M7.10) or use properties_for for the ε₀ path"
+            )
+        ids = np.asarray(material_id)
+        eps0, _rho0, tau = self.properties_for(ids, sky_mask)
+        eps = self.epsilon_at(ids, cos_theta)
+        if sky_mask is not None:
+            eps = np.where(np.asarray(sky_mask), np.float32(1.0), eps).astype(np.float32)
+        if np.any(np.isnan(eps)):
+            raise ValueError("angle LUT has NaN for a referenced material id")
+        headroom = 1.0 - tau.astype(np.float64)
+        eps = np.asarray(np.minimum(eps.astype(np.float64), headroom), dtype=np.float32)
+        rho = np.asarray(headroom - eps.astype(np.float64), dtype=np.float32)
+        del eps0
+        return eps, np.maximum(rho, np.float32(0.0)), tau
+
     def emissivity_for(
         self, material_id: NDArray[np.integer], sky_mask: NDArray[np.bool_] | None = None
     ) -> NDArray[np.float32]:

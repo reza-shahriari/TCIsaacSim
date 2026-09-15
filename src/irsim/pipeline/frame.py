@@ -137,6 +137,7 @@ def run_frame(
         sky_mask=planes.get("sky_mask"),
         l_behind=planes.get("radiance_behind"),
         illumination=stage_illumination(planes, config, state),
+        normal_dot_view=planes.get("normal_dot_view"),
     )
     # stage 2 (k× grid): per-ray atmosphere; sky pixels pass through (ADR 0050)
     if isinstance(config.atmosphere, LayeredAtmosphere):

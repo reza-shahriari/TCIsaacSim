@@ -43,6 +43,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Directional emissivity per pixel in stage 1** (M7.14, ADR 0042, §4.2, §13.5). `band_radiance`
+  takes `normal_dot_view` and, when the material table carries an M7.10 angle LUT, evaluates ε(θ)
+  per pixel. **ρ is re-derived at every angle, never carried**: ε(θ) moves and τ does not, so ρ must
+  absorb the difference or the pixel stops conserving energy the moment the surface tilts — a
+  per-pixel closure failure that grows towards the limb, exactly where the model is meant to help.
+- **The path is opt-in by packing**, not by the presence of a plane. Stage 1 uses it only when the
+  table was packed with an angle LUT, so every scene and every golden written before this is
+  bit-identical; the directional path appears because a caller packed the table for it.
+- On the sphere fixture under a 220 K sky, the rim follows
+  `ΔT = (ε₀ − ε(θ))(L_B(T) − L_env)/(∂L_B/∂T)` to **under 10 mK**, and with `L_env = L_B(T)` the
+  effect vanishes to **under 1 mK** — the half a wrong reflected term fails, since a model that
+  varied ε with angle and forgot to move ρ with it would darken the limb here too and look entirely
+  plausible. Paint's rim drops **1.44 K** against asphalt's **0.45 K**, which is the difference §4.2's
+  "a → 0 for rough dielectrics" is about.
+- **⚠️ Two things the criterion as written would have got wrong, and both were found by measuring.**
+  The prediction has to be **differential**, against the same scene at ε₀: under a 220 K sky an
+  ε = 0.90 surface at 300 K already reads **294.7 K** everywhere from M7.13's reflected term alone,
+  so measuring the limb against the *kinetic* temperature reports a 5.3 K error that has nothing to
+  do with the angular model and drowns the 1.4 K that does. And ∂L/∂T has to be taken at the
+  **midpoint** of the excursion — anchoring at the baseline leaves 11.6 mK of pure second-order
+  term, just outside the 10 mK asked for.
+- The metal comes through the whole chain with its sign intact: bare aluminium's limb reads
+  **warmer** than its centre, because its ε rises with angle so it emits more and reflects less of
+  the cold sky — the opposite of every dielectric in the scene (8 tests).
 - **Angular columns in the packed material table** (M7.10, §13.3, §13.5). The table gains an
   `angle_lut` carrying ε(θ) for **every** material, not just the Level A ones — a kernel cannot
   branch on §4.2's level, because a Fresnel material needs an n/k file and a Planck-weighted band

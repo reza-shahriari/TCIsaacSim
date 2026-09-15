@@ -43,6 +43,7 @@ def band_radiance(
     l_env: NDArray[np.floating] | None = None,
     l_behind: NDArray[np.floating] | None = None,
     illumination: Illumination | None = None,
+    normal_dot_view: NDArray[np.floating] | None = None,
 ) -> NDArray[np.float32]:
     """ε₀ L_B(T) + ρ L_env + τ L_behind as float32 (``lb_q`` for photon FPAs).
 
@@ -56,6 +57,12 @@ def band_radiance(
     plus whatever solar and night sources the band's regime lets through, already gated and
     carrying its own units tag, which is checked here (ADR 0063). It is mutually exclusive with
     ``l_env`` -- two ways to say the same thing is how the two drift apart.
+
+    ``normal_dot_view`` switches stage 1 to §4.2's directional ε(θ) (M7.14). It is used **only**
+    when the material table was packed with an angle LUT (M7.10), so every scene and every golden
+    written before this is bit-identical: the directional path is something a caller opts into by
+    packing the table for it, not something that appears because a G-buffer happens to carry a
+    plane it has always carried.
 
     **ε L_B(T) is evaluated whatever the regime.** A reflective band is a statement about a 300 K
     scene, not about the band: a 500 K exhaust glows in SWIR at night with no illumination at all.
@@ -94,7 +101,10 @@ def band_radiance(
         behind = require_fp32_or_better(np.asarray(l_behind), "l_behind")
         if behind.shape != t.shape:
             raise ValueError(f"l_behind shape {behind.shape} != temperature shape {t.shape}")
-    eps, rho, tau = materials.properties_for(ids, sky_mask)
+    if normal_dot_view is not None and materials.angle_lut is not None:
+        eps, rho, tau = materials.directional_properties_for(ids, normal_dot_view, sky_mask)
+    else:
+        eps, rho, tau = materials.properties_for(ids, sky_mask)
     out = surface_radiance(eps, rho, tau, lb, env, behind)
     return np.asarray(out, dtype=np.float32)
 
@@ -133,6 +143,7 @@ def band_radiance_stage(planes: Planes, config: PipelineConfig, state: PipelineS
         sky_mask=planes.get("sky_mask"),
         l_behind=planes.get("radiance_behind"),
         illumination=stage_illumination(planes, config, state),
+        normal_dot_view=planes.get("normal_dot_view"),
     )
     return {"radiance": out}
 
