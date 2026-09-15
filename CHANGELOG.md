@@ -43,6 +43,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **Sky and target statistics for the Tier 4 comparison** (ME.4, ADR 0068 addendum).
+  `irsim.validation.targets` measures a display-domain frame the way the public data forces:
+  `target_statistics` (SCR against the *ring* around the box — a sky target's background is the sky
+  right behind it, and a frame-wide background mixes in the horizon, the ground and any cloud on the
+  other side of the picture), `sky_profile` (shape normalised by the horizon-to-zenith span **and**
+  SNR per row, so an AGC that stretched the sky twice as hard moves neither), `clutter_slope`,
+  `edge_spread_function`, `profile_centre_index`, `edge_asymmetry`, `asymmetry_vs_tau_curve` and
+  `size_from_range_px`.
+- **The planned `tau_from_asymmetry` does not exist, and the roadmap's "recovers τ within 2 %" is
+  withdrawn.** The point-source inversion — target as a point, trail as a geometric tail — returns
+  **0.45 frames for a true τ of 4** on a σ = 3 px target, because the core carries far more energy
+  than the trail. What ships instead is `asymmetry_vs_tau_curve`, which builds the curve for the
+  caller's own target size, speed and window; a comparison inverts by interpolating against it.
+  A τ = 3 probe reads 3.25 against knots at 2 and 4 — the curve is convex, and that is the accuracy
+  this statistic supports.
+- **Edge asymmetry must be split at the box centre, not at the profile centroid.** The centroid is
+  not a landmark: a long faint trail drags it into itself, which leaves the compact core on the
+  *leading* side of the split, so the statistic reports the trail on the wrong **side** (−0.056,
+  −0.117, −0.193, −0.162, −0.230 for τ of 0.5, 1, 2, 4, 8 frames on a demonstrably rightward trail)
+  and is not monotone in magnitude either. Split at the box centre it is strictly monotone in every
+  regime tested — 0.083, 0.261, 0.496, 0.700, 0.836 at σ = 3 px and 2 px/frame, and still monotone
+  at a point-like σ = 0.6 px, which is where a real sky detection lives.
+- A short measurement window **compresses** the curve rather than folding it: between τ = 4 and
+  τ = 16 a 120 px window gains 0.212 of asymmetry and a 6 px window only 0.110, so the same DN8
+  measurement error inverts to nearly twice the spread in τ. Measure with the widest window the
+  frame allows and build the curve with that same window.
 - **§6.6's vehicle thermal architecture: a cabin node, scripted heat sources, and the ghosts they
   leave** (M6.14–M6.16, ADR 0038, ADR 0039). A vehicle panel's back boundary is a lumped cabin, not
   ambient and not adiabatic: with the cabin the roof runs **+4.8 K** hotter at noon, the cabin air

@@ -118,9 +118,7 @@ def net_flux(
     absorbed_longwave = properties.emissivity * forcing.q_longwave_down_w_m2
     emitted = properties.emissivity * SIGMA_SB * t**4
     convected = forcing.h_w_m2_k * (t - forcing.t_air_k)
-    return np.asarray(
-        absorbed + absorbed_longwave - emitted - convected + forcing.q_internal_w_m2
-    )
+    return np.asarray(absorbed + absorbed_longwave - emitted - convected + forcing.q_internal_w_m2)
 
 
 def rk2_step(
