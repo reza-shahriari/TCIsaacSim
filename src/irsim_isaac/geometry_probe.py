@@ -46,6 +46,9 @@ __all__ = [
     "pitch_camera",
     "sphere_cos_theta",
     "detect_position_frame",
+    "position_frame_residuals",
+    "pinhole_rays",
+    "POSITION_FRAME_HYPOTHESES",
     "configure_renderer",
     "RENDERER_SETTINGS",
     "survey_channels",
@@ -159,6 +162,114 @@ def detect_position_frame(
         "err_world_m": err_world,
         "err_camera_m": err_camera,
         "verdict": "world" if err_world < err_camera else "camera",
+    }
+
+
+#: The three frames ``Camera3dPositionSD`` could plausibly be in, and what each predicts for a
+#: point the distance AOV already measured. ADR 0014 recorded *world* (measured on a scene with a
+#: translated but unrotated camera) and its M10.19 addendum recorded *camera* (measured on a scene
+#: with a rotated camera at the origin). Both scenes are degenerate in one axis, and both readings
+#: are also consistent with ``rotated_world`` -- the world point expressed in camera **axes** with
+#: the translation left in -- which no scene so far could have distinguished from either.
+POSITION_FRAME_HYPOTHESES: tuple[str, ...] = ("world", "camera", "rotated_world")
+
+
+def pinhole_rays(resolution: int, focal_px: float, camera_to_world: Any) -> NDArray[np.float64]:
+    """Unit world-axis ray direction for every pixel of a pinhole camera looking down camera -Z.
+
+    The pixel convention matches :meth:`GeometryScene.pixel_of` (``u = W/2 + f x / z``, pixel
+    centres on integers) so a ray and a projected point address the same pixel. ``camera_to_world``
+    is the rotation in :func:`irsim_isaac.pipeline.gbuffer_isaac.ray_directions`' convention, so
+    the camera-axis direction is taken to world as ``d @ rot.T``.
+    """
+    rot = np.asarray(camera_to_world, dtype=np.float64)
+    if rot.shape == (4, 4):
+        rot = rot[:3, :3]
+    if rot.shape != (3, 3):
+        raise ValueError(f"camera_to_world must be 3x3 or 4x4, got {rot.shape}")
+    cols, rows = np.meshgrid(
+        np.arange(resolution, dtype=np.float64), np.arange(resolution, dtype=np.float64)
+    )
+    x = cols - 0.5 * resolution
+    y = 0.5 * resolution - rows
+    d_cam = np.stack([x, y, np.full_like(x, -float(focal_px))], axis=2)
+    d_cam /= np.linalg.norm(d_cam, axis=2, keepdims=True)
+    return np.asarray(d_cam @ rot.T)
+
+
+def position_frame_residuals(
+    position: NDArray[np.floating[Any]],
+    distance_m: NDArray[np.floating[Any]],
+    ray_world: NDArray[np.floating[Any]],
+    *,
+    camera_position: Any,
+    camera_to_world: Any,
+) -> dict[str, Any]:
+    """Score each :data:`POSITION_FRAME_HYPOTHESES` against a world point known per pixel.
+
+    The oracle owes nothing to the position AOV: ``DistanceToCameraSD`` is an independently
+    measured Euclidean ray length (M10.1: 1 cm on the tilted quad) and ``ray_world`` is the
+    pinhole direction of that pixel, so the surface point is ``C + d * ray`` whatever the position
+    AOV says. Each hypothesis decodes the AOV to a world point, and the residual is the distance
+    between the two -- in metres, which is the unit the consequence is felt in.
+
+    With ``C`` the camera translation and ``A`` its rotation in
+    :func:`irsim_isaac.pipeline.gbuffer_isaac.ray_directions`' convention
+    (``v_world = v_camera @ A.T``):
+
+    ================  =====================  ===========================
+    hypothesis        ``P`` holds            decodes to
+    ================  =====================  ===========================
+    ``world``         ``p``                  ``P``
+    ``camera``        ``(p - C) @ A``        ``P @ A.T + C``
+    ``rotated_world`` ``p @ A``              ``P @ A.T``
+    ================  =====================  ===========================
+
+    The three coincide only when ``C = 0`` **and** ``A = I``; one rotated, off-origin camera
+    separates all three at once, ``camera`` and ``rotated_world`` by exactly ``|C|``. Returns the
+    median residual per hypothesis, the winner, and the margin over the runner-up -- a margin near
+    zero means the scene was degenerate and the verdict is not evidence, which is precisely how
+    ADR 0014 and its M10.19 addendum came to disagree.
+
+    docs/physics-model.md 13.3; roadmap M2.4.
+    """
+    pos = np.asarray(position, dtype=np.float64)[:, :, :3]
+    d = np.asarray(distance_m, dtype=np.float64)
+    ray = np.asarray(ray_world, dtype=np.float64)[:, :, :3]
+    if pos.shape[:2] != d.shape or ray.shape[:2] != d.shape:
+        raise ValueError(f"position {pos.shape[:2]}, distance {d.shape}, rays {ray.shape[:2]}")
+    cam = np.asarray(camera_position, dtype=np.float64).reshape(3)
+    rot = np.asarray(camera_to_world, dtype=np.float64)
+    if rot.shape == (4, 4):
+        rot = rot[:3, :3]
+    if rot.shape != (3, 3):
+        raise ValueError(f"camera_to_world must be 3x3 or 4x4, got {rot.shape}")
+
+    # Sky pixels carry no geometry to score, and the ray length is how they are known: it is
+    # `inf` there. That is also what excludes the position AOV's miss sentinel (measured: a point
+    # 1000 m down the ray), so the sentinel value itself is never tested for -- a magnitude test
+    # would throw away real geometry in a long-range aerial scene, where targets sit at km.
+    valid = np.isfinite(d) & (d > 0.0) & np.isfinite(pos).all(axis=2)
+    # `inf` distance on sky pixels would make `inf * 0` rays NaN; they are excluded anyway.
+    truth = cam + np.where(valid, d, 0.0)[..., None] * ray
+    decoded = {
+        "world": pos,
+        "camera": pos @ rot.T + cam,
+        "rotated_world": pos @ rot.T,
+    }
+    residuals = {
+        name: float(np.median(np.linalg.norm(p - truth, axis=2)[valid]))
+        if valid.any()
+        else float("inf")
+        for name, p in decoded.items()
+    }
+    ranked = sorted(residuals, key=lambda name: residuals[name])
+    return {
+        "residual_m": residuals,
+        "sample_pixels": int(valid.sum()),
+        "verdict": ranked[0],
+        "runner_up": ranked[1],
+        "margin_m": residuals[ranked[1]] - residuals[ranked[0]],
     }
 
 

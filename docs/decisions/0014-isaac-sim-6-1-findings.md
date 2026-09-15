@@ -165,7 +165,7 @@ product, `/rtx/post/aa/op = 0`.
 | channel | annotator | dtype | shape | verdict |
 |---|---|---|---|---|
 | distance | `DistanceToCameraSD` | float32 | 384² | **use.** Euclidean ray length; `inf` where nothing is hit. `DistanceToImagePlaneSD` (z-depth) also delivers and must not be substituted |
-| position | `Camera3dPositionSD` | float32 ×4 | 384² | **use.** **World space** (misses carry a −1000 sentinel). `PtWorldPos` delivers at 192² only |
+| position | `Camera3dPositionSD` | float32 ×4 | 384² | **use.** **Camera space** (misses sit 1000 m down the ray). This row said *world* until M2.4 re-read it; the probe it cites reported `camera` even here, and the correction is the M2.4 addendum below. `PtWorldPos` delivers at 192² only |
 | normal | `normals` | float32 ×4 | 384² | **use.** **World space** (see the pitch test below) |
 | normal | `PtWorldNormal` | float16 ×4 | **192²** | **do not use.** Attaches, returns data, and is **all zero** |
 | normal | `BumpNormal` | float32 ×4 | 192² | unusable: half resolution, values up to ±3 × 10³⁸ |
@@ -215,6 +215,8 @@ not match the render product.
 - `test_motion_aov_does_not_transport_motion_on_this_build` fails — the channel started working;
   determine its units and wire `motion_px` instead of synthesising it.
 - `AmbientOcclusion` returns data — then `V_s` picks up real occlusion for ground scenes.
+  `test_no_ambient_occlusion_aov_delivers_on_this_build` is what notices (added in M2.4; until
+  then this line was a hope, not a trigger).
 - `PtWorldNormal` stops being all-zero, or any of these AOVs changes resolution or dtype; the
   integration tests pin each of those facts and will fail first.
 
@@ -355,6 +357,89 @@ Nothing else in the repo was wrong, because nothing else had rotated a camera:
 `test_gbuffer_isaac.py`, `test_material_ids_isaac.py` and `test_aerial_bridge_isaac.py` all use
 cameras at the origin looking down −Z, where both readings agree. That is exactly why it survived
 until a scene needed to look *up*.
+
+
+## Addendum (M2.4 close-out, 2026-09-15): the position AOV is camera space, and nothing supplies occlusion
+
+M2.4 — the AOV semantics probe — stayed open because the ramp scene of the main decision could
+not exercise normals, occlusion or motion. M10.1 measured all three on a lit, tilted, moving
+scene, so what was left was not a new experiment but two things this ADR had got wrong or left
+unenforced. Both are now measured and pinned; M2.4 is closed.
+
+### The position AOV is camera space. It always was, on every scene here.
+
+The addendum above records `Camera3dPositionSD` as **world** space. That is wrong, and not
+subtly: it is wrong by the camera's own offset from the origin. Worse, the probe it cites
+(`detect_position_frame`) reported `camera` on the very scene the table was written from —
+`err_camera = 0.013 m` against `err_world = 5.48 m`. The wrong value was written down beside a
+right measurement, and survived because `test_position_aov_frame_is_unambiguous` only asserts that
+*one* hypothesis fits, never which. M10.19 then re-derived the truth from the opposite direction
+(a horizon 164 rows out of place) without the two records being reconciled.
+
+That left the ADR asserting both readings in different sections, and a third possibility that
+neither had tested: the world point expressed in camera **axes**, with the translation left in.
+It matters because `ray_directions`' `frame="camera"` branch does not subtract the camera
+position — correct for true camera space, wrong by `|C|` for the rotated-world reading, on any
+camera that is both moved and turned. Every scene measured so far had an unrotated camera, or a
+camera at the origin, and each of those degeneracies hides exactly one of the three.
+
+`position_frame_residuals` decides between all three at once. It scores each hypothesis against a
+world point the position AOV had no part in producing: `C + d · r`, where `d` is the
+independently-measured `DistanceToCameraSD` ray length and `r` is that pixel's pinhole direction.
+Measured on the M10.1 scene (camera at (2, 1, 5), 33–57 k geometry pixels at 384²):
+
+| camera pitch | `world` | `camera` | `rotated_world` | verdict |
+|---|---|---|---|---|
+| 0° | 5.476 m | **0.0095 m** | 5.476 m | camera |
+| −8° | 5.309 m | **0.0093 m** | 5.476 m | camera |
+| −20° | 5.325 m | **0.0094 m** | 5.476 m | camera |
+
+The 9 mm residual is pixel quantisation at this focal length, the same order as the 3.4 mm the
+main decision measured. Both rejected readings are out by metres, and `camera` and
+`rotated_world` are separated by exactly `|C| = 5.48 m` — which is the arithmetic statement of why
+a camera at the origin can never settle this.
+
+The code was already right: `IrCamera` has passed `position_frame="camera"` since M10.19, and it
+is the only caller. What was wrong was the record, and a record is what the next person reads
+before writing the next adapter.
+
+### Nothing on this build supplies ambient occlusion
+
+`sky_view_factor` multiplies the geometric `(1 + n·up)/2` by an occlusion factor the adapter fills
+with 1.0. The addendum above says why (no AO AOV delivers) and says to revisit when one does — but
+nothing would have noticed. All three candidate names were re-probed here and all three still
+return nothing (`SdPostRenderVarToHost: invalid input resource for renderVar AmbientOcclusion`),
+and that absence is now a test rather than a memory. An all-zero buffer returned with status ok
+does **not** count as delivering: that is this ADR's standing hazard, and an AO plane of zeros
+would drive every `V_s` to 0 and every reflected-sky term with it.
+
+So risk **R3** is not retired, it is **bounded**: unoccluded `V_s` is exact for the open-sky
+aerial and maritime scenes phase 1 targets, and optimistic by up to `V_s` itself in cluttered
+ground geometry. Closing it needs either an AO AOV this build does not have or the §5.3(b)
+irradiance cubemap, and that is a phase-2 step, not a hidden approximation.
+
+### Decisions that follow
+
+- **A frame verdict without a margin is not evidence.** `position_frame_residuals` returns the
+  margin over the runner-up, and both the engine-free and in-sim tests assert it. The engine-free
+  suite includes the degenerate case explicitly — camera at the origin, no rotation, all three
+  residuals zero — so the failure mode that produced this correction is itself a test.
+- **The oracle must not come from the channel under test.** The world point is built from the
+  distance AOV and the pinhole model, so "position agrees with itself" cannot pass for a
+  measurement. `GeometryScene.pixel_of` assumes an unrotated camera, which is why the rays come
+  from `pinhole_rays(resolution, focal_px, camera_to_world)` instead.
+- **The USD→ray transpose is written down once.** `gbuffer_isaac.camera_pose` is now the single
+  place a camera prim's pose is read in `ray_directions`' convention; `IrCamera` calls it rather
+  than repeating the transpose. Getting that transpose backwards rotates every ray by twice the
+  camera tilt and raises nothing.
+
+### Revisit when
+
+- `test_position_aov_is_camera_space_not_world_or_rotated_world` fails, or its margin collapses —
+  the AOV changed frame, or the scene stopped separating them.
+- `test_no_ambient_occlusion_aov_delivers_on_this_build` fails — an AO channel woke up; establish
+  whether it is sky visibility or screen-space contact shading before wiring it into `V_s`, because
+  the second is not the quantity §5.3(a) wants.
 
 ## Addendum (M10.9a-ii, 2026-09-14): only `PathTracing` yields a lit colour AOV
 

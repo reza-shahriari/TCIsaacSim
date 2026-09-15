@@ -74,6 +74,7 @@ __all__ = [
     "RawAovs",
     "GeometryPlanes",
     "AovReader",
+    "camera_pose",
     "ray_directions",
     "orient_to_viewer",
     "geometry_planes",
@@ -83,10 +84,14 @@ __all__ = [
     "AOV_INIT_PARAMS",
 ]
 
-#: Frame the position AOV is expressed in. ``Camera3dPositionSD`` reads as a world position on a
-#: camera at the origin, which is every scene ADR 0014 measured -- there the two frames coincide.
-#: The probe scene deliberately puts the camera off the origin so the difference is visible, and
-#: the adapter is told which it got rather than guessing.
+#: Frame the position AOV is expressed in. **Measured on this build:** ``Camera3dPositionSD`` is
+#: ``camera``, as its name says -- 9 mm of residual against the ray the distance AOV measures,
+#: with the world reading out by the full camera offset (M2.4; ADR 0014's M2.4 addendum). ADR 0014
+#: originally recorded *world* because a camera at the origin makes the two frames coincide, and
+#: reading it as world on a tilted camera tilts every ray, elevation and view cosine together --
+#: smooth, plausible and entirely wrong (M10.19). ``IrCamera`` therefore passes ``"camera"``.
+#: The ``"world"`` option stays because the engine-free fixtures author world positions directly;
+#: it is not what this renderer returns.
 PositionFrame = Literal["world", "camera"]
 
 #: How the motion AOV expresses image-plane velocity. ``"pixels"``: already px/frame.
@@ -211,6 +216,27 @@ class GeometryPlanes:
     @property
     def shape(self) -> tuple[int, int]:
         return (int(self.distance_m.shape[0]), int(self.distance_m.shape[1]))
+
+
+def camera_pose(
+    camera_path: str, *, stage: Any = None
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """A camera prim's ``(translation, rotation)`` in the convention :func:`ray_directions` wants.
+
+    USD matrices are row-vector -- ``p_world = p_camera @ M`` -- while :func:`ray_directions`
+    applies its rotation as ``vec @ rot.T``, so what it wants is the **transpose** of the upper
+    left 3x3. That transpose is the single place the two conventions meet, and getting it
+    backwards rotates every ray by twice the camera's tilt without raising anything, so it is
+    written down once here and imported rather than repeated at each call site.
+    """
+    import omni.usd
+    from pxr import Usd, UsdGeom
+
+    stage = stage if stage is not None else omni.usd.get_context().get_stage()
+    xform = UsdGeom.Xformable(stage.GetPrimAtPath(camera_path))
+    matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    translation = np.asarray(matrix.ExtractTranslation(), dtype=np.float64)
+    return translation, np.asarray(matrix, dtype=np.float64)[:3, :3].T
 
 
 def ray_directions(

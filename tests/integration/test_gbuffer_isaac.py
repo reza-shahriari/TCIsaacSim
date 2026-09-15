@@ -16,8 +16,10 @@ at the world origin, and left four questions open, each of which has a test belo
 
 Answers, measured by ``scripts/probe_isaac_geometry.py``: ``normals`` (float32, full resolution,
 world space) -- **not** ``PtWorldNormal``, which is fp16, half resolution and all zero; the
-position AOV is world space; no ambient-occlusion AOV delivers, so V_s is the unoccluded
-geometric form; and no motion AOV transports motion at all.
+position AOV is **camera** space, decided against all three candidate frames on a pitched,
+off-origin camera (M2.4 -- ADR 0014 recorded world, from a scene that could not tell); no
+ambient-occlusion AOV delivers, so V_s is the unoccluded geometric form; and no motion AOV
+transports motion at all.
 """
 
 from __future__ import annotations
@@ -31,6 +33,9 @@ RESOLUTION = 384
 RAY_LENGTH_TOL_M = 0.01
 COS_THETA_TOL = 0.01
 SKY_VIEW_TOL = 0.05
+#: Position decoded into world space must land on the ray the distance AOV measured. The slack
+#: is a pixel of ray direction at this focal length plus the 1 cm the distance AOV is trusted to.
+POSITION_FRAME_TOL_M = 0.1
 #: Above this, ``motion_vectors`` is carrying something; it sits at ~6e-5 on this build.
 MOTION_NOISE_FLOOR_PX = 1e-3
 
@@ -241,6 +246,84 @@ def test_motion_aov_does_not_transport_motion_on_this_build(scene: Any, frame: A
         f"motion_vectors reported {magnitude:.4g} after a 180 px displacement: the channel now "
         "carries motion. Reopen the ADR 0014 addendum, work out its units, and wire motion_px."
     )
+
+
+def test_no_ambient_occlusion_aov_delivers_on_this_build(scene: Any, frame: Any) -> None:
+    """The negative result V_s rests on: reopen ADR 0014 when this test fails (risk R3).
+
+    ``sky_view_factor`` multiplies the geometric ``(1 + n.up)/2`` by an occlusion factor the
+    adapter fills with 1.0 because nothing supplies one. That is exact for the open-sky aerial
+    scenes of phase 1 and optimistic for a cluttered ground scene, where a wall between buildings
+    sees less sky than the formula says -- roughly 2 K of roof-versus-wall error, the same size as
+    the Tier 4 target, which is why the absence is pinned rather than remembered. Every candidate
+    name is tried, not just the one the adapter prefers.
+    """
+    from irsim_isaac.geometry_probe import SURVEY_CANDIDATES, survey_channels
+
+    assert frame["aovs"].occlusion is None, (
+        "the adapter resolved an occlusion AOV: sky_view_factor is no longer the unoccluded form"
+    )
+    report = survey_channels(
+        scene, candidates={"occlusion": SURVEY_CANDIDATES["occlusion"]}, settle_frames=4
+    )
+    entries = report["channels"]["occlusion"]
+    assert set(entries) == set(SURVEY_CANDIDATES["occlusion"]), entries
+    # An all-zero buffer with status ok is the hazard ADR 0014 names, not a working channel.
+    delivering = {
+        name: entry
+        for name, entry in entries.items()
+        if entry.get("status") == "ok" and not entry.get("all_zero", False)
+    }
+    assert not delivering, (
+        f"an ambient-occlusion AOV now delivers: {delivering}. Reopen the ADR 0014 addendum, "
+        "establish whether it is sky visibility or screen-space contact shading, and wire it into "
+        "sky_view_factor if it is the former."
+    )
+
+
+def test_position_aov_is_camera_space_not_world_or_rotated_world(scene: Any, frame: Any) -> None:
+    """Pitch the off-origin camera: only then do all three candidate frames separate (M2.4).
+
+    ADR 0014 recorded ``Camera3dPositionSD`` as world space, measured here with the camera at
+    (2, 1, 5) and **unrotated**; its M10.19 addendum recorded camera space, measured on a camera
+    rotated 8 degrees at the **origin**. Each scene was degenerate in the other's axis, and both
+    results are equally consistent with a third reading -- the world point expressed in camera
+    axes with the translation left in -- which would make ``ray_directions``' ``frame="camera"``
+    branch wrong by the camera's own offset for any camera that is both moved and turned. This
+    scene is degenerate in neither, so it decides between the three, and the margin says by how
+    much.
+    """
+    from irsim_isaac.geometry_probe import (
+        pinhole_rays,
+        pitch_camera,
+        position_frame_residuals,
+    )
+    from irsim_isaac.pipeline.gbuffer_isaac import camera_pose
+
+    reader = frame["reader"]
+    pitch_deg = 20.0
+    pitch_camera(scene, -pitch_deg)
+    try:
+        reader.step(frames=6)
+        aovs = reader.read()
+        position = np.asarray(aovs.position, dtype=np.float64)
+        distance = np.asarray(aovs.distance_m, dtype=np.float64)
+        cam_position, cam_to_world = camera_pose(scene.camera_path)
+    finally:
+        pitch_camera(scene, 0.0)
+        reader.step(frames=2)
+
+    assert abs(float(np.linalg.norm(cam_position)) - 5.6) < 0.2, cam_position
+    rays = pinhole_rays(RESOLUTION, scene.focal_px, cam_to_world)
+    got = position_frame_residuals(
+        position, distance, rays, camera_position=cam_position, camera_to_world=cam_to_world
+    )
+    assert got["sample_pixels"] > 1000, got
+    assert got["verdict"] == "camera", got
+    assert got["residual_m"]["camera"] < POSITION_FRAME_TOL_M, got
+    # Both rejected hypotheses must be wrong by metres: a small margin would mean the scene, not
+    # the renderer, decided this.
+    assert got["margin_m"] > 1.0, got
 
 
 # --- the M0.6 contract ---------------------------------------------------------------------------

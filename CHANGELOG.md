@@ -6,6 +6,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The AOV semantics probe is closed (M2.4, ADR 0014 addendum, §13.3/§5.3(a)).** The M2 gate spike
+  left three channels open because its unlit, static, front-parallel ramp could not exercise them.
+  M10.1 measured all three on a lit, tilted, moving scene; what remained was not an experiment but
+  two loose ends in the record, and both are now measured and pinned.
+- `irsim_isaac.geometry_probe.position_frame_residuals` decides **which frame the position AOV is
+  in** by scoring every candidate reading against a world point the AOV had no part in producing:
+  `C + d · r`, from the independently-measured `DistanceToCameraSD` ray length and that pixel's
+  pinhole direction (`pinhole_rays`). Measured on the M10.1 scene at 0 / −8 / −20° of camera pitch:
+  `camera` **9.4 mm**, `world` 5.31–5.48 m, `rotated_world` 5.48 m. `Camera3dPositionSD` is camera
+  space, as its name says.
+- It is decided against **three** hypotheses, not two. `rotated_world` — the world point in camera
+  *axes*, translation left in — had never been tested and is indistinguishable from the other two
+  on every scene measured so far, yet it is the one that would break `ray_directions`' `frame=
+  "camera"` branch by the full camera offset on a camera both moved and turned. It is wrong here by
+  exactly `|C|` = 5.48 m, which is also the arithmetic statement of why a camera at the origin can
+  never settle this question.
+- A verdict now comes with its **margin**, and the degenerate case is a test: camera at the origin,
+  no rotation, all three residuals zero, margin zero. That is the configuration that produced the
+  error being corrected, so it fails loudly instead of picking a winner out of rounding.
+- `gbuffer_isaac.camera_pose` states the USD→ray transpose **once** (USD matrices are row-vector;
+  `ray_directions` applies `vec @ rot.T`), for `IrCamera` and the probe both. Getting it backwards
+  rotates every ray by twice the camera tilt and raises nothing.
+
+### Fixed
+- **ADR 0014 recorded the position AOV as world space beside a probe that reported camera space**
+  (M2.4). The M10.1 addendum's table said *world*; `detect_position_frame`, cited in the same
+  addendum and run on the same scene, reported `camera` with `err_camera = 0.013 m` against
+  `err_world = 5.48 m`. The wrong value survived three days and a second addendum because
+  `test_position_aov_frame_is_unambiguous` asserts only that *one* hypothesis fits, never which.
+  M10.19 later re-derived the truth from a horizon 164 rows out of place without the two records
+  being reconciled, leaving the ADR asserting both readings in different sections. The code was
+  already right — `IrCamera` has passed `position_frame="camera"` since M10.19 and is the only
+  caller — so nothing rendered was wrong; what was wrong is what the next person would read before
+  writing the next adapter.
+- **"Revisit when `AmbientOcclusion` returns data" had nothing that would notice** (M2.4, risk R3).
+  All three candidate AO names were re-probed and all three still return nothing on 6.1.0-rc.26
+  (`SdPostRenderVarToHost: invalid input resource`), and that absence is now
+  `test_no_ambient_occlusion_aov_delivers_on_this_build` rather than a memory. An all-zero buffer
+  returned with status ok does not count as delivering — this ADR's standing hazard, and an AO
+  plane of zeros would drive every `V_s` and every reflected-sky term to zero. R3 is **bounded**,
+  not retired: unoccluded `V_s` is exact for the open-sky aerial and maritime scenes phase 1
+  targets and optimistic in cluttered ground geometry, where the fix is the §5.3(b) irradiance
+  cubemap.
+- The probe's validity mask no longer rejects a pixel by the magnitude of the position AOV's miss
+  sentinel (a point 1000 m down the ray). Sky is known from the ray length being `inf`; a magnitude
+  test would have thrown away real geometry in a long-range aerial scene, where targets sit at km.
+
+### Added
 - **Surface temperature that varies across one surface** (MP.1, ADR 0087, §6.1/§6.4).
   `irsim.thermal.surface_field.PlanarPatch` is a grid of §6.1 facets on a plane and
   `PlanarThermalField` solves it on the existing fixed tick, so a bonnet over a running engine or a

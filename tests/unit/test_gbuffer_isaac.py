@@ -341,3 +341,132 @@ def test_non_integer_material_id_is_refused() -> None:
             temperature_k=np.full(planes.shape, 295.0, dtype=np.float32),
             material_id=np.ones(planes.shape, dtype=np.float32),
         )
+
+
+# --- which frame the position AOV is in (roadmap M2.4) -------------------------------------------
+
+_PITCH_DEG = 20.0
+_PROBE_CAMERA = np.array([2.0, 1.0, 5.0])
+_PROBE_RESOLUTION = 32
+_PROBE_FOCAL_PX = 40.0
+
+
+def _pitch_rotation(degrees: float) -> np.ndarray:
+    """``camera_to_world`` for a pitch about X, in ``ray_directions``' convention.
+
+    That convention is ``v_world = v_camera @ rot.T``, so ``rot`` is the transpose of the USD
+    row-vector matrix's upper-left 3x3 -- which for a rotation is the matrix that takes a camera
+    vector to world as an ordinary column-vector product.
+    """
+    c, s = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
+
+
+def _synthetic_position_aov(
+    frame: str, rot: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A plane 9 m down the boresight, encoded in ``frame``: (position, distance, rays).
+
+    The surface points come from the rays themselves, so the scene is exactly what the oracle
+    assumes and any residual is the encoding, not the geometry.
+    """
+    from irsim_isaac.geometry_probe import pinhole_rays
+
+    rays = pinhole_rays(_PROBE_RESOLUTION, _PROBE_FOCAL_PX, rot)
+    distance = np.full(rays.shape[:2], 9.0) + 0.4 * rays[:, :, 0]  # not a constant-range sphere
+    world = _PROBE_CAMERA + distance[..., None] * rays
+    if frame == "world":
+        position = world
+    elif frame == "camera":
+        position = (world - _PROBE_CAMERA) @ rot
+    elif frame == "rotated_world":
+        position = world @ rot
+    else:  # pragma: no cover - guard against a typo in a parametrisation
+        raise AssertionError(frame)
+    return position, distance, rays
+
+
+@pytest.mark.parametrize("frame", ["world", "camera", "rotated_world"])
+def test_position_frame_residuals_name_the_frame_they_were_given(frame: str) -> None:
+    """The discriminator M2.4 rests on: each encoding must be recognised, and only that one.
+
+    ADR 0014 recorded the position AOV as world space and its M10.19 addendum as camera space,
+    each measured on a scene degenerate in the other's axis -- and both readings are equally
+    consistent with ``rotated_world``, the world point in camera **axes**. Distinguishing them
+    needs a camera that is off the origin *and* rotated, so the margin below is asserted as well
+    as the verdict: a verdict from a degenerate scene is not evidence.
+    """
+    from irsim_isaac.geometry_probe import position_frame_residuals
+
+    rot = _pitch_rotation(_PITCH_DEG)
+    position, distance, rays = _synthetic_position_aov(frame, rot)
+    got = position_frame_residuals(
+        position, distance, rays, camera_position=_PROBE_CAMERA, camera_to_world=rot
+    )
+    assert got["verdict"] == frame, got
+    assert got["residual_m"][frame] < 1e-9, got
+    assert got["margin_m"] > 0.5, got  # the runner-up is wrong by metres, not by rounding
+
+
+def test_an_unrotated_camera_at_the_origin_cannot_tell_the_frames_apart() -> None:
+    """Why ADR 0014 and its M10.19 addendum disagreed: both scenes were degenerate.
+
+    With C = 0 and no rotation all three hypotheses decode to the same point, so every residual
+    is zero and the margin is zero. The probe reports that rather than picking a winner by
+    floating-point noise, which is what makes the in-sim verdict trustworthy.
+    """
+    from irsim_isaac.geometry_probe import pinhole_rays, position_frame_residuals
+
+    rot = np.eye(3)
+    rays = pinhole_rays(_PROBE_RESOLUTION, _PROBE_FOCAL_PX, rot)
+    distance = np.full(rays.shape[:2], 9.0)
+    got = position_frame_residuals(
+        distance[..., None] * rays,
+        distance,
+        rays,
+        camera_position=np.zeros(3),
+        camera_to_world=rot,
+    )
+    assert max(got["residual_m"].values()) < 1e-9, got
+    assert got["margin_m"] < 1e-9, got
+
+
+def test_camera_and_rotated_world_are_separated_by_the_camera_offset() -> None:
+    """The two readings the ADR holds differ by exactly |C|, so a camera at the origin cannot tell.
+
+    This is the quantitative form of the degeneracy above: it is the camera's *translation* that
+    separates these two, and its *rotation* that separates either from world space.
+    """
+    from irsim_isaac.geometry_probe import position_frame_residuals
+
+    rot = _pitch_rotation(_PITCH_DEG)
+    position, distance, rays = _synthetic_position_aov("camera", rot)
+    got = position_frame_residuals(
+        position, distance, rays, camera_position=_PROBE_CAMERA, camera_to_world=rot
+    )
+    offset = float(np.linalg.norm(_PROBE_CAMERA))
+    assert abs(got["residual_m"]["rotated_world"] - offset) < 1e-9, got
+
+
+def test_position_frame_residuals_ignore_sky_and_the_miss_sentinel() -> None:
+    """Sky pixels carry ``inf`` distance and a miss sentinel 1000 m down the ray; neither is
+    geometry.
+
+    Scoring them would swamp the median with nonsense and could invert the verdict. The ray
+    length is what excludes them -- deliberately not the sentinel's magnitude, which would also
+    discard real targets in a long-range aerial scene.
+    """
+    from irsim_isaac.geometry_probe import position_frame_residuals
+
+    rot = _pitch_rotation(_PITCH_DEG)
+    position, distance, rays = _synthetic_position_aov("camera", rot)
+    position, distance = position.copy(), distance.copy()
+    position[0, :, :] = -1000.0
+    distance[0, :] = np.inf
+    distance[1, :] = np.inf
+    got = position_frame_residuals(
+        position, distance, rays, camera_position=_PROBE_CAMERA, camera_to_world=rot
+    )
+    assert got["sample_pixels"] == position.shape[0] * position.shape[1] - 2 * position.shape[1]
+    assert got["verdict"] == "camera", got
+    assert got["residual_m"]["camera"] < 1e-9, got

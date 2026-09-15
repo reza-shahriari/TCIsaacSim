@@ -87,6 +87,7 @@ from irsim_isaac.pipeline.gbuffer_isaac import (
     UP_AXIS_VECTOR,
     AovReader,
     PositionFrame,
+    camera_pose,
     geometry_planes,
     orient_to_viewer,
     ray_directions,
@@ -490,16 +491,9 @@ class IrCamera:
         A tracking mount is the first thing that needs this: it slews to follow a target, so the
         sky behind the target changes elevation even though the target stays on the boresight.
         """
-        import omni.usd
-        from pxr import Usd, UsdGeom
-
-        stage = self._stage if self._stage is not None else omni.usd.get_context().get_stage()
-        xform = UsdGeom.Xformable(stage.GetPrimAtPath(self.camera_path))
-        matrix = xform.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        self._camera_position = np.asarray(matrix.ExtractTranslation(), dtype=np.float64)
-        # USD matrices are row-vector (p_world = p_camera @ M), and `ray_directions` applies its
-        # rotation as `vec @ rot.T`, so the transpose of the upper-left 3x3 is what it wants.
-        self._camera_to_world = np.asarray(matrix, dtype=np.float64)[:3, :3].T
+        self._camera_position, self._camera_to_world = camera_pose(
+            self.camera_path, stage=self._stage
+        )
 
     def close(self) -> None:
         if self._reader is not None:
