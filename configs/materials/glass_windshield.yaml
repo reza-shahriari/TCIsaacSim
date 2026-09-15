@@ -16,4 +16,10 @@ material:
     emissivity_per_band: {nir: 0.15, swir: 0.22, mwir: 0.85, lwir: 0.88}
     transmittance_per_band: {nir: 0.77, swir: 0.70, mwir: 0.02, lwir: 0.0}
     roughness_per_band: {nir: 0.05, swir: 0.05, mwir: 0.04, lwir: 0.03}
-    angular_model: {type: empirical, a: 0.30, p: 4.0}
+    # Level A (M7.5). Glass is the material §4.2 singles out as violating Level C, and a single
+    # Level B (a, p) cannot serve it either: the Si-O reststrahlen band makes the LWIR angular
+    # shape genuinely different from the other three (fitting the table per band gives a = 1.42 in
+    # LWIR against 0.66-0.73 elsewhere), and `angular_model` is one setting for the whole material.
+    # Fresnel from the table is per-band by construction. The table is fused silica standing in for
+    # soda-lime -- it supplies the SHAPE, and `emissivity_per_band` above supplies the MAGNITUDE.
+    angular_model: {type: fresnel, n_k_file: nk/glass.csv}

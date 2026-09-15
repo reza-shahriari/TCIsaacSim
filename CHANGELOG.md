@@ -6,6 +6,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The n/k table library is complete, and its provenance rules are written down** (M7.5, ADR 0041,
+  §4.2/§12.3). `data/nk/glass.csv` and `data/nk/paint_proxy.csv` join the measured water table and
+  the modelled aluminium one, fetched from the CC0 RefractiveIndex.INFO database by the new
+  `scripts/fetch_nk_tables.py` — glass from Franta (2016), a 0.405 mm fused-silica plate; the paint
+  proxy from Zhang (2020), a PMMA sample. Both span 0.6 µm to past the LWIR window, because the
+  loader refuses to extrapolate and a table that stops inside a band makes that band raise.
+- Both are **proxies, and say so in the header the loader carries**: no freely redistributable
+  dataset covers soda-lime float glass or a pigmented automotive coating across 0.75–13.5 µm. What
+  a proxy has to get right is not the emissivity — that comes from the material's authored per-band
+  value — but how emissivity *falls with angle*, which is set by the interface and the band's n
+  and k rather than by the pigment.
+- **ADR 0041 is written**, three months after `nk.py`'s own error message started citing it. It
+  records three rules that were being followed informally: provenance is enforced by the loader and
+  not by lint; only redistributable (CC0 / public-domain) sources are committed, so Palik stays out
+  even where it is the better data; and every file declares which of *measured* / *MODELLED* /
+  *PROXY* it is. It also states the limit the convention does **not** bound — Level A's 1 − R is
+  absorptance plus transmittance, exact for glass in LWIR where τ = 0 and approximate in NIR and
+  SWIR where τ is 0.77 and 0.70.
+- **`glass_windshield` moves to Level A.** Not for want of a Level B fit, but because one cannot
+  serve it: `angular_model` is a single setting for the whole material, and glass's LWIR shape is
+  genuinely unlike its other three. The Si-O reststrahlen band sits inside the LWIR window and
+  drives the real index down to **0.35** at 8.8 µm while k rises above 1.6 — the glass responds
+  like a metal across a narrow band. Fitting each band separately wants a = **1.43** in LWIR
+  against 0.66–0.73 elsewhere. Level A integrates each band's own response and gets this for free.
+- The fitted-Level-B alternative fails in a specific and ugly way, which is why the test says so:
+  ε₀(1 − a(1−cos θ)^p) with a > 1 crosses zero at **85.1°** and is clipped there, so it reports a
+  windshield edge as having no emissivity at all — a perfect mirror — where Level A still has 0.37
+  of normal at 85° and 0.18 at 88°. Those are the angles a windshield is seen at from across a
+  street.
+- Measured consequence: glass ε(70°) in LWIR falls **0.83 → 0.69** against the estimated Level B it
+  replaces, and ε_hemi 0.862 → 0.801. ε(0) is unchanged in every band, by construction — the table
+  supplies the shape and the YAML the magnitude, so a fused-silica table cannot silently turn a
+  soda-lime windshield into a quartz one.
+
+### Fixed
+- **A proxy label shipped where nothing could read it.** `load_nk_table` ends the provenance it
+  carries at the first blank comment line, so the PROXY note in the first draft of `glass.csv` —
+  placed after one, for readability — reached no consumer, while the file still looked
+  self-documenting to anyone opening it. The note now lives inside the `# source:` block and a test
+  asserts it survives the load. The same header also quoted its check values from the nearest table
+  row rather than interpolating, so the numbers a reader would verify against were not the numbers
+  the loader returns.
+
+### Added
 - **The full multi-band matrix ran**: twelve renders — four bands of the drone, the airplane and
   the ship, each with its registered visible companion (M10.24). Final state is zero saturated
   pixels in any of them. The comparison is the deliverable: a quadrotor is four hot motor bells on

@@ -177,3 +177,121 @@ def test_a_response_wider_than_the_table_is_refused(water, boson, tmp_path) -> N
     short = load_nk_table(str(narrow))
     with pytest.raises(ValueError, match="only covers"):
         band_directional_emissivity(short, boson, 1.0)
+
+
+# --- the two proxy tables (M7.5: glass and the paint proxy) ---------------------------------------
+
+#: Franta's own row nearest 10.0 µm, and Zhang's. These pin the *data*, not the code: a re-fetch
+#: that silently picked up a different dataset from the same database changes these numbers.
+GLASS_10UM = (2.526835, 0.082695)
+PAINT_10UM = (1.499792, 0.042477)
+
+#: §12.1's nominal band ranges. A table that stops inside one of them makes that band raise rather
+#: than extrapolate, so coverage is the property worth asserting.
+BAND_SPAN_UM = (0.75, 13.5)
+
+
+@pytest.fixture(scope="module")
+def glass():
+    return load_nk_table("glass")
+
+
+@pytest.fixture(scope="module")
+def paint_proxy():
+    return load_nk_table("paint_proxy")
+
+
+@pytest.mark.parametrize(("name", "expected"), [("glass", GLASS_10UM), ("paint_proxy", PAINT_10UM)])
+def test_the_proxy_tables_carry_the_dataset_they_claim(name, expected) -> None:
+    """A check value from each source dataset, at the wavelength its header quotes.
+
+    The tables are fetched from a third-party database by
+    ``scripts/fetch_nk_tables.py``, so what needs pinning is not arithmetic but *identity*: which
+    dataset is in the file. Several silica and PMMA datasets in the same database disagree about k
+    at 10 µm by a factor of five, and picking up the wrong one would change every angular
+    emissivity in the band while still looking like plausible glass.
+    """
+    table = load_nk_table(name)
+    n, k = table.at(10.0)
+    assert float(n) == pytest.approx(expected[0], abs=5e-3)
+    assert float(k) == pytest.approx(expected[1], rel=2e-2)
+
+
+@pytest.mark.parametrize("name", ["glass", "paint_proxy"])
+def test_a_proxy_table_declares_that_it_is_a_proxy(name) -> None:
+    """Neither substance is what the material is made of, and the file has to say so.
+
+    ADR 0041 treats the ``# source:`` header as data. For these two it carries a second claim
+    beyond provenance -- that fused silica stands in for soda-lime and PMMA for a clearcoat -- and
+    a reader who does not know that would take a band emissivity from the table as measured truth
+    for the material named in the library.
+    """
+    table = load_nk_table(name)
+    assert "PROXY" in table.source, table.source
+    assert "refractiveindex.info" in table.source.lower()
+
+
+@pytest.mark.parametrize("name", ["glass", "paint_proxy"])
+def test_the_proxy_tables_span_every_configured_band(name) -> None:
+    """Coverage, not accuracy: the loader refuses to extrapolate, so a short table raises."""
+    table = load_nk_table(name)
+    lo, hi = table.support_um
+    assert lo <= BAND_SPAN_UM[0] and hi >= BAND_SPAN_UM[1], (lo, hi)
+    n, k = table.at(np.linspace(*BAND_SPAN_UM, 64))
+    assert np.all(np.isfinite(n)) and np.all(np.isfinite(k))
+    # Not `n > 1`: silica's n dips to 0.35 inside its reststrahlen band, which is physics, not a
+    # bad row -- see `test_the_glass_table_carries_the_reststrahlen_band`.
+    assert np.all(n > 0.0) and np.all(k >= 0.0)
+
+
+def test_glass_and_the_paint_proxy_are_different_materials(glass, paint_proxy, boson) -> None:
+    """Both are transparent dielectrics in the visible; only one has a reststrahlen band.
+
+    This is what makes glass worth a table of its own. Silica's Si-O stretch drives n to ~2.5 and
+    k to ~0.08 across the LWIR, so its emissivity falls away from normal several times faster than
+    the polymer's. A single proxy shared by both would flatten exactly the feature the angular
+    model exists to reproduce.
+    """
+    cos_70 = float(np.cos(np.radians(70.0)))
+    glass_shape = float(band_directional_emissivity(glass, boson, cos_70)) / float(
+        band_directional_emissivity(glass, boson, 1.0)
+    )
+    paint_shape = float(band_directional_emissivity(paint_proxy, boson, cos_70)) / float(
+        band_directional_emissivity(paint_proxy, boson, 1.0)
+    )
+    assert glass_shape < paint_shape - 0.05, (glass_shape, paint_shape)
+    assert 0.7 < glass_shape < 0.82, glass_shape
+    assert 0.84 < paint_shape < 0.90, paint_shape
+
+
+def test_the_glass_table_carries_the_reststrahlen_band(glass) -> None:
+    """Silica's Si-O stretch, the feature that makes glass unlike every other dielectric here.
+
+    Across the resonance near 9 µm the real index falls *below one* (to 0.35) while k rises above
+    1.6 -- the medium responds like a metal over a narrow band, and reflectance there reaches ~0.7
+    where the material is otherwise ε ≈ 0.9. It sits inside the LWIR window, so it is not a
+    curiosity: it is why the LWIR angular shape differs from the other three bands, and why a
+    table that had been smoothed or resampled onto a coarse grid would be the wrong table.
+    """
+    inside = (glass.wavelength_um >= 8.0) & (glass.wavelength_um <= 10.0)
+    assert inside.sum() > 20, "the band is under-sampled; check the fetch truncation"
+    assert float(glass.n[inside].min()) < 0.6
+    assert float(glass.k[inside].max()) > 1.2
+    n, k = glass.at(8.798)
+    reflectance = ((n - 1.0) ** 2 + k**2) / ((n + 1.0) ** 2 + k**2)
+    assert 0.6 < float(reflectance) < 0.8, float(reflectance)
+
+
+def test_the_paint_proxy_has_no_such_band(paint_proxy) -> None:
+    """The polymer has absorption bands here too, but they never turn it metallic.
+
+    PMMA's C-O stretch puts k at 0.33 near 8.7 µm -- not negligible -- yet n stays between 1.36
+    and 1.71 across the window, where silica's runs 0.35 to 2.5. It is the excursion of **n**, not
+    the presence of absorption, that separates a reststrahlen band from an ordinary vibrational
+    one, and it is what drives the two materials' angular shapes apart. Stated as its own test
+    because an accidental swap of the two files would otherwise pass everything above.
+    """
+    inside = (paint_proxy.wavelength_um >= 8.0) & (paint_proxy.wavelength_um <= 10.0)
+    assert float(paint_proxy.n[inside].min()) > 1.3
+    assert float(paint_proxy.n[inside].max()) < 2.0
+    assert float(paint_proxy.k[inside].max()) < 0.5

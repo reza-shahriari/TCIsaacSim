@@ -32,7 +32,7 @@ from irsim.materials.directional import (
     angular_level,
     directional_emissivity,
 )
-from irsim.materials.library import MaterialLibrary
+from irsim.materials.library import MaterialLibrary, nominal_response
 from irsim.materials.nk import band_directional_emissivity, load_nk_table
 from irsim.radiometry.spectral_response import load_spectral_response
 
@@ -266,3 +266,93 @@ def test_the_sphere_fixture_reaches_grazing_where_the_two_levels_must_diverge(
     assert grazing.size > 0, "the fixture never reaches grazing incidence"
     level_a = band_directional_emissivity(table, boson, grazing)
     assert float(level_a.min()) < 0.75, "water's angular collapse is missing"
+
+
+# --- glass takes Level A (M7.5) -----------------------------------------------------------------
+
+
+def test_glass_declares_level_a(library) -> None:  # type: ignore[no-untyped-def]
+    assert angular_level(library["glass_windshield"]) == "A"
+
+
+def test_level_a_keeps_the_authored_band_emissivity_at_normal(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """ε(0) is the value in the YAML, not the value in the table. The table is a *shape*.
+
+    This is the convention M7.5 established on aluminium, and glass is where it earns its keep in
+    the other direction: the fused-silica table gives ε ≈ 0.81 at 10 µm where the library authors
+    0.88 for soda-lime. Letting the table set the magnitude would silently replace a soda-lime
+    windshield with a quartz one, and ε(0) would mean one thing for a Fresnel material and another
+    for every other material in the library.
+    """
+    glass = library["glass_windshield"]
+    for band in ("nir", "swir", "mwir", "lwir"):
+        authored = float(glass.band_properties(band, boson).emissivity)
+        got = float(_dispatch(glass, band, np.float32(1.0), boson))
+        assert got == pytest.approx(authored, abs=1e-6), (band, got, authored)
+
+
+def test_glass_limb_darkens_and_monotonically(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """§4.2's headline effect: a curved dielectric shows a cooler rim at uniform temperature."""
+    glass = library["glass_windshield"]
+    cos_theta = np.cos(np.radians(np.linspace(0.0, 89.0, 24))).astype(np.float32)
+    for band in ("nir", "swir", "mwir", "lwir"):
+        eps = np.asarray(_dispatch(glass, band, cos_theta, boson), dtype=np.float64)
+        assert np.all(np.diff(eps) <= 1e-7), band  # never rises: glass is not a metal
+        assert eps[-1] < 0.75 * eps[0], (band, eps[-1] / eps[0])
+        assert np.all(eps >= 0.0) and np.all(eps <= 1.0), band
+
+
+def test_glass_needs_a_per_band_shape_that_one_level_b_cannot_give(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """The reason glass is Level A rather than a fitted Level B, stated as a measurement.
+
+    `angular_model` is one setting for the whole material, so a Level B glass gets a single
+    (a, p) for all four bands. The Si-O reststrahlen band sits inside the LWIR window and nowhere
+    near the other three, so the LWIR shape is genuinely different: fitting each band separately
+    gives a ≈ 1.4 in LWIR against 0.6-0.7 elsewhere. Level A gets this for free because it
+    integrates the table over each band's own response.
+
+    A fitted a > 1 is also not merely inaccurate. ε₀(1 − a(1−cos θ)^p) crosses zero at 85.1° and
+    is clipped there, so beyond that angle the model reports a windshield edge as having *no*
+    emissivity at all -- a perfect mirror -- while Level A still has 0.37 of normal at 85° and
+    0.18 at 88°. Those are the angles a windshield is seen at from across a street.
+    """
+    glass = library["glass_windshield"]
+    table = load_nk_table("glass", DATA)
+    fits = {
+        band: fit_band_level_b(table, nominal_response(band), name=f"glass:{band}")
+        for band in ("nir", "swir", "mwir", "lwir")
+    }
+    assert fits["lwir"].a > 1.0, fits["lwir"]
+    assert max(fits[b].a for b in ("nir", "swir", "mwir")) < 0.8
+
+    # The consequence, measured where it bites. The fit is good to 70° by construction (that is
+    # the range §4.2 fits over); what it cannot do is carry past it.
+    e0 = float(glass.band_properties("lwir", boson).emissivity)
+    crossing_deg = math.degrees(math.acos(1.0 - (1.0 / fits["lwir"].a) ** (1.0 / fits["lwir"].p)))
+    assert 84.0 < crossing_deg < 86.0, crossing_deg
+    for angle, max_ratio in ((80.0, 0.65), (85.0, 0.10)):
+        cos_theta = np.float32(math.cos(math.radians(angle)))
+        level_a = float(_dispatch(glass, "lwir", cos_theta, boson))
+        level_b = float(emissivity_empirical(e0, fits["lwir"].a, fits["lwir"].p, float(cos_theta)))
+        assert level_a > 0.3 * e0, (angle, level_a)  # Level A stays a real emitter
+        assert level_b < max_ratio * level_a, (angle, level_a, level_b)
+
+
+def test_level_a_leaves_kirchhoff_closable_on_a_semi_transparent_material(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """ε(θ) + τ must stay under 1, or the derived ρ goes negative (CLAUDE.md #4).
+
+    Glass is the library's only semi-transparent material, and it is now the only one whose ε
+    varies with angle from a table rather than from a formula bounded by construction. ρ is
+    derived as 1 − ε(θ) − τ and clamped at zero downstream, so a violation would not raise -- it
+    would quietly stop conserving energy in the NIR and SWIR, where τ is 0.77 and 0.70.
+    """
+    glass = library["glass_windshield"]
+    cos_theta = np.cos(np.radians(np.linspace(0.0, 90.0, 46))).astype(np.float32)
+    for band in ("nir", "swir", "mwir", "lwir"):
+        props = glass.band_properties(band, boson)
+        eps = np.asarray(_dispatch(glass, band, cos_theta, boson), dtype=np.float64)
+        rho = 1.0 - eps - float(props.transmittance)
+        assert np.all(rho >= -1e-9), (band, float(rho.min()))
+        assert np.all(rho <= 1.0 + 1e-9), band
+        # And ε(θ) only ever frees up more reflectance, never less, as the angle opens.
+        assert np.all(np.diff(rho) >= -1e-9), band
