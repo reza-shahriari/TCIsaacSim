@@ -77,7 +77,8 @@ def test_ids_stable_and_kernel_path(library: MaterialLibrary) -> None:
         a.id_for("unobtainium")
     black = a.id_for("car_paint_black")
     assert a.angular_a is not None and a.angular_p is not None
-    assert (a.angular_a[black], a.angular_p[black]) == (np.float32(0.25), np.float32(5.0))
+    # (a, p) fitted against Level A on the M7.5 paint proxy, not the estimate that preceded it.
+    assert (a.angular_a[black], a.angular_p[black]) == (np.float32(0.75), np.float32(4.0))
     alu = a.id_for("bare_aluminium")
     assert (a.angular_a[alu], a.angular_p[alu]) == (ANGULAR_A_PLACEHOLDER, ANGULAR_P_PLACEHOLDER)
     assert a.thermal["heat_capacity_j_m2_k"][black] == pytest.approx(7800 * 470 * 0.0012, rel=1e-6)

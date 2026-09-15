@@ -14,7 +14,7 @@ second.
 The prediction is **differential**, against the same scene rendered at ε₀, and that matters: under
 a 220 K sky an ε = 0.90 surface at 300 K already reads **294.7 K** everywhere, from M7.13's
 reflected term alone. Measuring the limb against the *kinetic* temperature would report a 5.3 K
-error that has nothing to do with the angular model and would drown the 1.4 K that does.
+error that has nothing to do with the angular model and would drown the ~7 K that does.
 
 The directional path is **opt-in by packing**: stage 1 uses it only when the material table carries
 an angle LUT (M7.10), so every scene and every golden written before this is bit-identical.
@@ -149,9 +149,15 @@ def test_the_rim_reads_colder_than_the_centre_by_the_analytic_amount(
     l_body = float(tophat_lwir_lut.lookup(SPHERE_T_K)[()])
     delta_l = -(eps0 - eps.astype(np.float64)) * (l_body - l_env)
     # Evaluate ∂L/∂T at the **midpoint** of the excursion, not at its start. The formula is a
-    # first-order expansion and the limb moves ~1.4 K, over which Planck's slope is not constant;
-    # anchoring at the baseline leaves 11.6 mK of pure second-order term, just outside the 10 mK
-    # the criterion asks for. One midpoint iteration removes it and leaves the model's own error.
+    # first-order expansion and the limb moves 7.1 K inside 70°, over which Planck's slope is well
+    # off constant; anchoring at the baseline leaves 254 mK of pure second-order term, twenty-five
+    # times the 10 mK the criterion asks for. One midpoint iteration brings it to 9.0 mK.
+    #
+    # ⚠️ That is now a thin margin, and it got thin in M7.5: the excursion was ~1.4 K while the
+    # painted materials carried an estimated (a = 0.25, p = 5), and the midpoint iteration had the
+    # bound to itself. Re-fitting the class against Level A quintupled the excursion. If a future
+    # material darkens its limb further, this needs a second iteration (or a secant step), not a
+    # looser tolerance -- the tolerance is what says the closed form still describes the kernel.
     first = delta_l / float(tophat_lwir_lut.lookup(float(baseline.mean()), "dlb_dt")[()])
     slope = tophat_lwir_lut.lookup(baseline + 0.5 * first, "dlb_dt").astype(np.float64)
     predicted = delta_l / slope
@@ -185,8 +191,15 @@ def test_the_rim_effect_vanishes_in_an_isothermal_enclosure(
 def test_a_flat_material_darkens_its_limb_far_less_than_a_paint(
     packed, tophat_lwir_lut: BandLUT, gbuffer_sphere: dict[str, np.ndarray]
 ) -> None:
-    """§4.2: a ≈ 0 for rough dielectrics. Asphalt's limb moves a few hundredths of a kelvin where
-    paint's moves nearly a whole one — the difference a directional model is *for*."""
+    """§4.2: a ≈ 0 for rough dielectrics. Asphalt's limb barely moves where paint's moves several
+    kelvin — the difference a directional model is *for*.
+
+    The paint figure was 1.44 K while the painted materials carried an *estimated* (a = 0.25,
+    p = 5). M7.5 re-fitted the class against Level A on a measured acrylic, as §4.2 instructs, and
+    the estimate turned out far too flat: (a = 0.75, p = 4) puts the same limb drop at 6.8 K.
+    Asphalt is untouched, so the contrast between the two — the thing the test is really about —
+    widens rather than moving.
+    """
     drops = {}
     for name in ("car_paint_black", "asphalt_dry"):
         ids, cos_theta = _sphere_scene(packed, name, gbuffer_sphere)
@@ -201,7 +214,7 @@ def test_a_flat_material_darkens_its_limb_far_less_than_a_paint(
     assert drops["car_paint_black"] > drops["asphalt_dry"]
     assert drops["asphalt_dry"] < 0.5, drops
     assert drops["car_paint_black"] > 2.5 * drops["asphalt_dry"], drops
-    assert drops["car_paint_black"] == pytest.approx(1.44, abs=0.1), drops
+    assert drops["car_paint_black"] == pytest.approx(6.80, abs=0.15), drops
 
 
 def test_the_metal_brightens_its_limb_instead_of_darkening_it(

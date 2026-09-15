@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **The painted material class carries a fitted angular model instead of an estimated one**
+  (M7.5/M7.6, §4.2, spec issue S40). `car_paint_black`, `car_paint_white`,
+  `aircraft_aluminium_painted` and `painted_composite` move from an estimated `(a = 0.25, p = 5)`
+  to `(a = 0.75, p = 4)`, fitted against Level A on the M7.5 paint proxy — which is what §4.2 asks
+  for in as many words: "fit (a, p) once per material class against Level A and bake it". Per-band
+  fits give a = 0.732–0.770 with p pinned at 4; a test re-derives them from the checked-in table,
+  so the four YAML files cannot drift from their source.
+- **This is a correction, not a refinement.** The estimate held ε at 0.97 of its normal value at
+  70°, where Fresnel on an acrylic gives 0.86. On a uniform 300 K sphere under a 220 K sky the limb
+  darkening goes from **1.4 K to 6.8 K**; against a 250 K sky a car door seen at 70° shifts
+  **−3.8 K** in apparent temperature and at 80° **−8.7 K**. Both are past the 2 K Tier 4 target.
+  The old value made every painted limb too warm, everywhere, which is precisely the one-sided
+  error §4.2's Level C bound exists to prevent — it was simply hiding in Level B instead.
+- ⚠️ **Raised as spec issue S40 rather than resolved silently.** §4.2's own prose quotes
+  `a ≈ 0.15–0.35` for painted metals and plastics, and the fit disagrees by 2–3×. The fit wins
+  here because §4.2 also *instructs* the fit, and because §4.3 puts a clearcoat in the optically
+  smooth regime in LWIR (σ ≪ λ/8) where specular Fresnel is the right model. The quoted range may
+  be remembered from matte or heavily pigmented coatings; the spec should say which finish it
+  means, because the library contains both. `p = 4` also sits at the **edge** of the sanctioned
+  candidate set {4, 5, 6} — p = 3.5 fits 2.3× better — which is noted in S40 and left alone.
+- `carbon_fibre` and `propeller_rubber` sat on the same estimate and are **deliberately not**
+  swept along: the proxy is PMMA, a clearcoat binder, and neither surface is painted. Their YAML
+  now says so, and a test asserts they kept their own value.
+- The margin on `test_the_rim_reads_colder_than_the_centre_by_the_analytic_amount` narrowed as a
+  direct consequence and is recorded in the test: the closed form is a first-order expansion, and
+  over a 7.1 K excursion anchoring ∂L/∂T at the baseline now leaves **254 mK** of second-order
+  term. The existing midpoint iteration still brings it to 9.0 mK against a 10 mK bound, but a
+  further darkening needs a second iteration rather than a looser tolerance.
+
 ### Added
 - **The n/k table library is complete, and its provenance rules are written down** (M7.5, ADR 0041,
   §4.2/§12.3). `data/nk/glass.csv` and `data/nk/paint_proxy.csv` join the measured water table and

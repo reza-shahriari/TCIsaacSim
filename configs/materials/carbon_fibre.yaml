@@ -19,5 +19,8 @@ material:
   optical:
     emissivity_per_band: {nir: 0.90, swir: 0.88, mwir: 0.88, lwir: 0.90}
     roughness_per_band: {nir: 0.20, swir: 0.18, mwir: 0.10, lwir: 0.08}   # ESTIMATED, weave under clear coat
-    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    # Level B, ESTIMATED. Deliberately NOT re-fitted against the M7.5 paint proxy: that table is
+    # PMMA, a clearcoat binder, and this surface is not painted. Fitting it here would borrow a
+    # measurement of a different material without saying so.
+    angular_model: {type: empirical, a: 0.25, p: 5.0}
     transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}

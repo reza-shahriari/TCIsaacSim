@@ -356,3 +356,70 @@ def test_level_a_leaves_kirchhoff_closable_on_a_semi_transparent_material(librar
         assert np.all(rho <= 1.0 + 1e-9), band
         # And ε(θ) only ever frees up more reflectance, never less, as the angle opens.
         assert np.all(np.diff(rho) >= -1e-9), band
+
+
+# --- the painted class is fitted, not estimated (M7.5 paint proxy) --------------------------------
+
+PAINTED = ("car_paint_black", "car_paint_white", "aircraft_aluminium_painted", "painted_composite")
+
+
+def test_the_painted_class_carries_the_fitted_parameters(library) -> None:  # type: ignore[no-untyped-def]
+    """Every painted material takes the same (a, p), and it is the one the proxy produces.
+
+    §4.2 says to fit (a, p) once per *class* and bake it, so the four sharing one value is the
+    point, not a coincidence -- and a fifth painted material added later should join them rather
+    than acquire an estimate of its own.
+    """
+    for name in PAINTED:
+        model = library[name].spec.optical.angular_model
+        assert model.type == "empirical", name
+        assert (model.a, model.p) == (0.75, 4.0), (name, model.a, model.p)
+
+
+def test_the_baked_parameters_are_what_the_proxy_actually_fits(library) -> None:  # type: ignore[no-untyped-def]
+    """Re-derive the bake from the checked-in table: the YAML must not drift from its source.
+
+    This is the test that makes the numbers in four YAML files traceable. Fitting the paint proxy
+    band by band gives a = 0.732-0.770 with p pinned at 4; the baked 0.75 sits inside that spread,
+    so an edit that moved it back toward §4.2's quoted 0.15-0.35 -- or a re-fetch that changed the
+    table under it -- fails here rather than quietly flattening every painted limb in the library.
+    """
+    table = load_nk_table("paint_proxy", DATA)
+    fits = {
+        band: fit_band_level_b(table, nominal_response(band), name=f"paint:{band}")
+        for band in ("nir", "swir", "mwir", "lwir")
+    }
+    assert {f.p for f in fits.values()} == {4.0}, fits
+    values = [f.a for f in fits.values()]
+    assert min(values) > 0.72 and max(values) < 0.78, fits
+    baked = library["car_paint_black"].spec.optical.angular_model
+    assert min(values) - 0.02 <= baked.a <= max(values) + 0.02, (baked.a, values)
+    assert all(f.rms_residual < 0.02 for f in fits.values()), fits
+
+
+def test_the_fit_is_far_from_the_estimate_it_replaced(library, boson) -> None:  # type: ignore[no-untyped-def]
+    """The size of the correction, because "we re-fitted it" understates what changed.
+
+    The estimated (0.25, 5.0) held ε at 0.97 of its normal value at 70°, where Fresnel on an
+    acrylic gives 0.86. Against a 250 K sky that is 3.8 K of apparent temperature on a car door
+    seen obliquely -- comfortably past the 2 K Tier 4 target, so it is not a refinement.
+    """
+    eps0 = float(library["car_paint_black"].band_properties("lwir", boson).emissivity)
+    cos_70 = math.cos(math.radians(70.0))
+    estimate = float(emissivity_empirical(eps0, 0.25, 5.0, cos_70))
+    fitted = float(emissivity_empirical(eps0, 0.75, 4.0, cos_70))
+    assert estimate / eps0 > 0.96, estimate / eps0
+    assert 0.85 < fitted / eps0 < 0.87, fitted / eps0
+    assert estimate - fitted > 0.09, (estimate, fitted)
+
+
+def test_the_unpainted_materials_did_not_borrow_the_paint_fit(library) -> None:  # type: ignore[no-untyped-def]
+    """Carbon fibre and rubber keep their estimate: the proxy is PMMA, and they are not painted.
+
+    They sat on the same estimated (0.25, 5.0) as the paints, so the tempting move was to sweep
+    them along. That would have borrowed a measurement of a different material without saying so,
+    which is exactly what ADR 0041's PROXY label exists to prevent.
+    """
+    for name in ("carbon_fibre", "propeller_rubber"):
+        model = library[name].spec.optical.angular_model
+        assert (model.a, model.p) == (0.25, 5.0), (name, model.a, model.p)

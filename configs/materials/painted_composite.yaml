@@ -19,5 +19,13 @@ material:
   optical:
     emissivity_per_band: {nir: 0.30, swir: 0.40, mwir: 0.90, lwir: 0.92}
     roughness_per_band: {nir: 0.35, swir: 0.30, mwir: 0.18, lwir: 0.12}   # section 4.3, ESTIMATED
-    angular_model: {type: empirical, a: 0.25, p: 5.0}                     # Level B, ESTIMATED
+    # Level B, FITTED against Level A on the M7.5 paint proxy (PMMA, data/nk/paint_proxy.csv),
+    # which is what §4.2 asks for -- "fit (a, p) once per material class against Level A and bake
+    # it". Per-band fits give a = 0.732-0.770 with p pinned at 4; the joint fit over all four is
+    # a = 0.748, rounded here. It REPLACES an estimate of a = 0.25, p = 5, which was far too flat:
+    # that model held eps at 0.97 of normal at 70 deg where Fresnel on a clearcoat gives 0.86.
+    # ⚠️ §4.2's own prose quotes a ~ 0.15-0.35 for painted metals and plastics. The fit disagrees by
+    # 2-3x and the fit wins, because §4.2 also *instructs* the fit and §4.3 puts a clearcoat in the
+    # optically smooth regime in LWIR (sigma << lambda/8). Raised as spec issue S40.
+    angular_model: {type: empirical, a: 0.75, p: 4.0}
     transmittance_per_band: {nir: 0.0, swir: 0.0, mwir: 0.0, lwir: 0.0}
