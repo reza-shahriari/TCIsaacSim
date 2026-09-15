@@ -29,6 +29,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 __all__ = [
     "SCENE_SCHEMA_VERSION",
+    "MIN_SCENE_SCHEMA_VERSION",
+    "SurfaceSpec",
+    "ThermalSceneSpec",
     "SiteSpec",
     "TargetSpec",
     "SceneSpec",
@@ -36,7 +39,12 @@ __all__ = [
     "load_scene_config",
 ]
 
-SCENE_SCHEMA_VERSION = 4  # v4: ram_skin aerodynamic-heating solver (ADR 0075)
+SCENE_SCHEMA_VERSION = 5  # v5: the optional `thermal:` block (M6.12)
+#: The oldest version this loader still accepts. v5 added `thermal:` as an **optional** field, so
+#: every v4 document is a valid v5 document and refusing one would be refusing it for a change
+#: that cannot affect it. A range is the honest representation of a backwards-compatible change;
+#: raise this floor only when a version genuinely stops being readable.
+MIN_SCENE_SCHEMA_VERSION = 4  # v4: ram_skin aerodynamic-heating solver (ADR 0075)
 
 
 class _Frozen(BaseModel):
@@ -164,6 +172,39 @@ class TargetSpec(_Frozen):
         return self
 
 
+class SurfaceSpec(_Frozen):
+    """One thermally solved surface: a material, where it faces, and whether it is shaded.
+
+    ``material`` names an entry in the material library. There is **no emissivity field**, here or
+    in the §12.3 ``thermal:`` block: ε comes from the material's optical data through M7.8's
+    hemispherical integral (ADR 0043), so a scene cannot radiate at one value while the camera
+    sees another.
+    """
+
+    name: str = Field(min_length=1)
+    material: str = Field(min_length=1)
+    tilt_deg: float = Field(default=0.0, ge=0.0, le=180.0)  # 0 = facing up
+    azimuth_deg: float = Field(default=180.0, ge=0.0, lt=360.0)
+    shaded: bool = False
+    vehicle_speed_m_s: float = Field(default=0.0, ge=0.0)
+
+
+class ThermalSceneSpec(_Frozen):
+    """§12.3's thermal block: how the surfaces are solved, not what they are."""
+
+    surfaces: list[SurfaceSpec] = Field(default_factory=list)
+    spin_up_hours: float = Field(default=48.0, gt=0.0, le=336.0)
+    tick_s: float = Field(default=1.0, gt=0.0, le=3600.0)
+
+    @field_validator("surfaces")
+    @classmethod
+    def _unique(cls, surfaces: list[SurfaceSpec]) -> list[SurfaceSpec]:
+        names = [s.name for s in surfaces]
+        if len(set(names)) != len(names):
+            raise ValueError(f"surface names must be unique: {names}")
+        return surfaces
+
+
 class SceneSpec(_Frozen):
     name: str = Field(min_length=1)
     description: str = ""
@@ -173,6 +214,7 @@ class SceneSpec(_Frozen):
     site: SiteSpec
     start_utc: datetime
     targets: list[TargetSpec] = Field(default_factory=list)
+    thermal: ThermalSceneSpec | None = None
 
     @field_validator("start_utc")
     @classmethod
@@ -197,8 +239,11 @@ class SceneConfig(_Frozen):
     @field_validator("schema_version")
     @classmethod
     def _version(cls, v: int) -> int:
-        if v != SCENE_SCHEMA_VERSION:
-            raise ValueError(f"scene schema_version {v} != {SCENE_SCHEMA_VERSION}")
+        if not MIN_SCENE_SCHEMA_VERSION <= v <= SCENE_SCHEMA_VERSION:
+            raise ValueError(
+                f"scene schema_version {v} outside the readable range "
+                f"{MIN_SCENE_SCHEMA_VERSION}-{SCENE_SCHEMA_VERSION}"
+            )
         return v
 
 

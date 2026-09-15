@@ -18,7 +18,7 @@
 # has no "floating body" kind; MM.4 should add one that takes the sea's own temperature, and this
 # comment should disappear with it.
 
-schema_version: 4
+schema_version: 5
 scene:
   name: vessel_transit_clear_day
   description: "Three vessels at 0.6-5.2 km on open water, clear midday, camera 20 m up"

@@ -1,0 +1,38 @@
+# The §6.13 facet scene: one weather, seven surfaces, nothing moving.
+#
+# It exists to make the diurnal phenomenology testable, so every surface is here for a reason and
+# most of them come in pairs that differ in exactly one thing:
+#   dry vs wet asphalt      -- what rain does to thermal mass
+#   sunlit vs shaded asphalt -- the same material, the same hour, only the direct beam differs
+#   black vs white car roof  -- identical in LWIR, opposite in the solar bands
+#   concrete                 -- the slow surface, for the crossover ordering
+#   glass                    -- the one that is not opaque in every band
+schema_version: 5
+scene:
+  name: thermal_facet_scene
+  description: "Seven facets under 48 h of clear mid-latitude summer weather (M6.13)"
+  weather_file: weather/clear_midlat_summer_48h.csv
+  atmosphere_preset: us_standard_clear
+  environment_preset: clear_dry
+  # ⚠️ The site must agree with the weather file about where noon is. `clear_midlat_summer_48h`
+  # declares "local = UTC+2" in its own header, so its DNI half-sine and its T_air sinusoid are
+  # keyed to a solar noon near 10:00 UTC — longitude ≈ +30°E. Pairing it with, say, a Californian
+  # site does not raise: `solar_loading` multiplies the file's DNI by a cos θ that peaks ten hours
+  # later, and the product peaks somewhere in between. The scene still renders, the diurnal curve
+  # still looks like a diurnal curve, and every time-of-day statement about it is wrong.
+  site:
+    latitude_deg: 45.0
+    longitude_deg: 30.0
+    altitude_m: 10.0
+  start_utc: 2024-06-22T00:00:00Z
+  thermal:
+    spin_up_hours: 48.0
+    tick_s: 60.0
+    surfaces:
+      - {name: asphalt_sun,   material: asphalt_dry,     tilt_deg: 0.0}
+      - {name: asphalt_shade, material: asphalt_dry,     tilt_deg: 0.0, shaded: true}
+      - {name: asphalt_wet,   material: soil_wet,        tilt_deg: 0.0}
+      - {name: concrete,      material: concrete,        tilt_deg: 0.0}
+      - {name: roof_black,    material: car_paint_black, tilt_deg: 0.0}
+      - {name: roof_white,    material: car_paint_white, tilt_deg: 0.0}
+      - {name: glass,         material: glass_windshield, tilt_deg: 30.0, azimuth_deg: 180.0}

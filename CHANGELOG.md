@@ -43,6 +43,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The `thermal:` scene block, wired to M6.11's field** (M6.12, §12.3, ADR 0032/0037/0043).
+  `configs/scenes/thermal_facet_scene.yaml` ships: seven facets, mostly in pairs that differ in
+  exactly one thing — dry vs wet, sunlit vs shaded, black vs white paint. `SceneSurfaceForcing`
+  joins the shared weather, M6.4's NOAA sun, M6.5's longwave and M6.6's convection, and carries
+  `.weather` precisely so the `Scene`'s existing one-weather guard can see it. A surface **cannot
+  author an emissivity** — the schema forbids the field rather than ignoring it.
+- **⚠️ A site and a weather file have to agree about where noon is, and nothing makes them.**
+  `clear_midlat_summer_48h` declares "local = UTC+2" in its own header. Pairing it with a
+  Californian site does **not** raise: `solar_loading` multiplies the file's DNI by a cos θ that
+  peaks ten hours later, and the product peaks somewhere in between. The scene renders, the diurnal
+  curve still looks like a diurnal curve, and every time-of-day statement about it is wrong. A test
+  now pins the sunlit-minus-shaded peak (which isolates the direct beam) against the file's own DNI
+  peak, and a counter-test confirms a mismatched site shifts it by hours. With the site corrected to
+  +30°E, sunlit asphalt peaks at **14:15 local at 60.1 °C**, black roof at **66.2 °C** against
+  white's **37.4 °C**, and shaded asphalt 31.7 K below sunlit.
+- **⚠️ A 48 h weather file cannot supply 48 h of weather *before* t₀.** The spin-up therefore wraps
+  into the series it has — it is asking "what would this surface look like after a couple of days of
+  weather like this", and the synthetic files are a whole number of days long so the wrap lands at
+  the same time of day. The wrap is applied to the **spin-up only**: the live forcing stays
+  un-wrapped, so a render that runs past the end of the weather raises instead of quietly reading
+  yesterday.
+- The scene schema goes to **v5** with a readable **range** down to v4, rather than a bump that
+  invalidates every existing document. `thermal:` is optional, so every v4 scene is a valid v5
+  scene, and a range is the honest representation of a backwards-compatible change (12 tests).
 - **`ThermalField`: a fixed-tick solve behind a query that cannot mutate it** (M6.11, §6.4, §1).
   §6.4's "decouple this from the render loop entirely" is one sentence and two requirements. The
   solve advances on its own clock — 240 fps and 1 fps agree to 1e-9 — and **a query never changes

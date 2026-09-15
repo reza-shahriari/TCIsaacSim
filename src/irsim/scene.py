@@ -96,6 +96,10 @@ class Scene:
     t0_s: float
     layered: LayeredAtmosphere | None = None  # MS.1 model on the same weather
     environment: EnvironmentSpec | None = None
+    #: The M6.11 field, when the scene config carries a `thermal:` block (M6.12). It is
+    #: registered as a consumer through its forcing model, so the one-weather guard sees it.
+    thermal: Any = None  # ThermalField; Any avoids importing it into this module's signature
+    thermal_surfaces: tuple[str, ...] = ()
     sky_models: Mapping[str, SkyModel] = field(default_factory=dict)  # per band (MS.2)
     extra_consumers: Mapping[str, Any] = field(
         default_factory=dict
@@ -121,8 +125,18 @@ class Scene:
             out["layered"] = self.layered
         out.update({f"sky:{k}": v for k, v in self.sky_models.items()})
         out.update({f"target:{k}": v for k, v in self.targets.items()})
+        if self.thermal is not None:
+            out["thermal"] = self.thermal.forcing_at
         out.update(self.extra_consumers)
         return out
+
+    def surface_temperature_k(self, name: str, t_s: float) -> float:
+        """One named surface's temperature at a render time, float32-narrowed (M6.11)."""
+        if self.thermal is None:
+            raise ValueError("this scene has no thermal block")
+        if name not in self.thermal_surfaces:
+            raise KeyError(f"unknown surface {name!r}; scene has {list(self.thermal_surfaces)}")
+        return float(self.thermal.temperature_at(t_s)[self.thermal_surfaces.index(name)])
 
     # -- construction ---------------------------------------------------------------------
     @classmethod
@@ -147,6 +161,7 @@ class Scene:
             layered = LayeredAtmosphere(preset, weather, luts)
             for band, lut in (luts or {}).items():
                 sky_models[band] = SkyModel(layered, environment, band, lut, quantity)
+        thermal, surface_names = _build_thermal_field(spec, weather, t0_s, data_dir)
         return cls(
             spec=spec,
             weather=weather,
@@ -156,6 +171,8 @@ class Scene:
             layered=layered,
             environment=environment,
             sky_models=sky_models,
+            thermal=thermal,
+            thermal_surfaces=surface_names,
         )
 
     @classmethod
@@ -176,3 +193,79 @@ class Scene:
         """Step every target from t_rel to t_rel + dt; returns the new temperatures."""
         t = self.t0_s + float(t_rel_s)
         return {name: solver.advance(t, float(dt_s)) for name, solver in self.targets.items()}
+
+
+def _build_thermal_field(
+    spec: SceneSpec,
+    weather: WeatherSeries,
+    t0_s: float,
+    data_dir: str | os.PathLike[str] | None,
+) -> tuple[Any, tuple[str, ...]]:
+    """Build M6.11's field for the scene's `thermal:` block, spun up to the scene's own start.
+
+    Returns ``(None, ())`` when the scene has no thermal block, which is every scene written
+    before M6.12 -- the phase-1 prescribed and Newton solvers in ``targets`` are untouched.
+
+    The spin-up **ends at t0_s**, so the field's first query is the state the weather implies at
+    the scene's start rather than a transient. That is the whole point of M6.10 and it is worth
+    doing here rather than leaving to the caller, because a caller that forgets gets a scene that
+    is wrong by kelvins for its first few hours and looks fine.
+    """
+    from irsim.materials.library import MaterialLibrary
+    from irsim.thermal.balance import ThermalProperties
+    from irsim.thermal.facets import FacetProperties, spin_up
+    from irsim.thermal.field import ThermalField
+    from irsim.thermal.scene_forcing import SceneSurfaceForcing, SurfaceOrientation
+
+    block = spec.thermal
+    if block is None or not block.surfaces:
+        return None, ()
+
+    library = MaterialLibrary.load()
+    properties = FacetProperties.stack(
+        [
+            ThermalProperties.from_material(library[s.material], 300.0, data_dir=data_dir)
+            for s in block.surfaces
+        ]
+    )
+    forcing = SceneSurfaceForcing(
+        weather=weather,
+        latitude_deg=spec.site.latitude_deg,
+        longitude_deg=spec.site.longitude_deg,
+        orientations=tuple(
+            SurfaceOrientation(
+                tilt_deg=s.tilt_deg,
+                azimuth_deg=s.azimuth_deg,
+                shaded=s.shaded,
+                vehicle_speed_m_s=s.vehicle_speed_m_s,
+            )
+            for s in block.surfaces
+        ),
+    )
+    # The spin-up needs `spin_up_hours` of weather *before* t0, and a 48 h file usually does not
+    # have it -- a scene at 07:00 on day 1 would need weather from two days before the file
+    # starts. So the spin-up **wraps** into the series it has: it is asking "what would this
+    # surface look like after a couple of days of weather like this", and the synthetic files are
+    # a whole number of days long, so a wrap lands at the same time of day and the seam is a
+    # weather discontinuity rather than a clock one.
+    #
+    # The wrap is applied to the **spin-up only**. The scene's live forcing stays un-wrapped, so a
+    # render that runs past the end of the weather raises instead of quietly reading yesterday.
+    span = float(weather.time_s[-1] - weather.time_s[0])
+    first = float(weather.time_s[0])
+
+    def wrapped(t_s: float) -> Any:
+        if t_s >= first:
+            return forcing(t_s)
+        return forcing(first + (t_s - first) % span)
+
+    spun = spin_up(
+        properties,
+        wrapped,
+        weather.content_hash,
+        t0_s,
+        hours=block.spin_up_hours,
+        dt_s=60.0,
+    )
+    field = ThermalField(properties, forcing, t0_s, spun.temperatures_k, block.tick_s)
+    return field, tuple(s.name for s in block.surfaces)

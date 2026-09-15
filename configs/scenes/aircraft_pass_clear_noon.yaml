@@ -10,7 +10,7 @@
 # So two of the three nodes are simply constant, and saying so in the config is more honest than
 # dressing them up as a schedule that happens to be flat.
 
-schema_version: 4
+schema_version: 5
 scene:
   name: aircraft_pass_clear_noon
   description: "Light business jet, 150 m/s low pass, clear midday, US Standard atmosphere"
