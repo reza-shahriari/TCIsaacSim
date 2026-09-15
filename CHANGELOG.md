@@ -43,6 +43,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The fidelity ablation** (M12.3, ablation half). `scripts/fidelity_ablation.py` renders the same
+  scenarios with one mechanism switched off and measures the DN8 distance from full fidelity with
+  ME.6's own statistics. It needs no detector, no labels and no GPU, which is why it was worth
+  running on its own: ME.7's training half is blocked on the reference set's MATLAB annotation boxes
+  and this half is blocked on nothing, and a mechanism that moves nothing here cannot be responsible
+  for a sim-to-real gap whatever a later detector says.
+- Ranked by discriminator AUC against full fidelity, on 5 scenarios × 24 frames: **AGC linear→none
+  1.000** (histogram EMD **61.7 codes**), **optical PSF off 0.962** (EMD 10.1), **noise off 0.725**
+  (EMD 0.034), and bad pixels / NUC residual / FFC all at the control's own 0.495. The display
+  mapping dominates everything else by a wide margin — the same conclusion the Tier 4 acceptance run
+  reached from the other direction.
+- **The control passes at 0.495, and how many scenarios that took is itself a result.** At two
+  scenarios it read **0.40** — five null standard errors below chance on two sets identical by
+  construction — because the AUC's null σ assumes independent patches and patches cut from the same
+  frames are not. Independence is bought with scenarios, never with patches per frame.
+- The three null-effect switches were **verified rather than assumed**: the M9 chain *is* attached,
+  with 112 bad pixels and both switches enabled, but the FFC interval is **10 800 frames** at 60 Hz
+  so a 24-frame clip contains no shutter event; the NUC residual grows from the last FFC and is near
+  zero at a clip's start; and the chain's own replacement stage repairs the defects, which is what
+  it is for. Chasing that is also how the CPU matched-scenario generator was found to be rendering
+  **without the sensor chain at all** — now fixed, which matters because the published clips contain
+  FFC freezes and dead pixels and a render without them is a different camera.
+- **The SPG lane's blocker is written down instead of coded around** (M10.12, M10.13a/b/e). Stage 1
+  needs a **per-frame float32 facet table** to reach the kernel, and M2.3 established that there is
+  no cross-frame device state to keep it in, that `io.` is a forbidden token so it cannot be loaded,
+  and that a Lua literal of LUT size crashes the Kit process. The Planck LUT is static and bakes
+  fine; the facet table changes every frame and does not. `src/irsim_isaac/spg/README.md` states the
+  question, three candidate answers ranked by cost, and how one Isaac session with a fourth
+  `spg_probe` experiment would decide it for all four steps. Writing the kernels against a guess is
+  what CLAUDE.md's "flag uncertainty rather than guessing" rule exists for, so they are not written —
+  and M2.3's hazard travels with the note: a kernel that fails to load yields a **zero-filled output
+  with status ok**, so any in-sim equivalence test must assert against a known non-zero reference.
 - **One command renders every demo scene in every band** (M10.24). `scripts/render_multiband.py`
   runs three demo scenes × four bands, each with its registered visible companion, and builds a
   per-scene contact sheet. The point is the comparison: the same geometry, the same weather, the
