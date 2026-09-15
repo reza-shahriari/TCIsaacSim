@@ -255,10 +255,15 @@ def attach_sensor_chain(
     weather: object | None = None,
     ambient_provider: object | None = None,
     t0_s: float = 0.0,
-    defects_enabled: bool = True,
-    residual_enabled: bool = True,
+    defects_enabled: bool | None = None,
+    residual_enabled: bool | None = None,
 ) -> Any:
     """Return a copy of ``config`` with an M9 chain attached (M9.8).
+
+    ``defects_enabled`` and ``residual_enabled`` default to ``None``, meaning *take the value from
+    the sensor config's own* ``fidelity:`` *block* (ME.8, `bad_pixels` and `nuc_residual`), so an
+    ablation variant has its own config hash instead of living in a caller's argument list. A bool
+    overrides it, for a bench that wants one mechanism isolated without authoring a config.
 
     The ∂DN/∂T the NUC residual needs is taken from the camera's own radiometric calibration and
     evaluated **once**, here, at :data:`~irsim.noise.nuc_residual.RESIDUAL_REFERENCE_K` — ADR 0056's
@@ -278,6 +283,11 @@ def attach_sensor_chain(
             "the M9 chain needs a radiometric calibration to convert the NUC residual's "
             "millikelvin into DN (ADR 0056); this config has none (a photon FPA -- see M11.6)"
         )
+    fidelity = config.sensor.sensor.fidelity
+    if defects_enabled is None:
+        defects_enabled = fidelity.bad_pixels
+    if residual_enabled is None:
+        residual_enabled = fidelity.nuc_residual
     dn_per_k = dn_per_kelvin(config.calibration, config.lut, RESIDUAL_REFERENCE_K)
     chain = SensorChain.build(
         config.sensor.sensor,

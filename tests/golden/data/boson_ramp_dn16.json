@@ -1,6 +1,6 @@
 {
   "atol": 1.0,
-  "config_hash": "83cedd378eb6a1404a74258f990f5d9f0912a57f31a6df5f0229b6c1f8f213d9",
+  "config_hash": "00e451e8e6b5bc69bcf6155bc55c4ea51c9d219c1fe41315fb8a449b8828c55b",
   "dtype": "uint16",
   "name": "boson_ramp_dn16",
   "numpy_version": "2.3.1",

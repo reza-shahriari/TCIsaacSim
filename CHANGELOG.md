@@ -43,6 +43,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The §15 Tier 5 ablation switches are config now, not keyword arguments** (ME.8, ADR 0083).
+  A `fidelity:` block in the sensor file carries `noise`, `optical_psf`, `bad_pixels` and
+  `nuc_residual`, all defaulting to `true`. Each of the four already existed — as a keyword
+  argument of `PipelineConfig.from_sensor` or of `attach_sensor_chain` — and **a keyword argument
+  is invisible to the config hash**, so two ablation variants produced identical hashes and a
+  stored result could not say which one produced it. Sixteen combinations of the four now produce
+  sixteen distinct hashes. The arguments still work and still override, as a bench affordance.
+- The AGC, the FFC and the clouds are deliberately **not** in the new block: `isp.agc: linear`,
+  `nuc.mode: ideal` and the weather's own `cloud_fraction` were already explicit, hashed config,
+  and a second way to set them would raise the question of which copy wins.
+- **`schema_version` is no longer part of the config hash**, and the sensor schema gained a
+  readable range (v8–v9) the way the scene schema already had. The version describes the document
+  format, not the sensor: a v8 file and a v9 file that describe the same camera are the same input
+  and must produce the same reference. The guard against a future version changing *meaning*
+  without changing a field is the floor — raise `MIN_SCHEMA_VERSION` and the old document is
+  refused outright rather than quietly hashing like a new one.
+- Regenerating the goldens after the version bump rewrote twelve `.json` sidecars and left **every
+  `.npy` array byte-identical**, which is the evidence that this changed provenance metadata and
+  no physics.
 - **Sky and target statistics for the Tier 4 comparison** (ME.4, ADR 0068 addendum).
   `irsim.validation.targets` measures a display-domain frame the way the public data forces:
   `target_statistics` (SCR against the *ring* around the box — a sky target's background is the sky

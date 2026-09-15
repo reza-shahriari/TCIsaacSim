@@ -29,7 +29,7 @@ from typing import Any
 
 import yaml
 
-from irsim.config.sensor import SensorConfig
+from irsim.config.sensor import FULL_FIDELITY, SensorConfig
 
 __all__ = [
     "DEFAULT_DATA_DIR",
@@ -125,7 +125,20 @@ def _dump_with_file_hashes(
     resolved against the data root here so hashing does not depend on how the model was made.
     """
     dumped = config.model_dump(mode="json")
+    # `schema_version` describes the *document format*, not the camera, so it is not part of the
+    # hash: a v8 file and a v9 file that describe the same sensor are the same input and must
+    # produce the same reference. The guard against a future version changing meaning without
+    # changing fields is `MIN_SCHEMA_VERSION`, which refuses such a document outright rather than
+    # letting it hash the same as a newer one.
+    del dumped["schema_version"]
     sensor = dumped["sensor"]
+    # ME.8: full fidelity is the identity, and the identity is not recorded. Dropping the default
+    # `fidelity:` block keeps a v8 file and a v9 file that spells every switch out as `true`
+    # hashing the same -- the hash tracks the *ablation*, not the notation -- and leaves every
+    # golden written before ME.8 valid. Any switch turned off survives this and changes the hash,
+    # which is the whole point of the block.
+    if sensor.get("fidelity") == FULL_FIDELITY.model_dump(mode="json"):
+        del sensor["fidelity"]
     root = resolve_data_dir(data_dir)
     for field in DATA_PATH_FIELDS:
         raw = _get(sensor, field)

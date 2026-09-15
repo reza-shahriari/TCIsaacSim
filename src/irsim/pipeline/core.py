@@ -92,8 +92,8 @@ class PipelineConfig:
         t_housing_cal_k: float | None = None,
         radiometric_range_k: tuple[float, float] = RADIOMETRIC_RANGE_K,
         sensor_seed: int = 0,
-        noise_enabled: bool = True,
-        psf_enabled: bool = True,
+        noise_enabled: bool | None = None,
+        psf_enabled: bool | None = None,
         reference_wavelength_um: float | None = None,
         atmosphere: Atmosphere | LayeredAtmosphere | None = None,
         tau_override: float | None = None,
@@ -114,6 +114,9 @@ class PipelineConfig:
         frame time on the weather axis is ``PipelineState.t_s``. ``tau_override`` is the L1
         fallback: a constant τ at every distance, path radiance still at the weather's T_air.
         """
+        fidelity = sensor.sensor.fidelity
+        noise_enabled = fidelity.noise if noise_enabled is None else noise_enabled
+        psf_enabled = fidelity.optical_psf if psf_enabled is None else psf_enabled
         if tau_override is not None:
             if atmosphere is None:
                 raise ValueError("tau_override needs an Atmosphere (its weather gives T_air)")

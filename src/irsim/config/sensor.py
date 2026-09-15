@@ -27,6 +27,9 @@ from irsim.radiometry.constants import WAVELENGTH_MAX_UM, WAVELENGTH_MIN_UM
 
 __all__ = [
     "SCHEMA_VERSION",
+    "MIN_SCHEMA_VERSION",
+    "FidelitySpec",
+    "FULL_FIDELITY",
     "SensorConfig",
     "SensorSpec",
     "BandSpec",
@@ -57,7 +60,12 @@ __all__ = [
 # blinking classes (M9.5a, ADR 0055). All three default, so existing configs are unchanged.
 # 8: nuc.shutterless_tau_s, the scene-based-correction time constant that bounds a shutterless
 # core's residual (M9.7, ADR 0057). Defaults, and is unused outside `mode: shutterless`.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9  # v9: the optional `fidelity:` block (ME.8)
+#: The oldest version this loader still accepts. v9 added `fidelity:` as an **optional** block whose
+#: default is full fidelity, so every v8 document is a valid v9 document and describes exactly the
+#: camera it described before. A range is the honest representation of a backwards-compatible
+#: change; raise this floor only when a version genuinely stops being readable.
+MIN_SCHEMA_VERSION = 8
 
 Regime = Literal["emissive", "reflective", "mixed"]
 HousingTempMode = Literal["fixed", "ambient", "coupled"]
@@ -417,6 +425,46 @@ class IspSpec(_Frozen):
         return self
 
 
+class FidelitySpec(_Frozen):
+    """§15 Tier 5 caution 1: the ablation switches, as config rather than as arguments.
+
+    §15 asks which parts of the model the sim-to-real gap actually depends on, and the answer is an
+    ablation: run the same scenario with one mechanism off and compare. Every one of these already
+    *existed* -- as a keyword argument of :meth:`irsim.pipeline.core.PipelineConfig.from_sensor` or
+    of :func:`irsim.pipeline.sensor_chain.attach_sensor_chain`. **A keyword argument is invisible to
+    the config hash**, so two ablation variants produced identical hashes, and a run's provenance
+    could not say which of them it was. That is the gap this block closes; it adds no new physics.
+
+    The other ablations §15 names were already explicit, hashed config and are deliberately *not*
+    duplicated here, because a second way to set them would raise the question of which one wins:
+
+    * **AGC** -- ``isp.agc: linear`` (or ``none``) is the ablation, and it is already in the hash.
+    * **FFC** -- ``nuc.mode: ideal`` is a core that never shutters (``shutterless`` is the third
+      real mode, not an ablation of the second).
+    * **Clouds** -- cloud *fraction* is weather (``WeatherSeries.cloud_fraction``), never authored,
+      so the cloud-free run is a weather file, and ``environment.clouds.tau`` sets what a cloud is.
+
+    The default is full fidelity, which is what every configuration written before this block
+    described. :data:`FULL_FIDELITY` is that default, and a config equal to it is **dropped from
+    the config hash** -- so the hash tracks the ablation and not the notation, and a v8 file and a
+    v9 file that spells out every switch as ``true`` hash the same.
+    """
+
+    #: Detector and 3-D noise (ADR 0022/0025). ``false`` is the ideal chain.
+    noise: bool = True
+    #: The optical PSF at the supersampled pitch (ADR 0059). ``false`` removes the optical MTF;
+    #: the detector's own box MTF is geometry and stays.
+    optical_psf: bool = True
+    #: §10.4 dead/hot/flickering pixels and their replacement (M9 chain).
+    bad_pixels: bool = True
+    #: §11.2's post-FFC residual gain and offset drift (ADR 0056).
+    nuc_residual: bool = True
+
+
+#: The all-on default: the camera every configuration written before ME.8 describes.
+FULL_FIDELITY = FidelitySpec()
+
+
 class OutputsSpec(_Frozen):
     radiance_linear: bool
     apparent_temperature: bool
@@ -435,6 +483,7 @@ class SensorSpec(_Frozen):
     nuc: NucSpec
     isp: IspSpec
     outputs: OutputsSpec
+    fidelity: FidelitySpec = FULL_FIDELITY
 
     @property
     def pixel_area_m2(self) -> float:
@@ -496,9 +545,9 @@ class SensorConfig(_Frozen):
 
     @model_validator(mode="after")
     def _version(self) -> SensorConfig:
-        if self.schema_version != SCHEMA_VERSION:
+        if not MIN_SCHEMA_VERSION <= self.schema_version <= SCHEMA_VERSION:
             raise ValueError(
-                f"schema_version {self.schema_version} not supported (this code reads "
-                f"{SCHEMA_VERSION})"
+                f"schema_version {self.schema_version} outside the readable range "
+                f"{MIN_SCHEMA_VERSION}-{SCHEMA_VERSION}"
             )
         return self
