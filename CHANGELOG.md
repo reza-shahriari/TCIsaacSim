@@ -43,6 +43,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The Tier 4 acceptance report** (ME.6, ADR 0085). `irsim.validation.compare` holds the four DN8
+  statistics — histogram EMD in codes, contrast ratio, PSD shape, ESF width — and `Tier4Report`, in
+  which **`untestable` is a verdict**: §15's "apparent temperature within 2 K" is printed as open in
+  every run, because a missing row reads as a passing row. `scripts/validation_report.py` exits
+  non-zero on any failed check and has a `--self-test` mode that runs synthetic-versus-itself,
+  which is the gate on the gate: if the control does not pass, the thresholds are wrong and nothing
+  the report says about a real comparison is worth reading.
+- The **gap score** (`irsim_eval.discriminator`) is a linear probe on interpretable statistics,
+  fitted in NumPy with no torch and no scikit-learn, cross-validated, and it names the feature that
+  separated the two sets. Its AUC is a deliberate *lower bound*: an AUC near 0.5 means these
+  statistics do not separate them, not that a detector cannot.
+- **Three thresholds moved by measurement.** ADR 0068's ×2 PSD-shape target does not catch a 3×
+  noise mismatch — matched noise reads 1.05–1.08, 2× reads 1.30–1.36, 3× reads 1.77–1.93 and only
+  5× reaches 3.2 — so it is **1.5**, which separates matched from 3× with a 1.6× margin and openly
+  misses a 2× error. A fraction-of-peak spectral floor turned out to be the wrong shape of filter:
+  on a scene with low-frequency structure it excludes exactly the bins the noise lives in, taking a
+  3× mismatch from **1.90 to 1.06**, so it defaults to zero. And "AUC 0.5 ± 0.03" is not achievable:
+  the AUC's own null standard error at 96 patches per class is already **0.042**, so the control is
+  judged by `|auc − 0.5| < 2σ_null`, which scales with the sample size instead of assuming one.
 - **The reference-statistics report** (ME.5). `scripts/reference_statistics.py` measured all 365
   IR clips of the Halmstad set and wrote `docs/validation/reference-stats-2026-09-15.md` and its
   JSON. Every value carries N, a seeded bootstrap confidence interval and its floor, and everything
