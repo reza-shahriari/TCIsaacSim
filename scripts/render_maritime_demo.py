@@ -43,6 +43,15 @@ parser.add_argument("--camera-height-m", type=float, default=20.0, help="eye hei
 parser.add_argument("--t0", type=float, default=0.0, help="scene time of the first frame, seconds")
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
 parser.add_argument("--settle", type=int, default=16)
+parser.add_argument("--fps", type=float, default=30.0, help="playback rate of the encoded videos")
+parser.add_argument("--palette", default=None, help="override the sensor ISP's palette")
+parser.add_argument(
+    "--keep-frames",
+    action="store_true",
+    help="keep the per-frame video PNGs after encoding (the physical-unit exports are kept either "
+    "way -- they are what MM.7 is for)",
+)
+parser.add_argument("--no-video", action="store_true", help="export frames only, encode nothing)")
 parser.add_argument(
     "--rt-subframes",
     type=int,
@@ -101,6 +110,8 @@ def main() -> int:
     from irsim.atmosphere.skylight import skylight_for_sensor
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
     from irsim.io import write_frame
+    from irsim.io.png import write_png
+    from irsim.isp.palette import palette_table, quantise_display
     from irsim.materials.library import MaterialLibrary
     from irsim.materials.mapping import MaterialResolver, load_mapping_rules
     from irsim.materials.nk import load_nk_table
@@ -109,6 +120,8 @@ def main() -> int:
     from irsim.radiometry.lut_files import load_band_lut_for_config
     from irsim.radiometry.spectral_response import load_spectral_response
     from irsim.scene import Scene
+    from irsim_eval.video import encode_mp4, ffmpeg_available
+    from irsim_isaac.display_span import DisplaySpan, span_from_apparent_t, span_from_dn16
     from irsim_isaac.maritime_demo import build_maritime_demo, describe
     from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
     from irsim_isaac.pipeline.ir_camera import IrCamera
@@ -117,6 +130,9 @@ def main() -> int:
 
     out_dir = pathlib.Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = out_dir / "frames"
+    if not args.no_video:
+        frames_dir.mkdir(parents=True, exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
     if args.integration_ms is not None:
@@ -303,9 +319,43 @@ def main() -> int:
     ).open(settle_frames=args.settle, rt_subframes=args.rt_subframes)
 
     written = []
+    # **The maritime scene has no single target node to span**, the way a drone's motors or an
+    # aircraft's nozzle do: the sea and the sky *are* the picture, and spanning whatever vessels
+    # happen to be in shot would throw away the angular-emissivity gradient that is the point of
+    # ADR 0078. So the manual span comes from percentiles of the first captured frame -- of the
+    # apparent temperature where the band has one, and of the raw ADC where §12.1 says it does not
+    # (M10.23). Taken once and held, so the video does not breathe the way an AGC's would.
+    span: DisplaySpan | None = None
+    palette_name = args.palette or spec.isp.palette
+    palette = palette_table(palette_name)
     t_render = time.time()
     for index in range(args.frames):
         outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
+        if span is None and not args.no_video:
+            span = (
+                span_from_apparent_t(np.asarray(outputs.apparent_t))
+                if outputs.apparent_t is not None
+                else span_from_dn16(np.asarray(outputs.dn16))
+            )
+            print(
+                f"display: fixed {span.caption}, {palette_name} palette; the camera's own "
+                f"{spec.isp.agc} output is filmed alongside"
+            )
+        if span is not None:
+            write_png(
+                frames_dir / f"ir_{index:05d}.png",
+                np.ascontiguousarray(palette[quantise_display(span.scale(outputs))][..., :3]),
+            )
+            if outputs.display8 is not None:
+                write_png(
+                    frames_dir / f"agc_{index:05d}.png",
+                    np.ascontiguousarray(np.asarray(outputs.display8)[..., :3]),
+                )
+            if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
+                write_png(
+                    frames_dir / f"rgb_{index:05d}.png",
+                    np.ascontiguousarray(np.asarray(camera.last_frame.rgb)[..., :3]),
+                )
         extra = {}
         if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
             extra["rgb"] = camera.last_frame.rgb
@@ -343,6 +393,30 @@ def main() -> int:
     render_s = time.time() - t_render
     camera.close()
 
+    # The per-frame physical-unit exports above are what MM.7 is for and are always kept. These
+    # videos are the *viewable* half, and the ship needs them for the same reason the drone and the
+    # aircraft do: a four-band comparison you can only inspect as loose PNGs is not one anybody
+    # will actually make.
+    videos: dict[str, str] = {}
+    if not args.no_video and span is not None:
+        if ffmpeg_available():
+            for tag, pattern in (("ir", "ir_*.png"), ("agc", "agc_*.png"), ("rgb", "rgb_*.png")):
+                if not any(frames_dir.glob(pattern)):
+                    continue  # no RGB was captured, so there is nothing to encode
+                videos[tag] = str(
+                    encode_mp4(
+                        str(frames_dir / pattern),
+                        out_dir / f"maritime_demo_{tag}.mp4",
+                        fps=args.fps,
+                    )
+                )
+            if not args.keep_frames:
+                for png in frames_dir.glob("*.png"):
+                    png.unlink()
+                frames_dir.rmdir()
+        else:
+            print("ffmpeg not found: keeping the PNG sequence", file=sys.stderr)
+
     summary = {
         "boot_s": round(boot_s, 2),
         "render_s": round(render_s, 2),
@@ -361,6 +435,10 @@ def main() -> int:
             "water_geometry": bool(demo.water_paths),
         },
         "vessels": rows,
+        "videos": videos,
+        "display_span": None
+        if span is None
+        else {"kind": span.kind, "low": span.low, "high": span.high},
         "files": [str(p.name) for r in written for p in r.files.values()],
     }
     path = out_dir / "summary.json"

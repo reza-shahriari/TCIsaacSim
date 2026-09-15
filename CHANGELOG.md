@@ -36,6 +36,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   further darkening needs a second iteration rather than a looser tolerance.
 
 ### Added
+- **The ship had no videos, in any band** — the maritime script exported per-frame physical-unit
+  files (which is what MM.7 is for) and never encoded anything, while the two aerial scripts write
+  an IR, an AGC and a visible video each. It encodes the same three now, so the four-band ship
+  comparison can actually be watched rather than inspected as loose PNGs.
+- Its manual span comes from **percentiles of the first captured frame**, not from thermal nodes:
+  a maritime scene has no single target whose temperature is the subject, and spanning whatever
+  vessels are in shot would throw away the sea's angular-emissivity gradient, which is most of the
+  picture and the point of ADR 0078. `span_from_apparent_t` is the emissive counterpart of
+  `span_from_dn16`, so the band-aware rule of M10.23 still holds: kelvin where §12.1 gives an
+  apparent temperature, raw ADC where it does not.
+- `irsim_isaac.display_span` had **no tests at all** since M10.23. It has eleven now, and writing
+  them found a bug: with a frame flat enough that both percentiles land on the same value, the
+  fallback anchored the span on `min()` — a single dead pixel or glint, which is exactly what the
+  percentiles were there to exclude. It falls back around the median instead.
 - **The n/k table library is complete, and its provenance rules are written down** (M7.5, ADR 0041,
   §4.2/§12.3). `data/nk/glass.csv` and `data/nk/paint_proxy.csv` join the measured water table and
   the modelled aluminium one, fetched from the CC0 RefractiveIndex.INFO database by the new

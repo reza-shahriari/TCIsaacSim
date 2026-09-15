@@ -31,7 +31,13 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["SpanKind", "DisplaySpan", "span_from_nodes", "span_from_dn16"]
+__all__ = [
+    "SpanKind",
+    "DisplaySpan",
+    "span_from_nodes",
+    "span_from_dn16",
+    "span_from_apparent_t",
+]
 
 SpanKind = Literal["apparent_t", "dn16"]
 
@@ -110,6 +116,38 @@ def span_from_dn16(
         raise ValueError("no pixels to take a span from")
     lo, hi = (float(x) for x in np.percentile(values, [low_pct, high_pct]))
     if hi <= lo:
-        return DisplaySpan(kind="dn16", low=float(values.min()), high=float(values.min()) + 1.0)
+        # A frame flat enough that both percentiles land on the same value. Fall back around the
+        # **median**, not the minimum: a single dead pixel or a glint is exactly what the
+        # percentiles were there to exclude, and anchoring the fallback on an extremum would hand
+        # the whole span to the outlier the rest of this function just removed.
+        middle = float(np.median(values))
+        return DisplaySpan(kind="dn16", low=middle - 0.5, high=middle + 0.5)
     width = hi - lo
     return DisplaySpan(kind="dn16", low=lo - pad * width, high=hi + pad * width)
+
+
+def span_from_apparent_t(
+    frame: Any, *, low_pct: float = 1.0, high_pct: float = 99.5, pad: float = 0.05
+) -> DisplaySpan:
+    """An emissive band's span from percentiles of one frame's apparent temperature.
+
+    The counterpart of :func:`span_from_nodes` for a scene with **no single target node** whose
+    temperature is the subject. A maritime frame is the sea and the sky: there is nothing to centre
+    a span on, and spanning the thermal nodes of whatever vessels happen to be in shot would throw
+    away the sea, which is most of the picture and the thing the angular-emissivity model exists to
+    render. Percentiles of the frame itself are the honest choice there.
+
+    Still a *manual* span: it is taken once, from one frame, and held for the sequence, so the
+    picture does not breathe the way an AGC's would.
+    """
+    values = np.asarray(frame, dtype=np.float64)
+    if values.size == 0:
+        raise ValueError("no pixels to take a span from")
+    lo, hi = (float(x) for x in np.percentile(values, [low_pct, high_pct]))
+    if hi <= lo:
+        # See `span_from_dn16`: a flat frame falls back around the median, which the percentiles
+        # already agree on, rather than around an extremum they were there to exclude.
+        middle = float(np.median(values))
+        return DisplaySpan(kind="apparent_t", low=middle - 0.5, high=middle + 0.5)
+    width = hi - lo
+    return DisplaySpan(kind="apparent_t", low=lo - pad * width, high=hi + pad * width)
