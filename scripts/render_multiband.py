@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Render each demo scene in all four bands, with a registered visible companion.
+
+    python.sh scripts/render_multiband.py                 # everything
+    python.sh scripts/render_multiband.py --scene drone --band nir
+    python.sh scripts/render_multiband.py --contact-sheet-only
+
+One scene, four cameras, one command. The point is the comparison: the *same* geometry, the same
+weather, the same sun and the same instant, through four spectral bands whose physics could hardly
+be more different. A quadrotor is four hot spots against a cold sky in LWIR and a black silhouette
+against a bright sky in NIR, and those are not two renderings of one picture -- they are two
+different detection problems, which is the argument for modelling bands as data.
+
+**Exposure is per band and is physics, not taste.** A daylight reflective-band scene saturates a
+low-light exposure by around 120x (measured: a 0.3-albedo surface in full sun puts 1.17e6
+photoelectrons into a NIR pixel in 16 ms against a 1e4 well). The NIR file is authored at its
+daylight exposure; SWIR keeps its own file -- its §9.4 NETD of 976 K is quoted in three places --
+and is exposed here with `--integration-ms`, which changes the config hash exactly as it should.
+
+Needs Isaac Sim and a GPU. Everything lands under ``outputs/multiband/<scene>/<band>/``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+
+REPO = pathlib.Path(__file__).resolve().parents[1]
+#: The interpreter the *child* renders run under. Isaac Sim's `python.sh` sets up an environment
+#: that its own `sys.executable` does not reproduce when re-invoked bare, so it is taken from
+#: $IRSIM_PYTHON when set (ADR 0002) and only falls back to this process's interpreter.
+DEFAULT_PYTHON = os.environ.get("IRSIM_PYTHON") or sys.executable
+
+#: scene -> (render script, extra arguments, frame count). The maritime demo is a short static
+#: scene by design (MM.7); the two aerial ones are flights.
+SCENES: dict[str, tuple[str, list[str], int]] = {
+    "drone": ("render_quad_flight.py", [], 150),
+    "airplane": ("render_aircraft_pass.py", [], 150),
+    "ship": ("render_maritime_demo.py", [], 8),
+}
+
+#: band -> (sensor config, extra arguments). `--integration-ms` appears only where the camera's own
+#: default would saturate in daylight, and the number is the measured 60 %-of-well exposure.
+BANDS: dict[str, tuple[str, list[str]]] = {
+    "lwir": ("flir_boson_640_lwir.yaml", []),
+    "mwir": ("example_mwir_insb_640.yaml", []),
+    "swir": ("example_swir_ingaas_640.yaml", ["--integration-ms", "0.08"]),
+    "nir": ("example_nir_si_1280.yaml", []),
+}
+
+
+def _out_dir(root: pathlib.Path, scene: str, band: str) -> pathlib.Path:
+    return root / scene / band
+
+
+def render(
+    scene: str,
+    band: str,
+    root: pathlib.Path,
+    frames: int | None,
+    subframes: int,
+    python: str = DEFAULT_PYTHON,
+) -> bool:
+    script, scene_args, default_frames = SCENES[scene]
+    sensor, band_args = BANDS[band]
+    out = _out_dir(root, scene, band)
+    command = [
+        python,
+        str(REPO / "scripts" / script),
+        "--out", str(out),
+        "--frames", str(frames if frames is not None else default_frames),
+        "--rt-subframes", str(subframes),
+        "--rgb",
+        "--sensor", str(REPO / "configs" / "sensors" / sensor),
+        *scene_args,
+        *band_args,
+    ]  # fmt: skip
+    print(f"\n=== {scene} / {band} ===\n{' '.join(command)}", flush=True)
+    started = time.time()
+    result = subprocess.run(command, cwd=REPO, check=False)
+    print(f"--- {scene}/{band}: exit {result.returncode} in {time.time() - started:.0f} s")
+    return result.returncode == 0
+
+
+#: Where in the clip the contact sheet samples. **Not frame 0**: these are time-lapses of a
+#: process, the manual display span covers the whole flight, and at t = 0 the motors are still at
+#: ambient -- so the first frame is the least informative one in the sequence.
+SHEET_FRACTION = 0.7
+
+
+def _first_frame(
+    video: pathlib.Path, destination: pathlib.Path, fraction: float = SHEET_FRACTION
+) -> bool:
+    """Pull one frame out of an encoded video. The PNGs themselves are deleted after encoding."""
+    if not video.is_file():
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+         str(video)],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    seek: list[str] = []
+    try:
+        seek = ["-ss", f"{float(probe.stdout.strip()) * fraction:.3f}"]
+    except ValueError:
+        seek = []
+    return (
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", *seek, "-i", str(video), "-vframes", "1",
+             str(destination)],
+            check=False,
+        ).returncode
+        == 0
+    )  # fmt: skip
+
+
+def contact_sheet(scene: str, root: pathlib.Path) -> pathlib.Path | None:
+    """One PNG per scene: the visible companion above the four bands, all at one instant.
+
+    Each band is resampled to a common width. The bands have different arrays and different fields
+    of view -- that is the honest thing to show, since it is what a real four-camera mast looks
+    like -- so the sheet is labelled with each camera's own resolution rather than pretending they
+    are registered to one another. The *visible* companion **is** registered, pixel for pixel, to
+    the band it was filmed with (ADR 0073).
+    """
+    import numpy as np
+
+    from irsim.io.png import write_png
+    from irsim_eval.data import _decode_png
+    from irsim_eval.video import annotate
+
+    scratch = root / scene / "_sheet"
+
+    def sample(directory: pathlib.Path, video_suffix: str, png_suffix: str, tag: str):  # type: ignore[no-untyped-def]
+        """One representative frame, from a video **or** from per-frame PNGs.
+
+        The two aerial scripts encode videos and the maritime one writes a file per frame
+        (`frame_000000_display8.png`), because a four-frame static demo does not want a container.
+        The sheet has to read both or the ship column comes out empty.
+        """
+        videos = sorted(directory.glob(f"*{video_suffix}"))
+        if videos:
+            out = scratch / f"{tag}.png"
+            return np.asarray(_decode_png(out))[..., :3] if _first_frame(videos[0], out) else None
+        stills = sorted(directory.glob(f"frame_*{png_suffix}"))
+        if not stills:
+            return None
+        index = min(int(len(stills) * SHEET_FRACTION), len(stills) - 1)
+        return np.asarray(_decode_png(stills[index]))[..., :3]
+
+    tiles: list[tuple[str, np.ndarray]] = []
+    for band in BANDS:
+        tile = sample(_out_dir(root, scene, band), "_ir.mp4", "_display8.png", band)
+        if tile is not None:
+            tiles.append((band.upper(), tile))
+    if not tiles:
+        return None
+    visible = sample(_out_dir(root, scene, "lwir"), "_rgb.mp4", "_rgb.png", "rgb")
+    if visible is not None:
+        tiles.insert(0, ("VISIBLE", visible))
+
+    # One common tile size by nearest-neighbour resampling, **not** by cropping: the NIR camera is
+    # 1280x1024 and the rest are 640x512, and cropping would quietly cut the taller frame in half
+    # and show a different part of the scene beside the others.
+    height = min(tile.shape[0] for _, tile in tiles)
+    width = min(tile.shape[1] for _, tile in tiles)
+    columns = []
+    for label, tile in tiles:
+        rows_idx = (np.arange(height) * tile.shape[0] // height).clip(0, tile.shape[0] - 1)
+        cols_idx = (np.arange(width) * tile.shape[1] // width).clip(0, tile.shape[1] - 1)
+        small = tile[rows_idx][:, cols_idx]
+        # The label goes on its **own strip** above the tile. Annotating over the frame put it on
+        # top of the render's own readout and made both unreadable.
+        strip = annotate(
+            np.zeros((40, width, 3), dtype=np.uint8),
+            [f"{label}   {tile.shape[1]}x{tile.shape[0]}"],
+        )[..., :3]
+        columns.append(np.concatenate([strip, small], axis=0))
+    sheet = np.concatenate(columns, axis=1)
+    path = root / scene / f"{scene}_contact_sheet.png"
+    write_png(path, np.ascontiguousarray(sheet))
+    return path
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scene", action="append", choices=sorted(SCENES))
+    parser.add_argument("--band", action="append", choices=sorted(BANDS))
+    parser.add_argument("--out", default=str(REPO / "outputs" / "multiband"))
+    parser.add_argument("--frames", type=int, default=None, help="override every scene's count")
+    parser.add_argument("--rt-subframes", type=int, default=4)
+    parser.add_argument("--contact-sheet-only", action="store_true")
+    parser.add_argument(
+        "--python",
+        default=DEFAULT_PYTHON,
+        help="interpreter for the child renders; default $IRSIM_PYTHON or this one",
+    )
+    args = parser.parse_args(argv)
+
+    root = pathlib.Path(args.out)
+    scenes = args.scene or list(SCENES)
+    bands = args.band or list(BANDS)
+    status: dict[str, str] = {}
+    if not args.contact_sheet_only:
+        for scene in scenes:
+            for band in bands:
+                ok = render(scene, band, root, args.frames, args.rt_subframes, args.python)
+                status[f"{scene}/{band}"] = "ok" if ok else "failed"
+    sheets = {}
+    for scene in scenes:
+        path = contact_sheet(scene, root)
+        if path is not None:
+            sheets[scene] = str(path)
+            print(f"contact sheet: {path}")
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "index.json").write_text(
+        json.dumps({"renders": status, "contact_sheets": sheets}, indent=2, sort_keys=True),
+        "utf-8",
+    )
+    failed = [k for k, v in status.items() if v != "ok"]
+    if failed:
+        print(f"FAILED: {', '.join(failed)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

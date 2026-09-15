@@ -43,6 +43,14 @@ parser.add_argument("--camera-height-m", type=float, default=20.0, help="eye hei
 parser.add_argument("--t0", type=float, default=0.0, help="scene time of the first frame, seconds")
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
 parser.add_argument("--settle", type=int, default=16)
+parser.add_argument(
+    "--rt-subframes",
+    type=int,
+    default=8,
+    help="path-tracer sub-frames per capture. The sea is the noisiest thing this project renders "
+    "-- a specular surface under a whole-sky source -- so it wants more of these than an aerial "
+    "scene does, and the default is the higher one.",
+)
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--rgb", action="store_true", help="also capture the companion visible frame")
 parser.add_argument(
@@ -269,12 +277,12 @@ def main() -> int:
         cloud_seed=args.cloud_seed,
         sea=sea,
         background_prim_paths=demo.water_paths,
-    ).open(settle_frames=args.settle)
+    ).open(settle_frames=args.settle, rt_subframes=args.rt_subframes)
 
     written = []
     t_render = time.time()
     for index in range(args.frames):
-        outputs = camera.get_outputs()
+        outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         extra = {}
         if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
             extra["rgb"] = camera.last_frame.rgb

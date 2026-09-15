@@ -117,13 +117,13 @@ def main() -> int:
         encode_mp4,
         ffmpeg_available,
         overlay_readout,
-        target_span_k,
     )
     from irsim_isaac.aircraft_pass import (
         PassTrack,
         build_aircraft_pass,
         look_at_quaternion,
     )
+    from irsim_isaac.display_span import DisplaySpan, span_from_dn16, span_from_nodes
     from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
@@ -311,24 +311,45 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    # **In a reflective band there is no temperature to span** (M10.23): §12.1 switches
+    # `apparent_temperature` off for SWIR and NIR, so the kelvin span has no plane to apply to and
+    # those bands span the raw ADC between percentiles of the first captured frame instead.
+    emissive = spec.outputs.apparent_temperature
+    span: DisplaySpan | None = None
     if args.span_c:
-        span_c = (float(args.span_c[0]), float(args.span_c[1]))
-        span_k = (span_c[0] + 273.15, span_c[1] + 273.15)
-    else:
-        span_k = target_span_k(node_samples)
-        span_c = (span_k[0] - 273.15, span_k[1] - 273.15)
-    if span_c[1] <= span_c[0]:
-        print("--span-c must be increasing", file=sys.stderr)
-        return 1
+        if not emissive:
+            print(
+                "--span-c is a temperature span and this band has no apparent temperature; "
+                "drop it and the render spans the ADC instead",
+                file=sys.stderr,
+            )
+            return 1
+        if float(args.span_c[1]) <= float(args.span_c[0]):
+            print("--span-c must be increasing", file=sys.stderr)
+            return 1
+        span = DisplaySpan(
+            kind="apparent_t",
+            low=float(args.span_c[0]) + 273.15,
+            high=float(args.span_c[1]) + 273.15,
+        )
+    elif emissive:
+        span = span_from_nodes(node_samples)
     palette_name = args.palette or spec.isp.palette
     palette = palette_table(palette_name)
-    print(
-        f"display: fixed span {span_c[0]:.1f} to {span_c[1]:.1f} C, {palette_name} palette "
-        f"(from the sensor ISP); the camera's own {spec.isp.agc} output is filmed alongside"
-    )
-    for name, value in sorted(node_samples[-1].items()):
-        code = max(0, min(255, round(255 * (value - span_k[0]) / (span_k[1] - span_k[0]))))
-        print(f"    {name:10s} {value - 273.15:7.1f} C -> display code {code:3d}")
+    if span is not None:
+        print(
+            f"display: fixed {span.caption}, {palette_name} palette (from the sensor ISP); "
+            f"the camera's own {spec.isp.agc} output is filmed alongside"
+        )
+        for name, value in sorted(node_samples[-1].items()):
+            print(
+                f"    {name:10s} {value - 273.15:7.1f} C -> display code {span.code_for(value):3d}"
+            )
+    else:
+        print(
+            f"display: {palette_name} palette; the fixed span is taken from the first frame's ADC "
+            "percentiles once it exists (this band has no apparent temperature to span)"
+        )
     rate_hz = 1.0 / args.interval_s
     capture_label = (
         f"{rate_hz:.0f} Hz capture" if rate_hz >= 1.0 else f"1 frame / {args.interval_s:g} s"
@@ -348,7 +369,9 @@ def main() -> int:
 
         outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         temps = camera.bridge.temperatures()
-        t_app = np.asarray(outputs.apparent_t)
+        if span is None:
+            span = span_from_dn16(np.asarray(outputs.dn16))
+            print(f"display: fixed {span.caption} from the first frame's ADC percentiles")
 
         # How much of the frame each node actually occupies, straight off the id plane: the only
         # honest way to say whether the nozzle is in view, since the renderer decides occlusion.
@@ -372,18 +395,28 @@ def main() -> int:
                 "nozzle_px": by_node.get("nozzle", 0),
                 "skin_px": by_node.get("skin", 0),
                 **{f"{k}_k": round(v, 3) for k, v in temps.items()},
-                "t_app_max_k": round(float(t_app.max()), 3),
+                **(
+                    {"t_app_max_k": round(float(np.asarray(outputs.apparent_t).max()), 3)}
+                    if outputs.apparent_t is not None
+                    else {"dn16_max": float(np.asarray(outputs.dn16).max())}
+                ),
             }
         )
 
-        scaled = (t_app - span_k[0]) / (span_k[1] - span_k[0])
-        spanned = palette[quantise_display(scaled)]
+        spanned = palette[quantise_display(span.scale(outputs))]
+        caption_span = span.caption
+        bar = (span.low, span.high) if span.is_temperature else None
 
         # The nozzle line reports the **measured** pixel count off the id plane, not a predicate.
         # "Occluded" would be wrong at the beam: side-on you see the nozzle's cylindrical wall
         # even though its hot aft face is edge-on, and the count is what actually varies.
         def readout(
-            image: Any, caption: str, s: Any = sample, node: dict = temps, px: int = 0
+            image: Any,
+            caption: str,
+            s: Any = sample,
+            node: dict = temps,
+            px: int = 0,
+            scale: Any = bar,
         ) -> Any:
             return overlay_readout(
                 image,
@@ -398,7 +431,7 @@ def main() -> int:
                     "nacelle": node["nacelle"],
                     "skin   ": node["skin"],
                 },
-                span_k,
+                scale,
                 bare=args.no_overlay,
             )
 
@@ -406,7 +439,7 @@ def main() -> int:
             frames_dir / f"ir_{index:05d}.png",
             readout(
                 spanned,
-                f"span {span_c[0]:.0f}-{span_c[1]:.0f}C {palette_name}",
+                f"{caption_span} {palette_name}",
                 px=by_node.get("nozzle", 0),
             ),
         )
@@ -427,7 +460,7 @@ def main() -> int:
             print(
                 f"  frame {index:4d}  T+{t_rel:5.2f}s  R={sample.range_m:6.0f} m  "
                 f"aspect={sample.aspect_deg:5.1f} deg  nozzle={by_node.get('nozzle', 0):4d} px  "
-                f"T_app max {t_app.max() - 273.15:6.1f} C"
+                f"level {history[-1].get('t_app_max_k', history[-1].get('dn16_max', 0)):.1f}"
             )
     render_s = time.time() - t_render
     camera.close()
@@ -471,7 +504,7 @@ def main() -> int:
             "cpa_range_m": round(track.cpa_range_m(), 2),
         },
         "ifov_mrad": round(ifov_mrad, 4),
-        "display_span_c": list(span_c),
+        "display_span": {"kind": span.kind, "low": span.low, "high": span.high},
         "palette": palette_name,
         "nozzle_px_head_on": max((r["nozzle_px"] for r in head_on), default=0),
         "nozzle_px_tail_on": max((r["nozzle_px"] for r in tail_on), default=0),

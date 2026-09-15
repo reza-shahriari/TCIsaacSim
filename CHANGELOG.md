@@ -43,6 +43,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **One command renders every demo scene in every band** (M10.24). `scripts/render_multiband.py`
+  runs three demo scenes × four bands, each with its registered visible companion, and builds a
+  per-scene contact sheet. The point is the comparison: the same geometry, the same weather, the
+  same sun and the same instant through four bands whose physics could hardly be more different —
+  a quadrotor is four hot spots against a cold sky in LWIR and a dark silhouette against a bright
+  one in NIR, and those are not two renderings of one picture but two different detection problems.
+- The sheet samples **70 % of the way through** each clip rather than frame 0: these are time-lapses
+  of a process, the manual span covers the whole flight, and at t = 0 the motors are still at
+  ambient — the least informative frame in the sequence. It **resamples** rather than crops, because
+  the NIR camera is 1280×1024 and cropping would silently show a different part of the scene beside
+  the others.
+- Writing the driver found three bugs before the matrix reached them, each worth an hour of GPU:
+  `render_maritime_demo.py` had no `--rt-subframes` at all; `render_aircraft_pass.py` still spanned
+  its display in **kelvin**, which SWIR and NIR do not have, so four of the twelve renders would have
+  died; and the contact sheet read only `*_ir.mp4` while the maritime script writes a file per frame,
+  so the ship column would have come out empty. All three were verified against existing outputs.
 - **The SPG lane's blocker is written down instead of coded around** (M10.12, M10.13a/b/e).
   Stage 1 needs a **per-frame float32 facet table** to reach the kernel, and M2.3 established that
   there is no cross-frame device state to keep it in, that `io.` is a forbidden token so it cannot
