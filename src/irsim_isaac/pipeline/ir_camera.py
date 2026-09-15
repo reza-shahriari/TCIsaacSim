@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from typing import Any
 
 import numpy as np
@@ -74,6 +75,7 @@ from irsim.pipeline.frame import Outputs, run_frame
 from irsim.pipeline.point_target import PointTarget, fill_fraction
 from irsim.pipeline.rotor_veil import RotorVeil
 from irsim.scene import Scene
+from irsim.thermal.solar import sun_position_utc
 from irsim.validation.aerial import AerialTarget, target_leaving_radiance
 from irsim_isaac.pipeline.aerial_bridge import (
     AerialThermalBridge,
@@ -86,9 +88,11 @@ from irsim_isaac.pipeline.gbuffer_isaac import (
     AovReader,
     PositionFrame,
     geometry_planes,
+    orient_to_viewer,
     ray_directions,
     to_gbuffer,
 )
+from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
 from irsim_isaac.pipeline.material_ids import (
     labels_from_payload,
     labels_to_paths,
@@ -335,6 +339,8 @@ class IrCamera:
         sea: Any = None,
         background_prim_paths: Sequence[str] = (),
         rotor_mounts: Mapping[str, Sequence[RotorMount]] | None = None,
+        illumination: SceneIllumination | None = None,
+        heading_deg: float = 0.0,
         device: str = "cpu",
     ) -> None:
         band = sensor.sensor.band.band_id
@@ -410,6 +416,19 @@ class IrCamera:
         self.rotor_mounts: dict[str, list[RotorMount]] = {
             path: list(mounts) for path, mounts in (rotor_mounts or {}).items()
         }
+        #: The M11.2 illumination bundle's source planes (M10.22). ``None`` is emission only,
+        #: which is what every render before this existed produced and is right for LWIR; it is
+        #: **black** for SWIR or NIR, where reflected sunlight is essentially the whole signal.
+        #: `SceneIllumination.for_camera` returns ``None`` of its own accord for a band whose
+        #: regime enables no source term, so passing it unconditionally is safe and an LWIR frame
+        #: stays bit-identical.
+        self.illumination = illumination
+        self.heading_deg = float(heading_deg)
+        if illumination is not None and sensor.sensor.band.regime == "emissive":
+            raise ValueError(
+                f"band {band!r} is emissive, so §5.2's gate drops every illumination term; "
+                "attaching a SceneIllumination to it would build planes the kernel discards"
+            )
         self._authored: dict[str, Any] = {}
 
     # -- engine set-up --------------------------------------------------------------------
@@ -577,6 +596,9 @@ class IrCamera:
                 geometry, sky_mask=np.asarray(geometry.sky_mask | unmapped, dtype=np.bool_)
             )
         planes = to_gbuffer(geometry, temperature_k=temperature, material_id=material_id).to_dict()
+        # The reflective terms ride *outside* the M0.6 contract, the way `radiance_behind` does:
+        # they are stage-1 inputs, not geometry, and `GBuffer` refuses keys it does not know.
+        planes.update(self._illumination_planes(aovs, geometry))
         self._last = _Frame(
             rgb=self._native_rgb(aovs.rgb),
             planes=planes,
@@ -588,6 +610,40 @@ class IrCamera:
             labels=labels,
         )
         return planes
+
+    def _illumination_planes(self, aovs: Any, geometry: Any) -> dict[str, NDArray[np.float64]]:
+        """``l_sun`` / ``l_night`` for this frame, or nothing when no bundle is attached.
+
+        The normals are re-oriented to the viewer exactly as ``geometry_planes`` does, and for the
+        same reason: a double-sided mesh can store a normal pointing away from the camera, and the
+        face that is radiating -- or catching sunlight -- towards the lens is the one facing it.
+        Taking the flip twice from one source, rather than reconstructing it, is what keeps the
+        solar cosine and ``normal_dot_view`` describing the same surface.
+        """
+        if self.illumination is None:
+            return {}
+        rays = ray_directions(
+            aovs.position,
+            frame=self.position_frame,
+            camera_position=self._camera_position,
+            camera_to_world=self._camera_to_world,
+        )
+        normal_world, _ = orient_to_viewer(aovs.normal, rays)
+        # The same three lines `irsim_isaac.visible_sky.dome_for_scene` uses, for the same
+        # reason: the sun in the radiometry and the sun casting shadows in the companion visible
+        # frame must be one sun, or the two frames disagree about where the light comes from and
+        # nobody notices until they are overlaid.
+        site = self.scene.spec.site
+        when = self.scene.spec.start_utc + timedelta(seconds=float(self._t_rel_s))
+        sun = sun_position_utc(site.latitude_deg, site.longitude_deg, when)
+        weather = self.scene.weather_at(self._t_rel_s)
+        return self.illumination.planes(
+            normal_world,
+            sun_elevation_deg=float(sun.elevation_deg),
+            sun_azimuth_deg=float(sun.azimuth_deg),
+            sky_mask=geometry.sky_mask,
+            cloud_fraction=float(getattr(weather, "cloud_fraction", 0.0)),
+        )
 
     def point_targets(self) -> list[PointTarget]:
         """The MS.6 injections for this frame: position, range, elevation and leaving radiance.

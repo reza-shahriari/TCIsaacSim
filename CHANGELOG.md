@@ -43,6 +43,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The illumination bundle reaches the Isaac render path** (M10.22, ADR 0084). M11.2 built the
+  bundle, M11.3 the reflected-solar term and M11.4 the night sky, `run_frame` reads them out of
+  the plane dict as `l_sun`/`l_night` — and **nothing in `irsim_isaac` ever wrote those planes**.
+  Every Isaac render this project has produced was emission only: right to within 0.35 % for LWIR,
+  and **black** for NIR. This is ADR 0077 and ADR 0082's failure mode a third time — a mechanism
+  that exists, is tested, and cannot be reached from the layer above — and it only became visible
+  when a fourth band was configured and renders were asked for in it.
+- Measured on dry asphalt at 300 K under a 61° sun, sunlit over emission-only: **1.08e15 in NIR**,
+  3.59e7 in SWIR, **1.17 in MWIR**. The MWIR figure is the interesting one and is bracketed
+  tightly in the test, because a band that is nearly all self-emission is where a wrong solar term
+  hides best. LWIR gets no bundle at all, and an emissive band renders **bit-identically** with and
+  without a solar plane attached — §5.2's gate drops the term to `None` rather than adding a zero.
+- **One sun.** The direction is the same expression `irsim_isaac.stage.add_sky_dome` aims the USD
+  `DistantLight` along, so the radiometry and the shadows in the companion visible frame cannot
+  disagree about where the light comes from; computed separately they would drift and nobody would
+  notice until the two frames were overlaid. The solar slant path is in it and asserted rather than
+  assumed: an 8° sun comes out dimmer than the cosine alone predicts.
+- ⚠️ **Cast shadows are not modelled.** `shadow` is 1 everywhere and the only shadowing is
+  self-shadowing through max(0, n·s). That is exact for an aerial scene — nothing is above a drone
+  to shadow it — optimistic on the shaded side of a vessel, and wrong for a street. The renderer on
+  this build supplies no working occlusion AOV (ADR 0014 addendum), and the honest interim is to say
+  so rather than render a plausible shadow nobody computed.
 - **A NIR camera: the fourth band** (M11.9). `configs/sensors/example_nir_si_1280.yaml` — a
   1280×1024 silicon CMOS at 0.75–1.0 µm, reflective, photon FPA — with
   `data/spectra/responses/nir_si.csv` generated from **silicon's own band-edge physics**:

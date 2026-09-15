@@ -91,6 +91,7 @@ def main() -> int:
     from irsim.radiometry.spectral_response import load_spectral_response
     from irsim.scene import Scene
     from irsim_isaac.maritime_demo import build_maritime_demo, describe
+    from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
     from irsim_isaac.visible_sky import dome_spec_from_scene
@@ -213,6 +214,10 @@ def main() -> int:
         resolutions=resolutions,
         camera_path=demo.camera_path,
         capture_rgb=args.rgb,
+        illumination=SceneIllumination.for_camera(
+            sensor, scene, pipeline.quantity, heading_deg=args.heading_deg
+        ),
+        heading_deg=args.heading_deg,
         strict_materials=False,
         cloud_seed=args.cloud_seed,
         sea=sea,

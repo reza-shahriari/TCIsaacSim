@@ -119,6 +119,7 @@ def main() -> int:
         overlay_readout,
         target_span_k,
     )
+    from irsim_isaac.pipeline.illumination_isaac import SceneIllumination
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
     from irsim_isaac.quad_flight import build_quad_flight, tracking_pose
@@ -216,6 +217,10 @@ def main() -> int:
         resolutions=resolutions,
         camera_path=stage.camera_path,
         capture_rgb=args.rgb,
+        illumination=SceneIllumination.for_camera(
+            sensor, scene, pipeline.quantity, heading_deg=args.heading_deg
+        ),
+        heading_deg=args.heading_deg,
         strict_materials=False,
         cloud_seed=args.cloud_seed,
         rotor_mounts=None if args.no_rotors else stage.rotor_mounts(0.0),
