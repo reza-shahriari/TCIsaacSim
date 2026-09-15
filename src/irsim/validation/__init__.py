@@ -54,6 +54,14 @@ from irsim.validation.flat import (
     temporal_noise,
     temporal_std_map,
 )
+from irsim.validation.measured import (
+    MEASURED_QUANTITIES,
+    Comparison,
+    compare_absolute,
+    compare_shape,
+    load_measured_pairs,
+    measured_path,
+)
 from irsim.validation.mtf import SlantEdgeResult, slant_edge_mtf
 from irsim.validation.noise import (
     Decomposition3D,
@@ -79,6 +87,12 @@ from irsim.validation.shutter import (
 )
 
 __all__ = [
+    "MEASURED_QUANTITIES",
+    "Comparison",
+    "compare_absolute",
+    "compare_shape",
+    "load_measured_pairs",
+    "measured_path",
     "AerialScene",
     "AerialTarget",
     "SceneTarget",

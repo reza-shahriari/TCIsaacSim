@@ -17,7 +17,12 @@ from irsim.optics import (
     optical_psf,
 )
 from irsim.radiometry.lut import BandLUT
-from irsim.validation import slant_edge_mtf
+from irsim.validation import (
+    compare_absolute,
+    load_measured_pairs,
+    measured_path,
+    slant_edge_mtf,
+)
 
 LAMBDA_UM, F, PITCH_UM, K = 10.5, 1.0, 12.0, 4
 
@@ -32,6 +37,28 @@ def edge_radiance(tophat_lwir_lut: BandLUT):  # type: ignore[no-untyped-def]
     hot = (xx + 0.5) > edge_x
     t = np.where(hot, 373.0, 293.0).astype(np.float32)
     return tophat_lwir_lut.lookup(t)
+
+
+MEASURED_MTF = measured_path("mtf", "flir_boson_640_lwir")
+
+
+@pytest.mark.skipif(not MEASURED_MTF.is_file(), reason=f"no measured MTF at {MEASURED_MTF}")
+def test_against_measured_mtf(edge_radiance: np.ndarray) -> None:
+    """When a slant-edge bench file exists, MTF is compared **absolutely** (M12.4).
+
+    MTF is already a ratio normalised to 1 at DC, so there is no scale left to fit and a
+    discrepancy is a discrepancy. Compared only up to Nyquist: above it the estimate is aliasing,
+    not resolution.
+    """
+    psf = optical_psf(LAMBDA_UM, F, 0.0, PITCH_UM, supersample=K)
+    res = slant_edge_mtf(
+        box_downsample(apply_psf(edge_radiance, psf), K), oversample=4, pitch_um=PITCH_UM
+    )
+    freq, measured = load_measured_pairs(MEASURED_MTF)
+    keep = freq <= nyquist_frequency_cyc_per_mm(PITCH_UM)
+    simulated = np.interp(freq[keep], res.freq_cyc_per_mm, res.mtf)
+    result = compare_absolute(simulated, measured[keep], tolerance=1.0)
+    assert float(np.max(np.abs(simulated - measured[keep]))) < 0.05, result.describe()
 
 
 def test_measured_mtf_at_nyquist_matches_cascade(edge_radiance: np.ndarray) -> None:

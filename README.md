@@ -312,6 +312,9 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
   measurable; and x264 at CRF 18 — a high-quality setting — removes 95 % of that term. Noise
   numbers from a lossy public set are therefore lower bounds and are reported as such, never as
   targets the simulator is tuned to hit.
+  The bench that would change this is written down and waiting: `docs/validation/tier2-bench-protocol.md`
+  fixes the procedure, the file layout and the tolerances **in advance** (M12.4), and the four Tier 2
+  comparisons skip with the path they looked for until a CSV appears there.
 - Clouds, slant-path atmosphere beyond 500 m and point-target radiometry are additions the physics
   specification does not cover; each carries its own ADR and error statement.
 - **No cast shadows in the reflective bands (ADR 0084).** The Isaac render path now supplies the

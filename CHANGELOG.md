@@ -43,6 +43,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The Tier 2 lab-bench protocol, written before the camera exists** (M12.4).
+  `docs/validation/tier2-bench-protocol.md` gives the SITF, NETD, 3-D-noise and slant-edge benches
+  as a procedure — stimulus, frame counts, ROI rule, pass criterion — and
+  `irsim.validation.measured` fixes the file layout in one place
+  (`data/validation/<quantity>/<camera>.csv`) and implements the comparison. Deciding a tolerance
+  while looking at the first measurement is how a bench becomes a rubber stamp, so all of it is
+  fixed in advance.
+- **The two comparison rules differ where it matters.** `compare_shape` fits a gain and offset, for
+  a quantity whose scale is a range choice — ADR 0019 makes a SITF's absolute DN exactly that.
+  `compare_absolute` fits nothing, for NETD in millikelvin and MTF as a ratio, which a simulator
+  has to predict. Measured: a **doubled** NETD passes the shape comparison and **fails** the
+  absolute one, which is precisely the failure a fitted bench would hide.
+- Only the SITF bench had a skip-if-absent hook; NETD, MTF and 3-D noise have them now, and all four
+  resolve their path through `measured_path` so a second layout cannot be invented in a test module.
+  A one-row bench table raises rather than passing silently — on the file that is meant to *be* the
+  ground truth, a silent pass is the worst possible outcome.
 - **The Tier 5 detection metrics** (ME.7, scoring half). `irsim_eval.detection` is pure NumPy —
   pairwise IoU, greedy highest-score-first matching, **all-point** average precision at IoU 0.5,
   AP restricted to small and tiny targets, P_d against SCR and against apparent size, and false

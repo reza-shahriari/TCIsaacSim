@@ -17,7 +17,14 @@ from irsim.noise import Sigmas7
 from irsim.pipeline import PipelineConfig, PipelineState, run_frame
 from irsim.radiometry.encoding import encode_temperature
 from irsim.radiometry.lut import BandLUT
-from irsim.validation import decompose_3d, estimate_floors, measured_netd_k
+from irsim.validation import (
+    compare_absolute,
+    decompose_3d,
+    estimate_floors,
+    load_measured_pairs,
+    measured_netd_k,
+    measured_path,
+)
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON = yaml.safe_load((REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
@@ -53,6 +60,26 @@ def _stack(cfg: PipelineConfig, t: float, n: int, first_frame: int = 0) -> np.nd
         assert out.dn16 is not None
         frames.append(out.dn16.astype(np.float64))
     return np.stack(frames)
+
+
+MEASURED_NETD = measured_path("netd", "flir_boson_640_lwir")
+
+
+@pytest.mark.skipif(not MEASURED_NETD.is_file(), reason=f"no measured NETD at {MEASURED_NETD}")
+def test_against_measured_netd(boson_lut: BandLUT) -> None:
+    """When a bench file exists, NETD is compared **absolutely** -- no gain fit (M12.4).
+
+    Millikelvin is a physical unit the simulator has to predict, not a range choice: a fit here
+    would let the model be wrong by any factor and still pass, which is the single thing this
+    measurement exists to rule out.
+    """
+    cfg = _config(boson_lut)
+    temps, measured_mk = load_measured_pairs(MEASURED_NETD)
+    simulated_mk = np.array(
+        [measured_netd_k(_stack(cfg, t, 200), _stack(cfg, t + 3.0, 200), 3.0) * 1e3 for t in temps]
+    )
+    result = compare_absolute(simulated_mk, measured_mk, tolerance=0.15)
+    assert result.passed, result.describe()
 
 
 def test_dn_domain_netd_within_10_percent_of_anchor(boson_lut: BandLUT) -> None:

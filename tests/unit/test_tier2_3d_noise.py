@@ -22,7 +22,12 @@ from irsim.detector import (
 from irsim.noise import NoiseStage, Sigmas7, measure_from_uniform_scene
 from irsim.optics import pixel_power
 from irsim.radiometry.lut import BandLUT
-from irsim.validation import decompose_3d, estimate_floors
+from irsim.validation import (
+    compare_shape,
+    decompose_3d,
+    estimate_floors,
+    measured_path,
+)
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON = yaml.safe_load((REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
@@ -61,6 +66,36 @@ def chain(
         p, BolometerTransfer.from_power_range(lo, hi, 16), anchor_noise(sensor, tophat_lwir_lut)
     )
     return det, NoiseStage.from_sensor(sensor, sensor_seed=21)
+
+
+MEASURED_NOISE3D = measured_path("noise3d", "flir_boson_640_lwir")
+
+
+@pytest.mark.skipif(
+    not MEASURED_NOISE3D.is_file(), reason=f"no measured 3-D noise at {MEASURED_NOISE3D}"
+)
+def test_against_measured_3d_noise(
+    chain: tuple[MicrobolometerDetector, NoiseStage], sensor: SensorSpec, tophat_lwir_lut: BandLUT
+) -> None:
+    """When a bench cube has been decomposed, the seven components are compared **shape only**
+    after a gain fit (M12.4): the DN scale is a range choice (ADR 0019), so what is under test is
+    the *pattern* of the noise -- how much of it is column, row, frame and pixel -- and not its
+    absolute size, which the NETD bench covers instead.
+    """
+    import csv
+
+    det, stage = chain
+    cube, _ = measure_from_uniform_scene(det, stage, _flux(sensor, tophat_lwir_lut, 300.0), 200)
+    simulated = decompose_3d(cube)
+    with MEASURED_NOISE3D.open(encoding="utf-8") as handle:
+        rows = [r for r in csv.reader(handle) if r and not r[0].lstrip().startswith("#")]
+    names = [r[0].strip().lower() for r in rows if r[0].strip().lower() in RATIO_ORDER]
+    measured = np.array(
+        [float(r[1]) for r in rows if r[0].strip().lower() in RATIO_ORDER], dtype=np.float64
+    )
+    mine = np.array([float(getattr(simulated, n)) for n in names], dtype=np.float64)
+    result = compare_shape(mine, measured, tolerance=0.10)
+    assert result.passed, result.describe()
 
 
 def test_end_to_end_3d_ratios_recovered_within_floors(
