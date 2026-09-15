@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **README's component status table is a table again** (RP.1, roadmap revision 4). Four of its fifteen
+  rows — `materials`, `detector`, `noise`, `isp` — had lost their **State** cell to pasted changelog
+  prose, with the state token pushed to the end of a paragraph up to **1,473 characters** long and the
+  tier column holding it instead. A markdown table with a 1,473-character cell still renders, which is
+  why nobody saw it: it renders as a table whose second column is an essay. The prose moved to Notes,
+  where the long-form detail already lives.
+- `tests/unit/test_readme_status_table.py` is what keeps it fixed, and it pins **shape, not content**:
+  Notes may say anything, the State cell holds one of four state tokens, the Tier cell holds a tier.
+  `T4 infra` and `T2, T4 infra` are legitimate and allowed — they are statements about what a package
+  supports rather than what it has been validated to. Checked with a negative control that reintroduces
+  the defect and fails the parser.
+- The MP.5 ground-field spin-up limitation was overwritten a **third** time by a parallel session
+  writing README whole, and is restored again. RP.3 — making `scripts/stage_own_hunk.sh` the default
+  path rather than an available one — is the structural fix; this row only repairs the damage.
+
 ### Added
 - **Tier 3 maritime phenomenology, on frames rather than on models** (MM.8, §15 T3, ADR 0078).
   `irsim.validation.maritime_scene` is the maritime twin of MS.8's aerial fixture: sky above a
@@ -544,6 +560,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   what CLAUDE.md's "flag uncertainty rather than guessing" rule exists for, so they are not written —
   and M2.3's hazard travels with the note: a kernel that fails to load yields a **zero-filled output
   with status ok**, so any in-sim equivalence test must assert against a known non-zero reference.
+- **A vessel departure, filmed in LWIR** (MM.7). `scripts/render_vessel_departure.py` films a 90 m
+  coaster leaving from 250 m at 6 m/s while its funnel warms from cold alongside to cruise power —
+  240 frames × 4 s of sea time, played as a time lapse, with IR, camera-AGC and visible videos.
+- **The film shows what a static frame cannot: the target's signature getting stronger while the
+  target gets smaller.** The funnel runs 32 → 179 °C while the hull falls from 420 px to 17.5 px
+  and the funnel from 29 px to 1.2 px. That is the regime an infrared search set actually works in.
+- The camera does **not** track. Against a fixed boresight the vessel climbs through the frame as
+  its depression angle shrinks toward the horizon, crossing the sea's own angular gradient: it
+  starts against near water at about the SST and ends against far water that is mostly warm air.
+- `DepartureTrack`, and vessel prims re-authored in the vessel's **own frame** under a movable
+  Xform, so one translate op per frame moves the whole ship. `configs/scenes/
+  vessel_departure_clear_day.yaml` carries the funnel's first-order rise, T(t) = 455 − 150
+  exp(−t/240 s), written out because the phase-1 solver set has no marine uptake node yet.
+- **The funnel had to be repainted.** It was `bare_aluminium`, ε = 0.09 in LWIR, so it reflected
+  the cold sky far more than it radiated and the renderer drew a **155 °C funnel as a dark
+  rectangle**. Real funnels are painted steel, ε ≈ 0.9. A test now pins the two emissivities,
+  because the mistake is invisible in the geometry and shows up only in the picture.
+- **The funnel is deliberately left out of the display span and clips white.** Spanning it in is
+  the obvious choice and it ruins the film: the funnel climbs 150 K, so a span that holds it puts
+  the sea, the hull and the deck — everything with structure in it — inside about fifteen of the
+  256 codes, and the opening frames come out nearly black. Clipping the hottest thing in the scene
+  is also what a real thermal image of a ship under way does.
 - **One command renders every demo scene in every band** (M10.24). `scripts/render_multiband.py`
   runs three demo scenes × four bands, each with its registered visible companion, and builds a
   per-scene contact sheet. The point is the comparison: the same geometry, the same weather, the
