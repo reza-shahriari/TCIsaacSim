@@ -43,6 +43,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **The reference-statistics report** (ME.5). `scripts/reference_statistics.py` measured all 365
+  IR clips of the Halmstad set and wrote `docs/validation/reference-stats-2026-09-15.md` and its
+  JSON. Every value carries N, a seeded bootstrap confidence interval and its floor, and everything
+  that could not be measured is a stated refusal rather than an absence — a missing row reads as a
+  passing row. The archive was downloaded and its SHA-256 recorded, so "measured on these exact
+  bytes" stays checkable.
+- **The headline is negative and it is the most useful result in the report.** The median robust
+  noise scale over the set is **0.00 codes**, and **306 of the 365 clips** sit at or below one
+  code: the codec has removed the sensor's noise entirely, and no window can meet a threshold
+  written in units of a ruler that has collapsed onto the quantiser. With 81 clips moving and 30
+  more too structured, **28 clips** support a noise table at all — σ_TVH 7.27, σ_VH 19.18, σ_V 4.21
+  codes. Every one of those is an upper bound on what the codec left, not a measurement of a camera.
+- The missing `color_range` flag is worth **6.09 DN8 codes** (CI 5.88–6.31), several times the
+  noise that survived, which is the quantitative reason ADR 0068 made scale-free statistics the
+  deliverable.
+- **Three index errors found by measuring rather than reading.** The clips are stored at **30 fps**,
+  not the core's 60 — a one-pole temporal fit at the index's rate is wrong by that factor and looks
+  entirely plausible. `color_range` is unflagged on every clip. And the annotations are MATLAB Video
+  Labeler `groundTruth` **MCOS** objects that `scipy.io.loadmat` returns as an opaque blob: the
+  index claimed a Python decoder ships with the dataset and **it does not** (the repository ships a
+  MATLAB script), so `target_size_and_scr`, `edge_spread` and `smear` are now excluded there and
+  every box-dependent Tier 4 comparison is open.
+- The set is `access: direct` now: the DOI serves the archive over https with no interstitial, which
+  the index had recorded as `manual` from the repository README's link to the landing page.
+  `irsim_eval.decode` reads the frame rate from the container and never from the index, and
+  `irsim_eval.reference` caches the per-clip pass before aggregating — it is half an hour of
+  decoding and an arithmetic bug should not cost it twice.
 - **The illumination bundle reaches the Isaac render path** (M10.22, ADR 0084). M11.2 built the
   bundle, M11.3 the reflected-solar term and M11.4 the night sky, `run_frame` reads them out of
   the plane dict as `l_sun`/`l_night` — and **nothing in `irsim_isaac` ever wrote those planes**.

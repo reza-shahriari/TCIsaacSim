@@ -43,25 +43,58 @@ datasets:
     doi: "10.5281/zenodo.5500576"
     code_url: "https://github.com/DroneDetectionThesis/Drone-detection-dataset"
     paper_doi: "10.1016/j.dib.2021.107521"
-    licence: "CC0-1.0"                       # VERIFIED 2026-09-13 (repository licence)
+    licence: "CC0-1.0"                       # VERIFIED 2026-09-13 (repository LICENSE file)
     licence_note: >-
-      CC0-1.0 is the licence on the code repository, which also states the data is "free to
-      download, use and edit". UNVERIFIED whether the Zenodo record carries the same terms;
-      confirm at the DOI before redistributing any frame.
-    access: manual                            # Zenodo record; the repo README points at the DOI
+      CC0-1.0 is the licence in the code repository's own LICENSE file, and the repository also
+      states the data is "free to download, use and edit". CHECKED 2026-09-15 at the DOI, and the
+      two do not agree: the Zenodo record declares `other-open` with no rights text, which is
+      weaker and less specific than CC0-1.0. Use is clearly permitted by both; **redistribution of
+      frames is not established by the Zenodo record alone**, so derive statistics from this set
+      and do not republish its imagery.
+    access: direct                            # CHECKED 2026-09-15: the Zenodo record serves the
+                                              # archive over https with no interstitial (200,
+                                              # 311 348 350 bytes). It was indexed `manual` on
+                                              # 2026-09-13 from the repository README, which
+                                              # points at the DOI landing page rather than the
+                                              # file; the landing page needs a human, the file
+                                              # does not.
+    download_url: "https://zenodo.org/records/5500576/files/DroneDetectionThesis/Drone-detection-dataset-v1.0.0.zip"
+    download_bytes: 311348350                 # VERIFIED 2026-09-15 (content-length)
     sensor: "FLIR Breach PTQ-136 (Boson 320x256 core)"     # VERIFIED 2026-09-13
     fov_deg: [24.0, 19.0]                                   # VERIFIED 2026-09-13
     resolution: [320, 256]
-    frame_rate_hz: 60
+    frame_rate_hz: 30                         # CORRECTED 2026-09-15 by ffprobe on every clip.
+                                              # The *core* runs at 60 Hz; the *files* are stored
+                                              # at 30. The index said 60, which is the camera's
+                                              # figure and not the data's, and a one-pole temporal
+                                              # fit run at 60 Hz on a 30 Hz file returns a time
+                                              # constant wrong by a factor of two while looking
+                                              # entirely plausible. Analysers must take the rate
+                                              # from the container (irsim_eval.decode.probe_clip),
+                                              # never from this field.
+    sensor_frame_rate_hz: 60                  # what the core produces, for the record
     bit_depth_native: 16                      # Y16 off the core
     bit_depth_stored: 8
-    codec: "mp4"                              # UNVERIFIED: container known, encoder/bitrate not
-    bitrate_kbps: null                        # UNVERIFIED -- measure on the files, do not assume
+    codec: "h264 (Main profile, yuv420p) in mp4"   # VERIFIED 2026-09-15 by ffprobe
+    colour_range: "unknown"                   # VERIFIED 2026-09-15 -- and it matters: with no
+                                              # range flag, limited- and full-range readings of
+                                              # the same file differ by a gain of 255/219 and an
+                                              # offset of 16 codes, about 8 DN8 codes on these
+                                              # frames. That is several times the sensor noise
+                                              # that survived the codec, so no absolute-level
+                                              # statistic from this set means anything.
+    bitrate_kbps: 128                         # MEASURED 2026-09-15, median over the IR clips
     clips: 365                                # IR clips; 285 visible clips are not used here
-    clip_seconds: 10
+    clip_seconds: 10.7                        # CORRECTED 2026-09-15: ~322 frames at 30 Hz
     annotated_frames: 203328                  # across IR and visible together
     classes: ["drone", "bird", "airplane", "helicopter"]
-    label_format: "matlab .mat (a python decoder ships in the repo)"
+    label_format: "matlab .mat -- Video Labeler `groundTruth` (MCOS), no Python reader"
+    label_note: >-
+      CORRECTED 2026-09-15. The index previously said "a python decoder ships in the repo"; it
+      does not. The repository ships a MATLAB script (Create_a_dataset_from_videos_and_labels.m),
+      and the .mat files hold MCOS class instances inside __function_workspace__ that
+      scipy.io.loadmat returns as an opaque blob. Every box-dependent analyser is therefore
+      excluded below until somebody runs the MATLAB script and exports the boxes.
     signal_path: >-
       Boson Y16 16-bit stream -> recorder converts to 8-bit -> stored as mp4. The frames therefore
       carry the core's noise, striping and FFC freezes but NOT its AGC, DDE or palette: the
@@ -74,12 +107,16 @@ datasets:
       - ffc_freeze
       - fixed_pattern_growth
       - bad_pixels
-      - target_size_and_scr
-      - edge_spread
-      - smear
     excluded_analysers:
       - agc_signature          # never went through an AGC
       - dde_overshoot          # ditto
+      - target_size_and_scr    # needs boxes; see label_note -- MATLAB MCOS, no Python reader
+      - edge_spread            # ditto
+      - smear                  # ditto
+    sha256: "53deda08127dc7896e96454cf35e866e8d6bee336f25d290b26e1f5324e23c81"
+    # RECORDED 2026-09-15 from the archive this project downloaded and measured. Every number in
+    # docs/validation/reference-stats-*.md was measured on these exact bytes (ADR 0004's rule,
+    # applied to somebody else's data).
     notes: >-
       Ten-second clips are too short for an FFC *interval* distribution (the Boson's is 180 s);
       they can still show freeze length. Maximum sensor-to-target range is 200 m by the flight

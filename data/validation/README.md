@@ -27,7 +27,7 @@ unless asked explicitly, so using data on unknown terms is always a deliberate a
 
 | set | licence | access | role |
 |---|---|---|---|
-| `halmstad_drone_detection` | CC0-1.0 | manual | primary |
+| `halmstad_drone_detection` | CC0-1.0 | direct | primary |
 | `anti_uav_410` | unstated | manual | supplement |
 | `cst_anti_uav` | unstated | unreleased | supplement |
 | `lrddv3` | unstated | manual | supplement |
@@ -45,29 +45,30 @@ The only set here with an unambiguous licence, a citable DOI, and a fully docume
 | field | value |
 |---|---|
 | licence | CC0-1.0 |
-| licence note | CC0-1.0 is the licence on the code repository, which also states the data is "free to download, use and edit". UNVERIFIED whether the Zenodo record carries the same terms; confirm at the DOI before redistributing any frame. |
-| access | manual |
+| licence note | CC0-1.0 is the licence in the code repository's own LICENSE file, and the repository also states the data is "free to download, use and edit". CHECKED 2026-09-15 at the DOI, and the two do not agree: the Zenodo record declares `other-open` with no rights text, which is weaker and less specific than CC0-1.0. Use is clearly permitted by both; **redistribution of frames is not established by the Zenodo record alone**, so derive statistics from this set and do not republish its imagery. |
+| access | direct |
 | doi | 10.5281/zenodo.5500576 |
 | paper | 10.1016/j.dib.2021.107521 |
 | code | https://github.com/DroneDetectionThesis/Drone-detection-dataset |
 | sensor | FLIR Breach PTQ-136 (Boson 320x256 core) |
 | resolution | [320, 256] |
 | field of view (deg) | [24.0, 19.0] |
-| frame rate (Hz) | 60.0 |
+| frame rate (Hz) | 30.0 |
 | bit depth (native / stored) | 16 / 8 |
-| codec | mp4 |
+| codec | h264 (Main profile, yuv420p) in mp4 |
+| bitrate (kbps) | 128.0 |
 | clips | 365 |
-| clip length (s) | 10.0 |
+| clip length (s) | 10.7 |
 | annotated frames | 203328 |
 | classes | drone, bird, airplane, helicopter |
-| label format | matlab .mat (a python decoder ships in the repo) |
-| sha256 | not downloaded |
+| label format | matlab .mat -- Video Labeler `groundTruth` (MCOS), no Python reader |
+| sha256 | 53deda08127dc7896e96454cf35e866e8d6bee336f25d290b26e1f5324e23c81 |
 
 **Signal path.** Boson Y16 16-bit stream -> recorder converts to 8-bit -> stored as mp4. The frames therefore carry the core's noise, striping and FFC freezes but NOT its AGC, DDE or palette: the recorder's conversion stands in for the ISP and its rule (linear? min-max per frame?) is itself unverified. Treat any histogram-shape statistic as measuring the recorder.
 
-**May be used for:** `noise_3d`, `spatial_psd`, `temporal_psd`, `ffc_freeze`, `fixed_pattern_growth`, `bad_pixels`, `target_size_and_scr`, `edge_spread`, `smear`.
+**May be used for:** `noise_3d`, `spatial_psd`, `temporal_psd`, `ffc_freeze`, `fixed_pattern_growth`, `bad_pixels`.
 
-**Must not be used for:** `agc_signature`, `dde_overshoot` -- see the signal path above.
+**Must not be used for:** `agc_signature`, `dde_overshoot`, `target_size_and_scr`, `edge_spread`, `smear` -- see the signal path above.
 
 Ten-second clips are too short for an FFC *interval* distribution (the Boson's is 180 s); they can still show freeze length. Maximum sensor-to-target range is 200 m by the flight regulations in force, so this set says nothing about the 0.5-5 km regime phase 1 models.
 

@@ -17,3 +17,4 @@ outputs/
 
 # Validation datasets are not in git (ADR 0003, roadmap ME.1); the index is.
 data/validation/*/
+docs/validation/.*-clips.json

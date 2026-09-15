@@ -144,10 +144,29 @@ def test_the_licence_gate_is_checked_before_the_access_mode(manifest: Manifest) 
     }
 
 
-def test_the_licensed_set_is_still_not_downloaded_automatically(manifest: Manifest) -> None:
-    """CC0 does not make a Zenodo record a direct URL; a human still fetches it."""
+def test_the_primary_set_is_fetchable_and_says_how_large_it_is(manifest: Manifest) -> None:
+    """The one set with a licence *and* a direct URL, with its size in the plan.
+
+    It was indexed `manual` on 2026-09-13 from the repository README, which points at the DOI
+    landing page rather than at the file. CHECKED 2026-09-15 at the DOI: Zenodo serves the archive
+    over https with no interstitial, so the landing page needs a human and the file does not, and
+    the index now says so. The size is in the reason because these sets run to tens of gigabytes
+    and "download" is not a decision anyone should make blind.
+    """
     actions = plan(manifest, ["halmstad_drone_detection"])
-    assert decisions(actions) == {"halmstad_drone_detection": "manual"}
+    assert decisions(actions) == {"halmstad_drone_detection": "download"}
+    assert actions[0].url is not None and actions[0].url.startswith("https://zenodo.org/")
+    assert "0.31 GB" in actions[0].reason
+
+
+def test_a_drive_link_is_still_a_human_job(manifest: Manifest) -> None:
+    """The policy the set above used to carry: no direct URL means no download, ever.
+
+    A Google Drive interstitial or a university access form is a human's job, and a script that
+    pretended otherwise would fail in a way that looks like a network error.
+    """
+    actions = plan(manifest, ["anti_uav_410"], accept_unstated_licence=True)
+    assert decisions(actions) == {"anti_uav_410": "manual"}
     assert "by hand" in actions[0].reason
 
 
@@ -160,7 +179,8 @@ def test_an_unknown_set_name_is_an_error_not_a_silent_skip(manifest: Manifest) -
 
 
 def test_a_direct_url_is_planned_as_a_download(manifest: Manifest) -> None:
-    """No indexed set has one today, so the path is exercised on a synthetic entry."""
+    """The primary set is the one that has one; this pins the path on a synthetic entry too, so
+    it keeps working if the index ever loses its only direct URL again."""
     direct = manifest.datasets["halmstad_drone_detection"].model_copy(
         update={"access": "direct", "download_url": "https://example.invalid/x.zip"}
     )
@@ -196,17 +216,26 @@ def test_verify_matches_a_recorded_hash_and_reports_a_mismatch(
     path.write_bytes(b"thermal video, honestly")
     digest = sha256_of(path)
 
-    unrecorded = manifest.datasets["halmstad_drone_detection"]
-    assert unrecorded.sha256 is None
+    indexed = manifest.datasets["halmstad_drone_detection"]
+    unrecorded = indexed.model_copy(update={"sha256": None})
     ok, seen = verify(unrecorded, path)
     assert ok and seen == digest, "nothing recorded yet, so nothing to contradict"
 
-    recorded = unrecorded.model_copy(update={"sha256": digest})
+    recorded = indexed.model_copy(update={"sha256": digest})
     assert verify(recorded, path) == (True, digest)
 
     path.write_bytes(b"thermal video, edited")
     matched, changed = verify(recorded, path)
     assert not matched and changed != digest
+
+
+def test_the_measured_set_has_its_hash_recorded(manifest: Manifest) -> None:
+    """ADR 0004's rule, applied to somebody else's data: the reference statistics were measured on
+    specific bytes, so the index has to say which bytes, or 'regenerates deterministically' is a
+    claim nobody can check a year later."""
+    indexed = manifest.datasets["halmstad_drone_detection"]
+    assert indexed.sha256 is not None and len(indexed.sha256) == 64
+    assert indexed.download_bytes == 311348350
 
 
 def test_a_malformed_hash_is_rejected_by_the_schema() -> None:

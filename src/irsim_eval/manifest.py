@@ -78,11 +78,21 @@ class Dataset(_Frozen):
     code_url: str | None = None
     site_url: str | None = None
     download_url: str | None = None
+    #: Size of the archive at `download_url`, from the server's own content-length. Recorded so a
+    #: plan can say how many bytes it is about to pull before it pulls them -- these sets run to
+    #: tens of gigabytes and "download" is not a decision to make blind.
+    download_bytes: int | None = Field(default=None, gt=0)
 
     sensor: str | None = None
     fov_deg: list[float] | None = None
     resolution: list[int] | None = None
     frame_rate_hz: float | None = None
+    #: What the *camera core* produces, when the stored rate differs from it. Recorded separately
+    #: because an analyser must use the rate of the file it is reading and not the camera's.
+    sensor_frame_rate_hz: float | None = None
+    #: `limited`, `full`, or `unknown`. An unflagged 8-bit stream is ambiguous by a gain of
+    #: 255/219 and an offset of 16 codes, which is larger than the noise on a compressed clip.
+    colour_range: str | None = None
     bit_depth_native: int | None = None
     bit_depth_stored: int | None = None
     codec: str | None = None
@@ -96,6 +106,7 @@ class Dataset(_Frozen):
     annotated_boxes: int | None = None
     classes: list[str] | None = None
     label_format: str | None = None
+    label_note: str | None = None
 
     sha256: str | None = None
 

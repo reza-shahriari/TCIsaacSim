@@ -125,8 +125,13 @@ def plan(
             continue
         if dataset.fetchable:
             assert dataset.download_url is not None  # `fetchable` is exactly this check
+            size = (
+                ""
+                if dataset.download_bytes is None
+                else f" ({dataset.download_bytes / 1e9:.2f} GB)"
+            )
             actions.append(
-                Action(name, "download", "direct URL", destination, dataset.download_url)
+                Action(name, "download", f"direct URL{size}", destination, dataset.download_url)
             )
             continue
         if destination.is_dir() and any(destination.iterdir()):

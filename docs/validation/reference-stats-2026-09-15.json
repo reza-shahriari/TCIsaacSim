@@ -1,0 +1,6494 @@
+{
+  "clips": [
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_AIRPLANE_001.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.536061874014362,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_AIRPLANE_002.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.830842405302716,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 44.031039465316276,
+        "psd_line_fraction_kh0": 0.07068411285289251,
+        "psd_line_fraction_kv0": 0.056952453262607214,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.796474590132873,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 7.356639728134884,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 3.8113367592623844,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 13.067271365749187,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 7.729303591475501,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 37.43349866211423,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 41.934323300301216,
+        "temporal_drift_fraction": 0.9390710011086911,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 13.926264855208816,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 318,
+      "name": "IR_AIRPLANE_003.mp4",
+      "skipped": [
+        "moving",
+        "no_flat_window"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 2.820017003857123,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 6.290148495045182,
+        "spatial_noise_scale_codes": 4.193432330030122
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_AIRPLANE_004.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.468101299553121,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 12.0,
+        "freeze_pattern_change": 4.125355279379988,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_AIRPLANE_005.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.0299232792835007,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_AIRPLANE_006.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3803593126935196,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_AIRPLANE_007.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.34459679924694786,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_AIRPLANE_008.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.2084484957580905,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 326,
+      "name": "IR_AIRPLANE_009.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7625252858099598,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 309,
+      "name": "IR_AIRPLANE_010.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.343496258196315,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_AIRPLANE_011.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5795389300215615,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_AIRPLANE_012.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.9966502148742586,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_AIRPLANE_013.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.43331880342288387,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_AIRPLANE_014.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.55590719248952,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 310,
+      "name": "IR_AIRPLANE_015.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.01402606635832516,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_AIRPLANE_016.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.0746783712585715,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_AIRPLANE_017.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.4349320464048991,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_AIRPLANE_018.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.1467999329906824,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_AIRPLANE_019.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.32296762608357216,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_AIRPLANE_020.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1709821870566364,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_AIRPLANE_021.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.44273067327583304,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_AIRPLANE_022.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.742543687739008,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_AIRPLANE_023.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.08832062771706317,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 309,
+      "name": "IR_AIRPLANE_024.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.9299619252655786,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_AIRPLANE_025.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.366865106713758,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_AIRPLANE_026.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1099502755100097,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_027.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.8477925826632934,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_028.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.2312852662412797,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_AIRPLANE_029.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5769133661193426,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_AIRPLANE_030.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6482360448734878,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_031.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.18435899021371704,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_AIRPLANE_032.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3034316182504364,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_033.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.07426841561075445,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_034.mp4",
+      "skipped": [
+        "moving",
+        "no_flat_window"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.3690812691150087,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_035.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.8587908814409164,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_AIRPLANE_036.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.32174553308422776,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_AIRPLANE_037.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.8457913199952168,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 7.338506577552714,
+        "psd_line_fraction_kh0": 0.07163806564595636,
+        "psd_line_fraction_kv0": 0.07568342907873486,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.501705458228702,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.14720540325126558,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.1132387034792137,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.37278020064012135,
+        "sigma_tv_measurable": 0.0,
+        "sigma_tvh_codes": 3.2419110140596437,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 1.7498675887929065,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 7.302840600786801,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 6.290148495045182,
+        "temporal_drift_fraction": 0.9471276287026652,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 3.1915833112292056,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_AIRPLANE_038.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5932740061170348,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 14.677013155105428,
+        "psd_line_fraction_kh0": 0.10132493709774704,
+        "psd_line_fraction_kv0": 0.0386471253039191,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 3.2419125995487943,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 2.6058230149332324,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 1.4164363803701152,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 5.6104576225102365,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 4.268364466029347,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 14.578781946632589,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 13.628655072597894,
+        "temporal_drift_fraction": 0.9157824718779755,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 6.727711653393763,
+        "temporal_tau_ms": 207.82632037963506
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_AIRPLANE_039.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.3035656482524936,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 7.0,
+        "noise_scale_codes": 22.015519732658138,
+        "psd_line_fraction_kh0": 0.08739159498292574,
+        "psd_line_fraction_kv0": 0.06228849147876448,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.944756550888178,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 3.8512635918206364,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 3.714384571547058,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.1547509066178665,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 6.975500092318962,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.059136639975473,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 19.848857631447743,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 19.918803567643078,
+        "temporal_drift_fraction": 0.9363042275460884,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 8.632755901548324,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 318,
+      "name": "IR_AIRPLANE_040.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 2.730625756964115,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_AIRPLANE_041.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.0215696921114574,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_AIRPLANE_042.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.0431385018952004,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_AIRPLANE_043.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.016670579328894507,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 310,
+      "name": "IR_AIRPLANE_044.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.0769516418865663,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_AIRPLANE_045.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.0146411128302804,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_AIRPLANE_046.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.28642587856937646,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 38.78924905277863,
+        "psd_line_fraction_kh0": 0.05866163521961206,
+        "psd_line_fraction_kv0": 0.06494344172886785,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 3.3795261821835916,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.4389640013150791,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 6.152264334329325,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.475634264645378,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 9.870636270278961,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.89091352545721,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 33.43702957304603,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 37.21671192901733,
+        "temporal_drift_fraction": 0.9261523753539724,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 11.349682361300154,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_AIRPLANE_047.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.7778154164248952,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 42.98268138280874,
+        "psd_line_fraction_kh0": 0.054251450224140345,
+        "psd_line_fraction_kv0": 0.06130151110184659,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 4.240745179965895,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.0,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 6.837628893102344,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.6972443748508113,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 11.405473231567665,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 6.598104628292561,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 40.9078011737288,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 41.934323300301216,
+        "temporal_drift_fraction": 0.9238631592643044,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 12.832093962876556,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_AIRPLANE_048.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.7174040627430767,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 45.07939754782381,
+        "psd_line_fraction_kh0": 0.0530476643973858,
+        "psd_line_fraction_kv0": 0.06786534795271283,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 5.8271009972855135,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.0,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 7.215236228231994,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 3.057250155767,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 11.740615857884679,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 6.663890576418364,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 42.86972722790856,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 42.98268138280874,
+        "temporal_drift_fraction": 0.9209584636825202,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 13.175127641720909,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_AIRPLANE_049.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.4386656105754783,
+        "freeze_count": 2.0,
+        "freeze_length_frames": 10.5,
+        "freeze_pattern_change": 4.74606503167859,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_AIRPLANE_050.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.5229575098850008,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 6.290148495045182,
+        "psd_line_fraction_kh0": 0.1392874861545048,
+        "psd_line_fraction_kv0": 0.08105339458375092,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.571069731833646,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.0,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.0343288151271155,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.3936479484628953,
+        "sigma_tv_measurable": 0.0,
+        "sigma_tvh_codes": 3.0585389741919857,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.658714287665903,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 6.44837719090973,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 6.290148495045182,
+        "temporal_drift_fraction": 0.9478843075295893,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 2.9492285530480187,
+        "temporal_tau_ms": 658.1320339256416
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_AIRPLANE_051.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.789622704397859,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 26.20895206268826,
+        "psd_line_fraction_kh0": 0.0636437098220824,
+        "psd_line_fraction_kv0": 0.04786309491608431,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.5872813395383395,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 4.571757738467684,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 1.9873148281267146,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 7.776587381583743,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 4.7650703494672975,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 25.26574927135773,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 24.1122358976732,
+        "temporal_drift_fraction": 0.919742059242424,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 8.883458812135762,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_AIRPLANE_052.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3838450740052066,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_053.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7243483894102736,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_AIRPLANE_054.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -2.1465322998232343,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_055.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -1.965290947490389,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 4.0,
+        "noise_scale_codes": 2.096716165015061,
+        "psd_line_fraction_kh0": 0.1262542865673641,
+        "psd_line_fraction_kv0": 0.07812778197917539,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.8316435355359402,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.06842621050184962,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 0.5489977480034668,
+        "sigma_th_measurable": 0.0,
+        "sigma_tv_codes": 0.2825152107275731,
+        "sigma_tv_measurable": 0.0,
+        "sigma_tvh_codes": 2.1038341387223713,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 1.3506174811450928,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 3.334572475576189,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 2.096716165015061,
+        "temporal_drift_fraction": 0.9613761840073453,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 1.8040090530289046,
+        "temporal_tau_ms": 1833.5886114888688
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_AIRPLANE_056.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.2892117237468636,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 7.0,
+        "noise_scale_codes": 28.305668227703322,
+        "psd_line_fraction_kh0": 0.06077413132006456,
+        "psd_line_fraction_kv0": 0.06225500138246803,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.1433726821927532,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 3.5300195739474485,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 4.791912810684792,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.1805551341842273,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 9.144167270041429,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 4.2961343858790935,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 23.732407559585532,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 26.20895206268826,
+        "temporal_drift_fraction": 0.8935521168273507,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 10.839178975375262,
+        "temporal_tau_ms": 543.0972660200595
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_057.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.07713470778602487,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 11.531938907582834,
+        "psd_line_fraction_kh0": 0.08027702080810833,
+        "psd_line_fraction_kv0": 0.04382939874867501,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.0,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.982389179152262,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.7853325231966856,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.467834843745497,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.8144349618891327,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 11.332480549690647,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 10.483580825075304,
+        "temporal_drift_fraction": 0.9291050651412609,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 4.699849827316202,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_AIRPLANE_058.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.5022054357281888,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 4.0,
+        "noise_scale_codes": 6.290148495045182,
+        "psd_line_fraction_kh0": 0.15674493757581193,
+        "psd_line_fraction_kv0": 0.043332128740263876,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.26170750088764877,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.1426709115177447,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.47046726153464313,
+        "sigma_tv_measurable": 0.0,
+        "sigma_tvh_codes": 3.1703902589406248,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.9581608824092753,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 6.821092704415358,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 6.290148495045182,
+        "temporal_drift_fraction": 0.9428626104625929,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 3.1595567020000628,
+        "temporal_tau_ms": 1275.5623064393462
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_AIRPLANE_059.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6473469614782793,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_AIRPLANE_060.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7899461093998097,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_AIRPLANE_061.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.36911450543990776,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 17.822087402628018,
+        "psd_line_fraction_kh0": 0.06821835302868103,
+        "psd_line_fraction_kv0": 0.04586968450052779,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 1.3401281080610608,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 2.9367380025278065,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 1.1860524193896786,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 5.5179847675665,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 3.33517519567623,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 16.08154181411689,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 16.773729320120488,
+        "temporal_drift_fraction": 0.9309827666610625,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 6.2705966703986284,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_AIRPLANE_062.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.2506259397256358,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_AIRPLANE_063.mp4",
+      "skipped": [
+        "moving",
+        "no_flat_window"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.3076574001216579,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_AIRPLANE_064.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 3.6861120825474027,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_AIRPLANE_065.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6984969454038052,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_AIRPLANE_066.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.31758890899827685,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_AIRPLANE_067.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.1998583551190074,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_AIRPLANE_068.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.17290685109160542,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_AIRPLANE_069.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.2020392654605105,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_AIRPLANE_070.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.4156941548150872,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_AIRPLANE_071.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.7485068758892051,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_AIRPLANE_072.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.2256658504071679,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 38.78924905277863,
+        "psd_line_fraction_kh0": 0.043534012856002294,
+        "psd_line_fraction_kv0": 0.052573343821404994,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 4.178272511232917,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 7.0579867316632265,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 3.9344524852857092,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 14.718095952928193,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.631619225526145,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 35.17868821933617,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 35.644174805256036,
+        "temporal_drift_fraction": 0.8702150424971141,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 16.789548727771816,
+        "temporal_tau_ms": 457.8390211826993
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_AIRPLANE_073.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.31287653580198427,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 23.063877815165668,
+        "psd_line_fraction_kh0": 0.08269874225528112,
+        "psd_line_fraction_kv0": 0.05124342320578579,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 1.4372622529717547,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 3.703216941829459,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 1.890048893325101,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 7.974934622576451,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.02573487925439,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 20.17580558088889,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 20.967161650150608,
+        "temporal_drift_fraction": 0.9130918878045237,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 8.751281660299814,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 319,
+      "name": "IR_AIRPLANE_074.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.196526263366918,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 20.967161650150608,
+        "psd_line_fraction_kh0": 0.11778095325845345,
+        "psd_line_fraction_kv0": 0.0659594221961366,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 2.0788245111421992,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 5.349510406995584,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 4.803316200319122,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 12.233320936465649,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.682715859546467,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 18.985835945329356,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 18.870445485135548,
+        "temporal_drift_fraction": 0.9157394104994133,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 8.832705026787178,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 310,
+      "name": "IR_BIRD_001.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.204538769843663,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_002.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3145338798214137,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_003.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7798305577708768,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_004.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.1784115048021714,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_BIRD_005.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.2823052361184866,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_006.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.23797543630900006,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_007.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.2823266078918145,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_BIRD_008.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.45274089345741975,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_009.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.6552568440567422,
+        "freeze_count": 2.0,
+        "freeze_length_frames": 12.5,
+        "freeze_pattern_change": 6.238718882768309,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_BIRD_010.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.21209632913597307,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_BIRD_011.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 2.9242968966871,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_BIRD_012.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 4.806050130213825,
+        "freeze_count": 2.0,
+        "freeze_length_frames": 45.0,
+        "freeze_pattern_change": NaN,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_013.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.22594816927197595,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 310,
+      "name": "IR_BIRD_014.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.061270738948604,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_BIRD_015.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1770345900481116,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_BIRD_016.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.4024344695521382,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_BIRD_017.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.7358620998587537,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_BIRD_018.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.0841891013591285,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_BIRD_019.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.2996886762379427,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 326,
+      "name": "IR_BIRD_020.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.0665564773018502,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_BIRD_021.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.892394897581915,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_BIRD_022.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.230041889805451,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 7.0,
+        "noise_scale_codes": 25.160593980180728,
+        "psd_line_fraction_kh0": 0.2600868351293566,
+        "psd_line_fraction_kv0": 0.09541357598341471,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.7659159517430059,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 38.350254291789525,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 6.429185576619273,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 10.760940553647622,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 12.555570691917897,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.172086418849894,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 15.448919403495442,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 13.10447603134413,
+        "temporal_drift_fraction": 0.9584039609434614,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 41.847269510269676,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_BIRD_023.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.4331233942762049,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_BIRD_024.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.45813633863824904,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_BIRD_025.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 2.4151524002168365,
+        "freeze_count": 3.0,
+        "freeze_length_frames": 30.0,
+        "freeze_pattern_change": NaN,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_026.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.44715632213062506,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 319,
+      "name": "IR_BIRD_027.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.26582821282724645,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_BIRD_028.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3734497910113991,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 318,
+      "name": "IR_BIRD_029.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.3981870081324963,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_BIRD_030.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.032823464472274355,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_031.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.0327222535221627,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_BIRD_032.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3147706241195759,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_BIRD_033.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.0523133609504636,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_BIRD_034.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.26360634823832,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 19.0,
+        "freeze_pattern_change": 2.5322748147512897,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_035.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.2899050403865364,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_BIRD_036.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5516894938736676,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_037.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3134293682877607,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_BIRD_038.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1174351187012679,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 7.0,
+        "noise_scale_codes": 9.435222742567774,
+        "psd_line_fraction_kh0": 0.0991811337316883,
+        "psd_line_fraction_kv0": 0.06618372963157484,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.9696113387870783,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 14.522481934654099,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 2.8633800167370236,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.035074299859402,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 7.584988064845725,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 3.5607332577420183,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 11.959297807326287,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 8.386864660060244,
+        "temporal_drift_fraction": 0.9404827625680253,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 15.824092815184759,
+        "temporal_tau_ms": 64.24176510151212
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 326,
+      "name": "IR_BIRD_039.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.6920040478324316,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 42.98268138280874,
+        "psd_line_fraction_kh0": 0.09454018724415668,
+        "psd_line_fraction_kv0": 0.05706295163658512,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.0,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 7.579685503733224,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.9892991455568936,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 12.538201773889252,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 10.56758865737737,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 37.619790450519446,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 39.837607135286156,
+        "temporal_drift_fraction": 0.9190732759811946,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 14.222739737268075,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 309,
+      "name": "IR_BIRD_040.mp4",
+      "skipped": [
+        "moving"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.28410488459648753,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 8.386864660060244,
+        "spatial_noise_scale_codes": 7.338506577552714
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_041.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -1.0901592516179164,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_BIRD_042.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.3549379829852299,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 17.822087402628018,
+        "psd_line_fraction_kh0": 0.07423915190127435,
+        "psd_line_fraction_kv0": 0.04802314590756517,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.18940606920077258,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 2.6887317616581874,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 1.0411248012962881,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 5.265452980203718,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 3.8401029924955,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 16.86981144268365,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 16.773729320120488,
+        "temporal_drift_fraction": 0.930144700565033,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 5.672368825428837,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_BIRD_043.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.24905439436707663,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 31.450742475225915,
+        "psd_line_fraction_kh0": 0.058938951306577614,
+        "psd_line_fraction_kv0": 0.07953685302037775,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 4.976667859430835,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.49746668922877235,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 5.131150333994903,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 2.066162054629236,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 8.553899562417518,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 5.146617128004519,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 28.372135595567464,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 29.354026310210855,
+        "temporal_drift_fraction": 0.9272259343308883,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 9.694081626444122,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_044.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.39508273243167735,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_045.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1144590542330215,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 309,
+      "name": "IR_BIRD_046.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.5522617432682897,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_BIRD_047.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7248590691646292,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_048.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.11757203260541833,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_BIRD_049.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.19457015248390064,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_050.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.3260258107918339,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_051.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.37179170350845175,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_BIRD_052.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7589875156568314,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_BIRD_053.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.008152782862645,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_BIRD_054.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.690859905378085,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_BIRD_055.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.701984913352404,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_056.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.8985794630928552,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_057.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.290067363236321,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_058.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4515299961717916,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_BIRD_059.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4136530566527,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_BIRD_060.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.4818182858038646,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 11.531938907582834,
+        "psd_line_fraction_kh0": 0.07920207876418521,
+        "psd_line_fraction_kv0": 0.06254632999999818,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.5795245472224821,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.39334658219456925,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.8494497706380908,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.7373630894354243,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.291459964139885,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.8631962228734356,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 11.485374316945745,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 10.483580825075304,
+        "temporal_drift_fraction": 0.9313658573896973,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 4.519086562408741,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_BIRD_061.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.21129977591777496,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 11.531938907582834,
+        "psd_line_fraction_kh0": 0.08588573526688993,
+        "psd_line_fraction_kv0": 0.06520636748051069,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.5430967294328484,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.1138441344504769,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 2.074762509715949,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.7445293414127213,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.426282184747482,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 3.1284064917444807,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 11.632239360505885,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 10.483580825075304,
+        "temporal_drift_fraction": 0.9257282607150723,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 4.666636783058056,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_BIRD_062.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": -0.009369978595637854,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_BIRD_063.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": -1.0584169978033136,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 5.241790412537652,
+        "psd_line_fraction_kh0": 0.08817399546992753,
+        "psd_line_fraction_kv0": 0.07420000060081332,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 1.1495663118026063,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.20965666738556016,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.1053255664227795,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.6765558644464199,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 3.1983895357276304,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 1.684871965263741,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 6.031535534654323,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 5.241790412537652,
+        "temporal_drift_fraction": 0.922746303635928,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 3.210210487384659,
+        "temporal_tau_ms": 64.24176510151212
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_BIRD_064.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.9513580984604617,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_BIRD_065.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7317110267396588,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_BIRD_066.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6322088886381503,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 12.580296990090364,
+        "psd_line_fraction_kh0": 0.06485403451608956,
+        "psd_line_fraction_kv0": 0.04998614723643459,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.0,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.6931290636568347,
+        "sigma_t_measurable": 1.0,
+        "sigma_th_codes": 2.4242185459996684,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.938207582123144,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.839954240194922,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.4776727157765,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 12.379469878889818,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 12.580296990090364,
+        "temporal_drift_fraction": 0.9171459455264606,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 5.302359496439363,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_BIRD_067.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3405101860303867,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 326,
+      "name": "IR_BIRD_068.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3392572263271527,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_BIRD_069.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.4857974252497673,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_BIRD_070.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 4.427873410068185,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_BIRD_071.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1183528793955553,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_BIRD_072.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.24594262698399208,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 2.096716165015061
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_BIRD_073.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.41262523751523733,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 5.0,
+        "noise_scale_codes": 11.531938907582834,
+        "psd_line_fraction_kh0": 0.09163101293985026,
+        "psd_line_fraction_kv0": 0.051933889138286636,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.19943709844541233,
+        "sigma_h_measurable": 0.0,
+        "sigma_t_codes": 0.5666747589730526,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.902114206882014,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.7410613614047307,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.142796866120054,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 3.013707720053617,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 10.764509329087932,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 10.483580825075304,
+        "temporal_drift_fraction": 0.9316592445574392,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 4.440240408139766,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_BIRD_074.mp4",
+      "skipped": [],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6654854926546555,
+        "codec_floor_codes": 0.2886751345948129,
+        "freeze_count": 0.0,
+        "measurable_components": 6.0,
+        "noise_scale_codes": 11.531938907582834,
+        "psd_line_fraction_kh0": 0.0888028642703787,
+        "psd_line_fraction_kv0": 0.052616596149634313,
+        "quantiser_step_codes": 1.0,
+        "sigma_h_codes": 0.7231020466978697,
+        "sigma_h_measurable": 1.0,
+        "sigma_t_codes": 0.3478180596403317,
+        "sigma_t_measurable": 0.0,
+        "sigma_th_codes": 1.7696021403974076,
+        "sigma_th_measurable": 1.0,
+        "sigma_tv_codes": 0.7294618996613625,
+        "sigma_tv_measurable": 1.0,
+        "sigma_tvh_codes": 4.132462710386492,
+        "sigma_tvh_measurable": 1.0,
+        "sigma_v_codes": 2.9032148956352986,
+        "sigma_v_measurable": 1.0,
+        "sigma_vh_codes": 10.62485570273846,
+        "sigma_vh_measurable": 1.0,
+        "spatial_noise_scale_codes": 9.959401783821539,
+        "temporal_drift_fraction": 0.9355306017779635,
+        "temporal_outlier_fraction": 0.0,
+        "temporal_sigma_codes": 4.3072540041282386,
+        "temporal_tau_ms": 3333.3333333333335
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_BIRD_075.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": -0.7494096550281325,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_BIRD_076.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3219990799076644,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_BIRD_077.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.5640503829504624,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_BIRD_078.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.4443809117207986,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_BIRD_079.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.3741375900775946,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_001.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.34739062540151,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_DRONE_002.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.293961710349187,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_003.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.576364640286546,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_004.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.2933364901362507,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_DRONE_005.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.7699377950150974,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_DRONE_006.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4721990917273478,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_007.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 2.485991704021598,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_DRONE_008.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.965075096153241,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 328,
+      "name": "IR_DRONE_009.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4071697141503163,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 323,
+      "name": "IR_DRONE_010.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.044874374367023,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_DRONE_011.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.619983696771164,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 326,
+      "name": "IR_DRONE_012.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.384428459851852,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 21.0,
+        "freeze_pattern_change": 6.074204876191974,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_DRONE_013.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.27865818690194,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_DRONE_014.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.0080978239737455,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_DRONE_015.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.909258637191663,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_016.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.918767532062437,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_DRONE_017.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1166781719982786,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 315,
+      "name": "IR_DRONE_018.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.129083226304134,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_019.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.332796372798657,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_020.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.396641499970934,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_021.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.55302068023759,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_022.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.341705817128462,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_023.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.021040541265142,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_DRONE_024.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.200699012206363,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_025.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.904691186280149,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_026.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.9780543664221533,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_DRONE_027.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.819264626158728,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_028.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.309285842704546,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_DRONE_029.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.316607448945197,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_030.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.7452946470406037,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_031.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.694030116632467,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_DRONE_032.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.8281364656852865,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_033.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.994860547592163,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_034.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.390155215490963,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_DRONE_035.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.574483918940149,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_036.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.202959925283263,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_DRONE_037.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.819521025281366,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_038.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.411029874056184,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_039.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3469695342773713,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_DRONE_040.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7205833496555782,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_DRONE_041.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6284121756804724,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_042.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.4602923292738261,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 324,
+      "name": "IR_DRONE_043.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.0061823342649574,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 310,
+      "name": "IR_DRONE_044.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.7821933472180316,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 322,
+      "name": "IR_DRONE_045.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.5533533125299557,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_046.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.899613600719638,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_047.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.32699307157123,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_048.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.341670084695593,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_049.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.640420981345995,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_050.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0962269040347694,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_051.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0737641348819498,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_052.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.684508924460279,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_DRONE_053.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.058446164158984,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_054.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.669137276004718,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_055.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.309149540721684,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_056.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.520319907643022,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_057.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.8548623847668755,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_058.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.453566489824983,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_DRONE_059.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.9000603010905484,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_060.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0530214958596757,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_061.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.914417391496221,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_062.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0419020305004856,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_063.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1396640133178297,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_064.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.7474354878055838,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_065.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1979113865657394,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_066.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0814825944260744,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_DRONE_067.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4214019530321886,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_068.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1465316339171214,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_DRONE_069.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.7295841734200925,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 314,
+      "name": "IR_DRONE_070.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1634644293390433,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_071.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.0403682385805646,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_072.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1043900801756545,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_073.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.027722961724441,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_074.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.9765936278537377,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_075.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.209369389853261,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_076.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.234352453364317,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_077.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1666764358383457,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_078.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.132164716195265,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_079.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.9092131470389324,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_080.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.7408045786676603,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_081.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.2887259328145215,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_082.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.703443119251562,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_083.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.4294083520571266,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_084.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.9174961265723978,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_085.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.38357414566981,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_086.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.2819347375787298,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_087.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.427412984872772,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_088.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1031484010704435,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_089.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.3719339910764337,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_090.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.3118513382885033,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_091.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.050770702211599,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_092.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1516747278455717,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_093.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.4304666910190087,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_094.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1437372412318205,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_095.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.91810193097576,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_096.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.3846187572990267,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_097.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.4655940098677136,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_098.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.7942615010181746,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_DRONE_099.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.295309340763403,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_100.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.036407366192839,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_101.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.782476057481914,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_102.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.255576776548876,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_103.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.2011951612123712,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_104.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.2309236601247853,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_105.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.27522149217612,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 311,
+      "name": "IR_DRONE_106.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.798095626764464,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_107.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.277079500899459,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_108.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.325292042772387,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_109.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.554789218373632,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_DRONE_110.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.3143840518858143,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_111.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.684386532378379,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_112.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.6320134497463483,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_DRONE_113.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6883855206111886,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_114.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7987517592749536,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_115.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.0668094152467353,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_DRONE_116.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.3272418844994713,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_DRONE_117.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.700282294807469,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_118.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.0328538988558873,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.5241790412537652
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_119.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7171670124906935,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_DRONE_120.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.8029255606711243,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_121.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.2622245379486747,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_122.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.436120289162593,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_DRONE_123.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.9423588545868269,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_124.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.032825106999881,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_125.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.2375611021497748,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_126.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.9622013294012879,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_127.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7549680198501572,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_128.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7705650187734536,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 20.0,
+        "freeze_pattern_change": 4.108614982702237,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_129.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.841116301780036,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 321,
+      "name": "IR_DRONE_130.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4533019051638902,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_131.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.7546767539325376,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_DRONE_132.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.496733514150998,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_133.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.8952866124952488,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_134.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6525855364480464,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_DRONE_135.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.7557320424738587,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_136.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6090470733585593,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_137.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 3.1713964384273736,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_138.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.2672780459277569,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_139.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.333764169762418,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_140.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.9777414999099883,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_141.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.078631485422464,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_DRONE_142.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3019927968180123,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_143.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.8532180532679332,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 319,
+      "name": "IR_DRONE_144.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.9381236892293237,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_145.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.972287314044464,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_146.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6531740168444564,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_147.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.553396552615203,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 20.0,
+        "freeze_pattern_change": 4.218145871260835,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_DRONE_148.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.809694187883406,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_149.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.4385627030024242,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_150.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.985248008235737,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_DRONE_151.mp4",
+      "skipped": [
+        "no_flat_window"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.1449764054360307,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 2.096716165015061,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_152.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.6868260751620587,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_153.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 2.4331221936783227,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_DRONE_154.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.5933987836901302,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_DRONE_155.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.589034304650016,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_DRONE_156.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.1434908521343117,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_DRONE_157.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.003612691943104,
+        "freeze_count": 2.0,
+        "freeze_length_frames": 12.5,
+        "freeze_pattern_change": NaN,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_001.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.22432587247608785,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_HELICOPTER_002.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.5452581544138408,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_003.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.025294641801839,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_004.mp4",
+      "skipped": [
+        "moving",
+        "no_flat_window"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 6.0279001353912,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 7.338506577552714,
+        "spatial_noise_scale_codes": 6.290148495045182
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_005.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 3.8372359666556717,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_HELICOPTER_006.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.7551629663078362,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_007.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.33594101665592263,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 306,
+      "name": "IR_HELICOPTER_008.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5770198595889073,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_009.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5273649165774571,
+        "freeze_count": 2.0,
+        "freeze_length_frames": 17.5,
+        "freeze_pattern_change": NaN,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_HELICOPTER_010.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.4966828509502575,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_HELICOPTER_011.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.49261986261279966,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_HELICOPTER_012.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.42809777063570575,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_013.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.1900429357947437,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_014.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.2746339432554925,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 309,
+      "name": "IR_HELICOPTER_015.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.11109278109269752,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 17.0,
+        "freeze_pattern_change": 8.286798176690448,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_HELICOPTER_016.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6233598939963088,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_HELICOPTER_017.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6966809330412058,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_HELICOPTER_018.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5079268266439722,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_HELICOPTER_019.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.655158574078852,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 303,
+      "name": "IR_HELICOPTER_020.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5824769480644,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_HELICOPTER_021.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5809699141315895,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 317,
+      "name": "IR_HELICOPTER_022.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.2694365884519925,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 11.0,
+        "freeze_pattern_change": 3.9982926149520717,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_023.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.3940041527184336,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_HELICOPTER_024.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.6846780147730402,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 17.0,
+        "freeze_pattern_change": NaN,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_HELICOPTER_025.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5963701805725488,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 307,
+      "name": "IR_HELICOPTER_026.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 3.2236242945738898,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 300,
+      "name": "IR_HELICOPTER_027.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.1255144737660103,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 302,
+      "name": "IR_HELICOPTER_028.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.8331302439271417,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_HELICOPTER_029.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6174989300095223,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_HELICOPTER_030.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.7494557627922548,
+        "freeze_count": 1.0,
+        "freeze_length_frames": 9.0,
+        "freeze_pattern_change": 5.029116723468791,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_HELICOPTER_031.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5132778336148419,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 313,
+      "name": "IR_HELICOPTER_032.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.8892907214638803,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_033.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.6079113186285521,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 304,
+      "name": "IR_HELICOPTER_034.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.3053457141267335,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_035.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.0818279988529853,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_HELICOPTER_036.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.3699862537791783,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_037.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.4018285530756596,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_HELICOPTER_038.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.3114729170989867,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_039.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.829022646005408,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_HELICOPTER_040.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.1981635310495442,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 301,
+      "name": "IR_HELICOPTER_041.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.3060432632960473,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 305,
+      "name": "IR_HELICOPTER_042.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.6880012350114318,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_HELICOPTER_043.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 0.5712167526856218,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_HELICOPTER_044.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.028394623889697986,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_HELICOPTER_045.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 0.5467254403399552,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_HELICOPTER_046.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 4.436612210495245,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_HELICOPTER_047.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 3.636331384177856,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_HELICOPTER_048.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 4.1151694394226395,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 327,
+      "name": "IR_HELICOPTER_049.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 5.625611806865049,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 312,
+      "name": "IR_HELICOPTER_050.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 4.156644838911357,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 325,
+      "name": "IR_HELICOPTER_051.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 3.416864162353657,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 329,
+      "name": "IR_HELICOPTER_052.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.035196883082617,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 320,
+      "name": "IR_HELICOPTER_053.mp4",
+      "skipped": [
+        "noise_floor_collapsed"
+      ],
+      "static": true,
+      "values": {
+        "blockiness_z": 1.955771723283343,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 1.0483580825075305,
+        "spatial_noise_scale_codes": 1.0483580825075305
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 316,
+      "name": "IR_HELICOPTER_054.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 5.4039354716448065,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    },
+    {
+      "fps": 30.0,
+      "frames": 308,
+      "name": "IR_HELICOPTER_055.mp4",
+      "skipped": [
+        "moving",
+        "noise_floor_collapsed"
+      ],
+      "static": false,
+      "values": {
+        "blockiness_z": 1.4457153957991447,
+        "freeze_count": 0.0,
+        "noise_scale_codes": 0.0,
+        "spatial_noise_scale_codes": 0.0
+      }
+    }
+  ],
+  "dataset": "halmstad_drone_detection",
+  "generated_utc": "2026-09-15",
+  "provenance": {
+    "archive": "Drone-detection-dataset-v1.0.0.zip",
+    "archive_sha256": "53deda08127dc7896e96454cf35e866e8d6bee336f25d290b26e1f5324e23c81",
+    "clips_found": 365,
+    "clips_measured": 365,
+    "failures": []
+  },
+  "schema_version": 1,
+  "sections": [
+    {
+      "intro": "Two properties of these files bound every number below, and neither is in the index.",
+      "refusals": [],
+      "statistics": [
+        {
+          "ci_high": 30.0,
+          "ci_low": 30.0,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 30.0,
+          "median": 30.0,
+          "n": 365,
+          "name": "stored frame rate",
+          "note": "the core runs at 60 Hz; the files are stored at this rate, and a one-pole temporal fit run at the index's rate is wrong by the ratio while looking plausible",
+          "spread": 0.0,
+          "unit": "Hz"
+        },
+        {
+          "ci_high": 6.313083978653127,
+          "ci_low": 5.877320194855743,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 6.094258013896266,
+          "median": 5.217623846699238,
+          "n": 365,
+          "name": "colour-range ambiguity",
+          "note": "`color_range` is unflagged on every clip, so limited- and full-range readings of the same file differ by this much. Compare it with the noise scale below: it is several times larger, which is why only scale-free statistics are reported",
+          "spread": 2.1149238615761314,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 2.0034621572985367,
+          "ci_low": 1.6868013490980314,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 1.8430369328746117,
+          "median": 1.6284121756804724,
+          "n": 365,
+          "name": "8x8 blockiness",
+          "note": "per-gap null (ADR 0023 addendum); a positive z is the codec's block grid",
+          "spread": 1.569596529044984,
+          "unit": "z"
+        }
+      ],
+      "title": "The signal path, measured rather than assumed"
+    },
+    {
+      "intro": "The headline is negative and it is the most important result in this report.",
+      "refusals": [
+        {
+          "n_refused": 337,
+          "name": "every per-pixel noise statistic, on most of the set",
+          "reason": "Of 365 clips, 28 support the noise table above. The exclusions overlap, so these counts do not partition the set: **81** are moving, and ME.1b's gate correctly keeps every per-pixel temporal statistic off a clip whose scene is sliding across the pixels; **306** have a robust noise scale at or below *one code*, which means the codec has removed the sensor's noise entirely -- no window can meet a threshold written in units of a ruler that has collapsed onto the quantiser, and the flat-region finder refusing is the correct answer rather than a tuning problem; **30** have a usable ruler but no window flat enough against it. Every value in the table is an upper bound on what the codec left, not a measurement of the camera."
+        }
+      ],
+      "statistics": [
+        {
+          "ci_high": 2.9124967249717764,
+          "ci_low": 1.5365626443547016,
+          "floor": 1.0,
+          "floor_label": "one code",
+          "limited": false,
+          "mean": 2.1685215131320152,
+          "median": 0.0,
+          "n": 365,
+          "name": "robust noise scale",
+          "note": "MAD of first differences about their own median, so a gradient cancels exactly. This is the ruler every other threshold is written in units of",
+          "spread": 6.602856219798456,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 8.623860848383366,
+          "ci_low": 5.990927214240641,
+          "floor": 0.2886751345948129,
+          "floor_label": "quantiser",
+          "limited": false,
+          "mean": 7.271679041990084,
+          "median": 6.2929788574145995,
+          "n": 28,
+          "name": "sigma_TVH (temporal pixel)",
+          "note": "above the floor on 100 % of the usable clips",
+          "spread": 3.719704762168983,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 23.367743315443764,
+          "ci_low": 15.090800150686912,
+          "floor": 0.2886751345948129,
+          "floor_label": "quantiser",
+          "limited": false,
+          "mean": 19.17582239104592,
+          "median": 15.765230608806165,
+          "n": 28,
+          "name": "sigma_VH (fixed pattern)",
+          "note": "above the floor on 100 % of the usable clips",
+          "spread": 11.642067863582053,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 5.984592779678449,
+          "ci_low": 0.7138236943624408,
+          "floor": 0.2886751345948129,
+          "floor_label": "quantiser",
+          "limited": false,
+          "mean": 2.7800650159116382,
+          "median": 0.46821534527192576,
+          "n": 28,
+          "name": "sigma_T (frame-to-frame)",
+          "note": "above the floor on 43 % of the usable clips",
+          "spread": 7.531090825563333,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 1.821393349361556,
+          "ci_low": 0.6481562976400801,
+          "floor": 0.2886751345948129,
+          "floor_label": "quantiser",
+          "limited": false,
+          "mean": 1.19095865005987,
+          "median": 0.7773727911169049,
+          "n": 28,
+          "name": "sigma_H (column)",
+          "note": "above the floor on 54 % of the usable clips",
+          "spread": 1.6071130116433159,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 4.966428511071529,
+          "ci_low": 3.5145577328164417,
+          "floor": 0.2886751345948129,
+          "floor_label": "quantiser",
+          "limited": false,
+          "mean": 4.208434178239885,
+          "median": 3.700418125118759,
+          "n": 28,
+          "name": "sigma_V (row)",
+          "note": "above the floor on 100 % of the usable clips",
+          "spread": 2.0412036850052644,
+          "unit": "DN8 codes"
+        },
+        {
+          "ci_high": 6.035714285714286,
+          "ci_low": 5.5,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 5.785714285714286,
+          "median": 6.0,
+          "n": 28,
+          "name": "measurable components",
+          "note": "how many of the NVESD seven clear their own floor by ADR 0023's margin",
+          "spread": 0.7867957924694431,
+          "unit": "of 7"
+        }
+      ],
+      "title": "Noise -- and the reason most of it is not there"
+    },
+    {
+      "intro": "Scale-free by construction, so the missing range flag does not touch them.",
+      "refusals": [],
+      "statistics": [
+        {
+          "ci_high": 0.0659232281100142,
+          "ci_low": 0.05598253577835988,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 0.060803502170247166,
+          "median": 0.06177825624215731,
+          "n": 28,
+          "name": "PSD energy on k_v = 0",
+          "note": "the column-noise line",
+          "spread": 0.01346893946496448,
+          "unit": "fraction"
+        },
+        {
+          "ci_high": 0.10754610886002423,
+          "ci_low": 0.07638276070373684,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 0.09006246695026388,
+          "median": 0.08148788153169473,
+          "n": 28,
+          "name": "PSD energy on k_h = 0",
+          "note": "the row-noise line",
+          "spread": 0.042510180178491445,
+          "unit": "fraction"
+        },
+        {
+          "ci_high": 3026.3349703562744,
+          "ci_low": 2076.2000211774284,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 2563.2569912966405,
+          "median": 3333.3333333333335,
+          "n": 28,
+          "name": "one-pole time constant",
+          "note": "fitted on the flat window, DC and Nyquist dropped",
+          "spread": 1279.9372683109661,
+          "unit": "ms"
+        },
+        {
+          "ci_high": 0.9341538474331553,
+          "ci_low": 0.9207321236960556,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 0.9276184866500021,
+          "median": 0.9281654997360747,
+          "n": 28,
+          "name": "drift fraction",
+          "note": "how much of the fit is a trend rather than a pole; above ~0.5 the tau is not trustworthy",
+          "spread": 0.01813192351734606,
+          "unit": "fraction"
+        }
+      ],
+      "title": "Spatial and temporal structure"
+    },
+    {
+      "intro": "What the FFC leaves in a ten-second clip.",
+      "refusals": [
+        {
+          "n_refused": 0,
+          "name": "FFC interval distribution",
+          "reason": "The clips are ten seconds long and `freeze_intervals_s` refuses anything under 180 s -- the Boson's own schedule -- so this set gives freeze *length* and can never give an interval. That is a property of the publication, not of the analyser."
+        },
+        {
+          "n_refused": 0,
+          "name": "between-FFC pattern growth",
+          "reason": "`fit_pattern_growth` needs the resets to fit sigma^2(t) between them. A ten-second clip at a 180 s schedule contains at most one, so there is no growth curve in it."
+        }
+      ],
+      "statistics": [
+        {
+          "ci_high": 0.0958904109589041,
+          "ci_low": 0.030136986301369864,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 0.06027397260273973,
+          "median": 0.0,
+          "n": 365,
+          "name": "freeze events per clip",
+          "note": "runs of still frames",
+          "spread": 0.31741561395991325,
+          "unit": "count"
+        },
+        {
+          "ci_high": 23.066666666666666,
+          "ci_low": 14.5,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 18.266666666666666,
+          "median": 17.0,
+          "n": 15,
+          "name": "freeze length",
+          "note": "mean over the events in a clip",
+          "spread": 9.160993915717306,
+          "unit": "frames"
+        },
+        {
+          "ci_high": 5.902814117176105,
+          "ci_low": 4.0697647595887325,
+          "floor": null,
+          "floor_label": null,
+          "limited": false,
+          "mean": 4.935758725384454,
+          "median": 4.482105451469712,
+          "n": 10,
+          "name": "pattern change across a freeze",
+          "note": "below ~2.5 the freeze is a stall, above ~5 a shutter (ME.3a); 5 clips dropped as non-finite",
+          "spread": 1.5909255157194542,
+          "unit": "ratio"
+        }
+      ],
+      "title": "The shutter signature"
+    },
+    {
+      "intro": "This is where the reference set stops being usable, and the reason is worth recording.",
+      "refusals": [
+        {
+          "n_refused": 365,
+          "name": "target size, SCR, contrast polarity, edge spread and smear",
+          "reason": "All five need the annotation boxes. The labels ship as MATLAB Video Labeler `groundTruth` objects -- MCOS class instances inside `__function_workspace__` -- which `scipy.io.loadmat` returns as an opaque blob and no Python reader decodes. The index said a Python decoder ships with the dataset; **it does not** (the repository ships a MATLAB script, `Create_a_dataset_from_videos_and_labels.m`), and the index has been corrected. Decoding MCOS is possible and is not worth its own failure mode here: until someone runs the MATLAB script and exports boxes, every box-dependent Tier 4 comparison is open."
+        },
+        {
+          "n_refused": 0,
+          "name": "sky elevation profile and cloud clutter slope",
+          "reason": "Both need a labelled sky region and, for the profile, a visible horizon. Selecting either automatically would be inventing an annotation and calling it data. The analysers are implemented and tested (ME.4); what is missing is a region list."
+        },
+        {
+          "n_refused": 0,
+          "name": "size and SCR versus range",
+          "reason": "Needs LRDDv3's range labels, which sit behind an access request citing export control. Unavailable, not unimplemented."
+        }
+      ],
+      "statistics": [],
+      "title": "Target statistics"
+    }
+  ]
+}
