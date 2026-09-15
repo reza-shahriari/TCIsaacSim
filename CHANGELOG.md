@@ -43,6 +43,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **§6.6's vehicle thermal architecture: a cabin node, scripted heat sources, and the ghosts they
+  leave** (M6.14–M6.16, ADR 0038, ADR 0039). A vehicle panel's back boundary is a lumped cabin, not
+  ambient and not adiabatic: with the cabin the roof runs **+4.8 K** hotter at noon, the cabin air
+  reaches **80 °C**, and on a clear night both sit **more than 2 K below ambient** — which is why
+  cars frost when the air never does.
+- **⚠️ The glazing must be in the panel list, and the constructor now refuses a cabin without it.**
+  Glass is both the cabin's solar **inlet** and one of its largest conduction **paths** — 15 W K⁻¹
+  against 2 W K⁻¹ of infiltration. A cabin given the inlet without the path reaches **102 °C** at
+  noon instead of 80: not obviously wrong, just wrong, which is why it is an error rather than a note.
+- **⚠️ The lumped cabin time constant is the panels-pinned one.** `C/(ΣA/R + ṁc_p)` is exact for
+  the system it describes — it matches to **2 %** with the panels held — but let them move and the
+  coupled system relaxes **33 % slower** (12.0 min against 9.0), because a cooling cabin drags its
+  panels down and they feed heat back. Both are asserted, so a scene knows which number it quotes.
+- **Two heat sources are deliberately *not* scripted, because a closed form exists.** Brakes are an
+  **energy deposit** — ΔT = f·½m(v₁²−v₂²)/(m_disc c_p), 162 K into an 8 kg disc from 30 m/s, exactly
+  4× that from twice the speed — and scripting the temperature would make it independent of how hard
+  the car actually braked, the one thing a braking cue carries. Tyres follow **speed, not time**,
+  over §6.6's +10 … +35 K. Everything else is a first-order schedule with §6.6's own ΔT and τ, and
+  the exponential step is **exact**: a drive logged at 1 Hz and at 10 Hz agree to **1e-9**, where a
+  forward difference would make a scene's engine-bay temperature depend on the logging rate.
+- **Heat traces are overlays, not conserved quantities** (ADR 0039), and the cost is stated rather
+  than hidden. Superposition is linear to **1e-12** and cells outside every footprint come back
+  **bit-identical** — a layer that blended would make an untouched road pixel depend on whether a car
+  drove past somewhere else in the frame. Rasterisation is by **distance to the segment**, so a path
+  sampled at 1 Hz and at 100 Hz stripe the same cells. And a tyre trace is **two** footprints,
+  because one wide stripe is a skid and two at a known gauge are a vehicle.
+- **⚠️ The 20-minute decay criterion splits, and the split is the phenomenon.** §6.6 gives a
+  5–20 min *range*: the stripes (τ = 7 min) are under **0.5 K** at twenty minutes and the body
+  shadow (τ = 12 min) is still **1.0 K**. That residual is exactly why §6.6 says thermal ghosts
+  "routinely confuse detectors trained only on synthetic data that lacks them" — a ghost that had
+  faded before anyone looked would not. Asserting both under 0.5 K would have meant choosing τ for
+  the convenience of the test (27 tests).
 - **Tier 3 reflection phenomenology: what a facet *reads* at 03:00, not what it *is*** (M7.16,
   §15 T3, §5.3). Every other thermal test asks what temperature a surface reaches; this one asks
   what the camera reads, which is a different number. The ε 0.90 roof and the glass both read
