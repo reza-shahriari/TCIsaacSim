@@ -142,11 +142,26 @@ class AerialThermalBridge:
         cloud_seed: int | None = None,
         sea: SeaModel | None = None,
     ) -> None:
-        unknown = set(prim_to_target.values()) - set(scene.targets)
+        # A prim's name resolves to a phase-1 *target solver* or to a phase-2 §12.3 *thermal
+        # surface* (M10.3). Both are "a thing with a temperature" as far as the G-buffer is
+        # concerned, and keeping them in one map is what lets a stage mix a solved facet with a
+        # scripted drone without the caller sorting them. A name in **both** is refused rather
+        # than resolved by precedence: whichever won, the other would be silently ignored.
+        wanted = set(prim_to_target.values())
+        surfaces = set(scene.thermal_surfaces)
+        both = wanted & set(scene.targets) & surfaces
+        if both:
+            raise ValueError(
+                f"ambiguous thermal names {sorted(both)}: each is both a target solver and a "
+                "§12.3 thermal surface in this scene, and resolving it by precedence would "
+                "silently ignore one of them. Rename one."
+            )
+        unknown = wanted - set(scene.targets) - surfaces
         if unknown:
             raise ValueError(
-                f"prim_to_target names targets that the scene does not define: {sorted(unknown)}; "
-                f"the scene has {sorted(scene.targets)}"
+                f"prim_to_target names things the scene does not define: {sorted(unknown)}; "
+                f"the scene has targets {sorted(scene.targets)} and thermal surfaces "
+                f"{sorted(surfaces)}"
             )
         if tick_hz <= 0.0:
             raise ValueError("tick_hz must be positive")
@@ -174,6 +189,11 @@ class AerialThermalBridge:
 
         self.scene = scene
         self.prim_to_target = dict(prim_to_target)
+        #: Which of the mapped names are §12.3 thermal surfaces rather than target solvers.
+        #: A surface has no per-name bracket here: the scene's one `ThermalField` integrates every
+        #: facet together (the facets share a forcing, and a two-node wall's back face is another
+        #: facet's front), so the bridge advances the *field* and reads each surface out of it.
+        self.surface_names = frozenset(wanted & surfaces)
         self.sky = sky
         self.sea = sea
         self.band = band
@@ -197,6 +217,7 @@ class AerialThermalBridge:
         initial = {name: float(s.temperature()) for name, s in scene.targets.items()}
         self._bracket = TickBracket(0.0, 0.0, dict(initial), dict(initial))
         self._advance_one_tick()
+        self._advance_field_to(0.0)
 
     # -- the thermal clock ----------------------------------------------------------------
 
@@ -208,6 +229,19 @@ class AerialThermalBridge:
     @property
     def bracket(self) -> TickBracket:
         return self._bracket
+
+    def _advance_field_to(self, t_rel_s: float) -> None:
+        """Push the §12.3 `ThermalField` up to a render time (M10.3).
+
+        Separate from the target bracket because the field is a different kind of object: it
+        refuses a query past its last tick rather than solving on demand, precisely so that a
+        renderer asking many times per tick cannot change the answer by asking. So the advance is
+        explicit, happens once per clock move, and is in **absolute** weather-axis time -- the
+        field was spun up on that axis and a relative time would read a different hour of the day.
+        """
+        if not self.surface_names or self.scene.thermal is None:
+            return
+        self.scene.thermal.advance_to(self.scene.t0_s + float(t_rel_s))
 
     def _advance_one_tick(self) -> None:
         b = self._bracket
@@ -229,12 +263,24 @@ class AerialThermalBridge:
             )
         while t > self._bracket.t_next_s + 1e-12:
             self._advance_one_tick()
+        self._advance_field_to(t)
         self._t_rel_s = t
         return self.temperatures()
 
     def temperatures(self) -> dict[str, float]:
-        """Target temperatures interpolated to the current render time."""
-        return self._bracket.interpolate(self._t_rel_s)
+        """Every mapped node's temperature at the current render time.
+
+        Targets come from the tick bracket; §12.3 thermal surfaces are read from the scene's
+        ``ThermalField`` (M10.3). **The two use different time bases and that is the trap**: the
+        bracket runs on time *relative* to the scene start, and `ThermalField.temperature_at`
+        takes weather-axis *absolute* time, so the surface lookup adds ``t0_s``. Get it wrong and
+        the render shows a different hour of the day with no other symptom.
+        """
+        out = dict(self._bracket.interpolate(self._t_rel_s))
+        absolute = self.scene.t0_s + self._t_rel_s
+        for name in self.surface_names:
+            out[name] = self.scene.surface_temperature_k(name, absolute)
+        return out
 
     def tick_error_k(self, name: str) -> float:
         """Bound on the interpolation error for one target across the current tick.
@@ -244,6 +290,10 @@ class AerialThermalBridge:
         rather than an assumption; an exponential node with tau = 900 s and a 1 s tick gives a few
         microkelvin, which is why 1 Hz is enough for phase 1.
         """
+        if name in self.surface_names:
+            # A thermal surface is interpolated inside the ThermalField over its own solver step,
+            # not across this bridge's tick, so this bridge contributes no error for it.
+            return 0.0
         solver = self.scene.targets[name]
         tau = float(getattr(solver, "tau_s", 0.0) or 0.0)
         if tau <= 0.0:

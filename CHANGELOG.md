@@ -43,6 +43,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   aircraft pass gains a 3.6 % tail, the first trail this repository has rendered (13 tests).
 
 ### Added
+- **A rendered prim can take its temperature from the §12.3 thermal solver** (M10.3). Phase 1
+  mapped a prim to one of the scene's target solvers — a scripted drone motor, a relaxing airframe.
+  A prim can now map to a thermal *surface* instead, so a rendered roof is the one M6.12's energy
+  balance solved rather than a number typed beside it. Both kinds live in one map, because "a thing
+  with a temperature" is all the G-buffer cares about; a name that is **both** is refused rather
+  than resolved by precedence, since whichever won the other would be silently ignored.
+- The bridge **advances** the field rather than only reading it. `ThermalField` refuses a query
+  past its last tick instead of solving on demand — precisely so that a renderer asking many times
+  per tick cannot change the answer by asking — so the advance is explicit and happens once per
+  clock move.
+- ⚠️ **The two kinds use different time bases**: the target bracket runs on time relative to the
+  scene start, and `ThermalField.temperature_at` takes absolute weather-axis time. On the facet
+  scene a relative lookup *raises*, because that scene starts a day into its weather file — but
+  that is luck, not a guarantee: on a scene whose `t0_s` is zero the same mistake would return a
+  plausible number from the wrong hour with no symptom at all. The convention is in the docstring
+  and pinned by a test.
 - **The first Tier 4 acceptance run — and it fails, which is the result** (M12.2).
   `docs/validation/tier4-2026-09-15.md` compares six real Halmstad clips against six matched
   renders: histogram EMD **24.7 codes** against a target of 8, PSD shape ratio **5.70** against 1.5,
