@@ -97,7 +97,9 @@ def _open_stage_and_walk(stage_path: pathlib.Path, root: str) -> tuple[list, obj
     """
     from isaacsim import SimulationApp
 
-    app = SimulationApp({"headless": True})
+    from irsim_isaac.env import simulation_app_config
+
+    app = SimulationApp(simulation_app_config())
     import omni.usd
 
     from irsim_isaac.pipeline.materials_usd import prim_records

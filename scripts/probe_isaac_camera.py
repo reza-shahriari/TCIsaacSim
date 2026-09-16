@@ -28,7 +28,9 @@ args = parser.parse_args()
 t_boot = time.time()
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True})
+from irsim_isaac.env import simulation_app_config  # noqa: E402
+
+app = SimulationApp(simulation_app_config())
 boot_s = time.time() - t_boot
 
 from irsim_isaac.camera_probe import survey_distortion_schemas  # noqa: E402

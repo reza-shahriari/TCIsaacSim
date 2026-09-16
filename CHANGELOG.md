@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Every Isaac entry point picks its GPU through one helper** (`irsim_isaac.env.simulation_app_config`).
+  This workstation has two cards and the owner works on the second one, so a render that spreads
+  across both takes memory somebody is using — and Kit's multi-GPU render graph does exactly that by
+  default, dying with `ERROR_OUT_OF_DEVICE_MEMORY` and then segfaulting shortly after `app ready`.
+  All eleven boot sites (six render drivers, four probes, `audit_materials --stage`) now go through
+  the helper, which pins `active_gpu` and turns `multi_gpu` off. `IRSIM_GPU` overrides it: an index,
+  or `all` to hand the choice back to Kit.
+- Two measured details are baked in rather than left to the caller. **`CUDA_VISIBLE_DEVICES` cannot
+  do this job** — Kit selects a *Vulkan* device, so a render launched under it still allocates on
+  every card. And **CUDA's default device order is `FASTEST_FIRST`**, which on this machine puts the
+  5090 at index 0 and the A6000 at 1, the reverse of what `nvidia-smi` prints: a render pinned with
+  `CUDA_VISIBLE_DEVICES=0` came up on the card that flag looks like it excludes. The helper sets
+  `CUDA_DEVICE_ORDER=PCI_BUS_ID` (without overriding an explicit one) so an index means what the
+  person typing it means. Seven cases in `tests/unit/test_isaac_env.py`, including the refusal of a
+  GPU that is neither an index nor `all` — defaulting there would render on whichever card and only
+  `nvidia-smi` would ever say which.
 - **`scripts/stage_own_hunk.sh` is now the default commit path for shared files, not just an
   available one** (`RP.3`). A whole-file write has silently reverted another session's committed
   work three times in two days; the script already three-way merged a session's edit onto HEAD, but

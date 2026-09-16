@@ -9,6 +9,7 @@ the same thing on a laptop with no Isaac Sim as on the workstation.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -102,3 +103,65 @@ def test_this_isaac_build_really_does_carry_an_importable_warp() -> None:
     probe reports Warp available without Kit ever having been started."""
     assert env.warp_extension_path() is not None, env.isaac_root()
     assert env.has_warp()
+
+
+# --- which GPU a render runs on ----------------------------------------------------------------
+
+
+def test_the_default_config_pins_the_first_gpu_and_turns_multi_gpu_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The owner works on the second card; a render that spreads onto it takes their memory."""
+    monkeypatch.delenv(env.GPU_ENV_VAR, raising=False)
+    config = env.simulation_app_config()
+    assert config == {"headless": True, "active_gpu": 0, "multi_gpu": False}
+
+
+def test_the_gpu_index_means_the_one_nvidia_smi_prints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CUDA's own default order is FASTEST_FIRST, which reverses the two cards on this machine.
+
+    Without this the whole knob selects the wrong GPU while looking correct, which is exactly what
+    happened when a render pinned with ``CUDA_VISIBLE_DEVICES=0`` came up on the *other* card.
+    """
+    monkeypatch.delenv("CUDA_DEVICE_ORDER", raising=False)
+    env.simulation_app_config()
+    assert os.environ["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
+
+
+def test_an_explicit_device_order_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CUDA_DEVICE_ORDER", "FASTEST_FIRST")
+    env.simulation_app_config()
+    assert os.environ["CUDA_DEVICE_ORDER"] == "FASTEST_FIRST"
+
+
+@pytest.mark.parametrize("value", ["1", " 1 "])
+def test_the_env_var_selects_another_card(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(env.GPU_ENV_VAR, value)
+    assert env.simulation_app_config()["active_gpu"] == 1
+
+
+@pytest.mark.parametrize("value", ["all", "ALL", "*"])
+def test_all_hands_the_choice_back_to_kit(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Not the same as pinning every card: Kit's own multi-GPU default is what it gets back."""
+    monkeypatch.setenv(env.GPU_ENV_VAR, value)
+    config = env.simulation_app_config()
+    assert "active_gpu" not in config
+    assert "multi_gpu" not in config
+
+
+def test_a_nonsense_gpu_is_refused_rather_than_silently_defaulted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defaulting would render on whichever card, and only nvidia-smi would ever say which."""
+    monkeypatch.setenv(env.GPU_ENV_VAR, "the fast one")
+    with pytest.raises(ValueError, match="neither a GPU index nor"):
+        env.simulation_app_config()
+
+
+def test_a_caller_can_still_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`render_car_ignition` needs `RayTracedLighting`; the GPU choice must survive that."""
+    monkeypatch.delenv(env.GPU_ENV_VAR, raising=False)
+    config = env.simulation_app_config(renderer="RayTracedLighting", headless=False)
+    assert config["renderer"] == "RayTracedLighting"
+    assert config["headless"] is False
+    assert config["active_gpu"] == 0

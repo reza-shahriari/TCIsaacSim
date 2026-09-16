@@ -26,14 +26,17 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 __all__ = [
+    "GPU_ENV_VAR",
     "ensure_warp_on_path",
     "has_isaac",
     "has_warp",
     "isaac_root",
     "require_isaac",
     "require_warp",
+    "simulation_app_config",
     "warp_extension_path",
 ]
 
@@ -142,3 +145,47 @@ def require_warp() -> None:
             "run through the Isaac Sim interpreter, or point $IRSIM_WARP_PATH at a directory "
             "containing the `warp` package (docs/decisions/0014 addendum)."
         )
+
+
+#: Which GPU the renderer runs on. An index, or ``all`` for Kit's own multi-GPU behaviour.
+GPU_ENV_VAR = "IRSIM_GPU"
+
+#: The A6000 on this machine. The other card is the one the owner works on, so a render that
+#: spreads onto it takes memory somebody is using.
+DEFAULT_GPU = 0
+
+
+def simulation_app_config(**overrides: Any) -> dict[str, Any]:
+    """The ``SimulationApp`` config every script boots with, with the render GPU pinned.
+
+    ``$IRSIM_GPU`` selects the card: an index (the default is ``0``), or ``all`` to hand the
+    choice back to Kit. It is an environment variable rather than a flag because all eleven
+    entry points -- six render drivers, four probes and the material audit -- need the same
+    answer, and because it has to be set before ``SimulationApp`` is constructed, which happens
+    at import time.
+
+    **``CUDA_VISIBLE_DEVICES`` does not do this job.** Kit picks a *Vulkan* device, so a render
+    launched under it still allocates its multi-GPU render graph on every card and dies with
+    ``ERROR_OUT_OF_DEVICE_MEMORY`` when another one is busy -- measured 2026-09-16, a car render
+    that reached ``app ready`` and then segfaulted while the second GPU held 26 GB of somebody
+    else's job. ``active_gpu`` and ``multi_gpu`` are the keys Isaac turns into
+    ``--/renderer/activeGpu=`` and ``--/renderer/multiGpu/enabled=``, which do.
+    """
+    # Make every GPU index in this project mean the one `nvidia-smi` prints. CUDA's own default
+    # is FASTEST_FIRST, which on this machine puts the 5090 at index 0 and the A6000 at 1 -- the
+    # reverse of nvidia-smi's PCI order, so `CUDA_VISIBLE_DEVICES=0` selects the card it looks
+    # like it excludes (measured 2026-09-16: Warp reported `cuda:0` as the 5090 under it). Set
+    # before `SimulationApp` is constructed, which is before CUDA initialises; an explicit value
+    # in the environment still wins.
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    config: dict[str, Any] = {"headless": True}
+    raw = os.environ.get(GPU_ENV_VAR, "").strip()
+    if raw.lower() not in {"all", "*"}:
+        try:
+            gpu = DEFAULT_GPU if not raw else int(raw)
+        except ValueError:
+            raise ValueError(f"{GPU_ENV_VAR}={raw!r} is neither a GPU index nor 'all'") from None
+        config["active_gpu"] = gpu
+        config["multi_gpu"] = False
+    config.update(overrides)
+    return config

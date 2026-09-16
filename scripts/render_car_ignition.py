@@ -100,7 +100,9 @@ sys.path.insert(0, str(REPO / "src"))
 _t0 = time.time()
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True, "renderer": "RayTracedLighting"})
+from irsim_isaac.env import simulation_app_config  # noqa: E402
+
+app = SimulationApp(simulation_app_config(renderer="RayTracedLighting"))
 boot_s = time.time() - _t0
 
 

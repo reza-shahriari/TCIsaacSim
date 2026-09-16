@@ -286,6 +286,21 @@ no Isaac). `make ci` reproduces the CI job locally in a `.venv-ci` built from `p
 | `make luts` | Regenerate band LUTs from configs and spectral data into `data/lut/` (gitignored; loader detects stale bundles, ADR 0012) |
 | `make golden-update` | Regenerate golden reference arrays deliberately (ADR 0004) |
 
+**Which GPU a render uses.** Every Isaac entry point — the six render drivers, the four probes and
+`audit_materials --stage` — boots through `irsim_isaac.env.simulation_app_config`, which pins the
+renderer to **GPU 0** and turns Kit's multi-GPU render graph off. Override with `IRSIM_GPU`:
+
+```bash
+IRSIM_GPU=1   python.sh scripts/render_car_ignition.py    # the other card
+IRSIM_GPU=all python.sh scripts/render_car_ignition.py    # Kit's own multi-GPU default
+```
+
+Indices are the ones `nvidia-smi` prints: the helper sets `CUDA_DEVICE_ORDER=PCI_BUS_ID`, because
+CUDA's own default is `FASTEST_FIRST` and reverses the two cards on this machine — so
+`CUDA_VISIBLE_DEVICES=0` selects the card it looks like it excludes. `CUDA_VISIBLE_DEVICES` cannot
+do this job anyway: Kit picks a *Vulkan* device, so a render launched under it still allocates on
+every card and dies with `ERROR_OUT_OF_DEVICE_MEMORY` when another one is busy.
+
 ## Layout
 
 ```

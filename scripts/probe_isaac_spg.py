@@ -31,7 +31,9 @@ args = parser.parse_args()
 t0 = time.time()
 from isaacsim import SimulationApp  # noqa: E402
 
-app = SimulationApp({"headless": True})
+from irsim_isaac.env import simulation_app_config  # noqa: E402
+
+app = SimulationApp(simulation_app_config())
 
 from irsim_isaac.probe import build_ramp_scene  # noqa: E402
 from irsim_isaac.spg_probe import ALL_EXPERIMENTS, run_spg_experiments, save  # noqa: E402
