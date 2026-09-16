@@ -13,6 +13,28 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **A point-wise surface is declarable in a scene config** (`PT.2`, schema **v7**). `SurfaceSpec`
+  carried name, material, tilt, azimuth, shaded and vehicle_speed — nothing spatial — so the only
+  point-wise scene that existed was `irsim_isaac.car_demo`, which hand-wrote its bonnet and road
+  patches, with `surface_fields=` passed at exactly one call site. The owner's own bar for a lane,
+  "a scene config plus one command produces frames", was therefore unmeetable for any *new*
+  point-wise scene — the requirement this whole lane exists to serve.
+- `PatchSpec` adds a `patch:` block: origin, axes, cell counts and sizes, slab thickness, frame name
+  and the prim path that binds the solved field to geometry. `irsim.scene.build_patch` hands it to
+  `PlanarPatch`, and `Scene.patches` / `Scene.patch_prims` expose the result by surface name, so a
+  render driver reads a grid instead of building one. The block is **optional**: every v4–v6 scene
+  loads and solves unchanged, and the seven shipped configs move to v7 without gaining a patch.
+- Validation lives in both layers on purpose — the schema so a scene that cannot be solved fails at
+  *load* rather than half an hour into a Kit session, the dataclass so a patch built in Python is
+  held to the same rule. Non-perpendicular axes, a zero-length axis, zero thickness and zero extents
+  all raise; orthogonality is required rather than repaired by Gram-Schmidt, because two axes five
+  degrees off perpendicular meant something and a squared-up grid would sample a surface nobody
+  described.
+- Sixteen cases. The two that carry the weight are the acceptance ones: the car demo's hand-built
+  bonnet and road patches come back from a declaration with **bit-identical** cell centres — array
+  equality, not `approx`, because a nearly-right patch produces a plausible gradient — and a field
+  solved on each agrees bit-identically **after 1500 s**, with a check that the run moved at all so
+  the equality is not two copies of the initial state.
 - **ADR status hygiene: one spelling, and supersessions that are actually recorded** (`RP.5`). Three
   spellings were in use across 88 files — `**Status:** Accepted` (70), `Status: accepted` (11) and
   `- Status: accepted` (7) — so no single grep answered "what is the state of the record". All are now

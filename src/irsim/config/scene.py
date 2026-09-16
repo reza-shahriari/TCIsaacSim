@@ -19,13 +19,22 @@ docs/physics-model.md §6.5, §6.6, §12.2
 
 from __future__ import annotations
 
+import math
 import os
 import pathlib
 from datetime import datetime
 from typing import Literal
 
+import numpy as np
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 __all__ = [
     "SCENE_SCHEMA_VERSION",
@@ -39,7 +48,7 @@ __all__ = [
     "load_scene_config",
 ]
 
-SCENE_SCHEMA_VERSION = 6  # v6: the vehicle_source solver (§6.6, ADR 0089)
+SCENE_SCHEMA_VERSION = 7  # v7: a surface may declare a `patch:` block (ADR 0087, PT.2)
 #: The oldest version this loader still accepts. v5 added `thermal:` as an **optional** field, so
 #: every v4 document is a valid v5 document and refusing one would be refusing it for a change
 #: that cannot affect it. A range is the honest representation of a backwards-compatible change;
@@ -222,6 +231,64 @@ class TargetSpec(_Frozen):
         return self
 
 
+class PatchSpec(_Frozen):
+    """The spatial half of a surface: a rectangular grid of cells on a plane (ADR 0087, PT.2).
+
+    Until now a point-wise surface could only be built in Python — `irsim_isaac.car_demo` hand-wrote
+    its bonnet and road patches and `surface_fields=` was passed at exactly one call site. That
+    makes the owner's own bar -- "a scene config plus one command produces frames" -- unmeetable
+    for any new point-wise scene, which is the requirement point-wise temperature exists to serve.
+
+    The fields are :class:`~irsim.thermal.surface_field.PlanarPatch`'s, declared rather than
+    computed: cell ``(i_v, i_u)`` is centred at ``origin_m + (i_u + ½)·du·u + (i_v + ½)·dv·v``.
+
+    ``frame`` is a *name*, not a transform — ``"world"`` for a road, a prim path for a panel that
+    moves with its object — and `irsim_isaac.pipeline.point_bridge` checks it rather than assuming.
+    ``prim_path`` is what binds the solved field to geometry at render time; a patch without one is
+    still solvable, it simply never reaches a pixel.
+    """
+
+    origin_m: tuple[float, float, float]
+    u_axis: tuple[float, float, float]
+    v_axis: tuple[float, float, float]
+    n_u: int = Field(ge=1)
+    n_v: int = Field(ge=1)
+    du_m: float = Field(gt=0.0)
+    dv_m: float = Field(gt=0.0)
+    #: A patch claims a **slab**, not a plane: a bonnet 0.9 m above a road projects into the road's
+    #: own rectangle, and a patch testing only its in-plane extent would paint the car with the road
+    #: and look reasonable doing it (ADR 0087).
+    thickness_m: float = Field(default=0.25, gt=0.0)
+    frame: str = Field(default="world", min_length=1)
+    prim_path: str | None = None
+
+    @field_validator("u_axis", "v_axis")
+    @classmethod
+    def _non_zero(cls, v: tuple[float, float, float], info: ValidationInfo) -> tuple[float, ...]:
+        if math.isclose(sum(c * c for c in v), 0.0, abs_tol=1e-18):
+            raise ValueError(f"{info.field_name} has zero length")
+        return v
+
+    @model_validator(mode="after")
+    def _perpendicular(self) -> PatchSpec:
+        """Checked here as well as in `PlanarPatch`, so a bad scene fails at load, not at render.
+
+        Orthogonality is required rather than silently repaired by Gram-Schmidt: a caller who wrote
+        two axes five degrees from perpendicular meant something, and a quietly squared-up grid
+        would sample a surface nobody described.
+        """
+        u, v = np.asarray(self.u_axis, dtype=float), np.asarray(self.v_axis, dtype=float)
+        u = u / float(np.linalg.norm(u))
+        v = v / float(np.linalg.norm(v))
+        if abs(float(np.dot(u, v))) > 1e-9:
+            raise ValueError(
+                f"u_axis {self.u_axis} and v_axis {self.v_axis} must be perpendicular; "
+                f"they meet at {math.degrees(math.acos(min(1.0, abs(float(np.dot(u, v)))))):.3f} "
+                "degrees from it"
+            )
+        return self
+
+
 class SurfaceSpec(_Frozen):
     """One thermally solved surface: a material, where it faces, and whether it is shaded.
 
@@ -237,6 +304,10 @@ class SurfaceSpec(_Frozen):
     azimuth_deg: float = Field(default=180.0, ge=0.0, lt=360.0)
     shaded: bool = False
     vehicle_speed_m_s: float = Field(default=0.0, ge=0.0)
+    #: Present makes this surface point-wise: one temperature per cell instead of one for the
+    #: whole surface. Absent leaves the surface exactly as it was, so every v4-v6 scene loads
+    #: and solves unchanged (schema v7, PT.2).
+    patch: PatchSpec | None = None
 
 
 class ThermalSceneSpec(_Frozen):

@@ -28,7 +28,13 @@ from irsim.atmosphere.model import Atmosphere
 from irsim.atmosphere.sky import SkyModel
 from irsim.config.environment import EnvironmentSpec, load_environment_preset
 from irsim.config.loader import resolve_data_dir
-from irsim.config.scene import SceneConfig, SceneSpec, TargetSpec, load_scene_config
+from irsim.config.scene import (
+    PatchSpec,
+    SceneConfig,
+    SceneSpec,
+    TargetSpec,
+    load_scene_config,
+)
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.thermal.aerial import (
     AERIAL_HEAT_SOURCES,
@@ -38,11 +44,34 @@ from irsim.thermal.aerial import (
     ram_skin_solver,
 )
 from irsim.thermal.solvers import NewtonCoolingSolver, PrescribedSolver, TemperatureSolver
+from irsim.thermal.surface_field import PlanarPatch
 from irsim.thermal.vehicle import VEHICLE_HEAT_SOURCES, VehicleSourceSolver
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 from irsim.thermal.weather_io import load_weather_csv
 
 __all__ = ["Scene", "build_target"]
+
+
+def build_patch(spec: PatchSpec) -> PlanarPatch:
+    """A declared `patch:` block as the grid the solver runs on (ADR 0087, PT.2).
+
+    A straight hand-over: every field of :class:`~irsim.config.scene.PatchSpec` is a field of
+    :class:`~irsim.thermal.surface_field.PlanarPatch`, and the validation lives in both — the schema
+    so a bad scene fails at load rather than at render, the dataclass so a patch built in Python is
+    held to the same rule. ``prim_path`` is not passed on: it binds the solved field to geometry at
+    render time and is no business of the thermal grid.
+    """
+    return PlanarPatch(
+        origin_m=np.asarray(spec.origin_m, dtype=np.float64),
+        u_axis=np.asarray(spec.u_axis, dtype=np.float64),
+        v_axis=np.asarray(spec.v_axis, dtype=np.float64),
+        n_u=spec.n_u,
+        n_v=spec.n_v,
+        du_m=spec.du_m,
+        dv_m=spec.dv_m,
+        thickness_m=spec.thickness_m,
+        frame=spec.frame,
+    )
 
 
 def build_target(spec: TargetSpec, weather: WeatherSeries, t0_s: float) -> TemperatureSolver:
@@ -118,6 +147,12 @@ class Scene:
     #: registered as a consumer through its forcing model, so the one-weather guard sees it.
     thermal: Any = None  # ThermalField; Any avoids importing it into this module's signature
     thermal_surfaces: tuple[str, ...] = ()
+    #: ``{surface name: patch}`` for every surface whose config declared one (schema v7, PT.2).
+    #: Empty for a scene with no point-wise surface, which is every scene before v7.
+    patches: Mapping[str, PlanarPatch] = field(default_factory=dict)
+    #: ``{surface name: prim path}`` for the patches that named one, which is what binds a
+    #: solved field to geometry at render time.
+    patch_prims: Mapping[str, str] = field(default_factory=dict)
     sky_models: Mapping[str, SkyModel] = field(default_factory=dict)  # per band (MS.2)
     extra_consumers: Mapping[str, Any] = field(
         default_factory=dict
@@ -205,6 +240,13 @@ class Scene:
                     skylight=None if skylights is None else skylights.get(band),
                 )
         thermal, surface_names = _build_thermal_field(spec, weather, t0_s, data_dir)
+        patches, patch_prims = {}, {}
+        for surface in spec.thermal.surfaces if spec.thermal is not None else ():
+            if surface.patch is None:
+                continue
+            patches[surface.name] = build_patch(surface.patch)
+            if surface.patch.prim_path:
+                patch_prims[surface.name] = surface.patch.prim_path
         return cls(
             spec=spec,
             weather=weather,
@@ -216,6 +258,8 @@ class Scene:
             sky_models=sky_models,
             thermal=thermal,
             thermal_surfaces=surface_names,
+            patches=patches,
+            patch_prims=patch_prims,
         )
 
     @classmethod
