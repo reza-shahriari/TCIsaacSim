@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The row-length lint the roadmap says enforces it** (`RP.9`). Revision 4's own prose states "Step
+  rows are capped at 600 characters and ledger rows at 200, enforced by a parser in `make check`
+  (RP.9)". Until now that was a sentence — and a sentence is exactly what revision 3 had, whose rows
+  averaged **1,234 characters** with a 4,958 maximum, held 224,508 of its 298,272 characters inside
+  table cells, and were unmergeable between two sessions without a manual rewrite. That is how four
+  subsystems came to be over-reported and how a whole-file write silently reverted committed work.
+- `tests/unit/test_roadmap_row_length.py` owns the 600; the ledger's 200 already has an owner
+  (`test_shipped_ledger.py`, `RP.6`) and is not duplicated. **Scope is stated in the parser**, because
+  a lint that creeps is a lint that gets disabled: step tables only, never prose, never the phase or
+  risk tables, never the generated *Do next* block — whose rows begin with a position number rather
+  than a step id, so the block cannot start linting itself. Three of the twelve cases check exactly
+  that scope rather than assuming it, including that no step row is found above the first lane
+  heading and that no ledger row leaks in at the wrong cap.
+- Self-tested on a synthetic over-length row so the lint is shown to *catch* rather than merely pass,
+  and negative-controlled by fattening a real row (`IG.13`) past the cap. This is a lint, not a
+  physics verification, and is not counted as one.
+
 - **The shipped ledger points at commits instead of saying `pending`** (`RP.6`). Revision 3 of the
   roadmap prescribed `done YYYY-MM-DD <hash>` and **zero of its 162 done rows carried one** — M0.1
   included, the row it used as the example of the format. All seventeen shipped milestones now carry
