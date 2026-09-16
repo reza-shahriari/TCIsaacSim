@@ -16,7 +16,13 @@ import yaml
 
 from irsim.config.environment import EnvironmentConfig, load_environment_preset
 from irsim.pipeline.environment import ground_temperature_k
-from irsim_isaac.maritime_demo import DEMO_VESSELS, EARTH_RADIUS_M, Vessel, _taper
+from irsim_isaac.maritime_demo import (
+    DEMO_VESSELS,
+    EARTH_RADIUS_M,
+    DepartureTrack,
+    Vessel,
+    _taper,
+)
 
 # -- the sea ground mode (MM.5) -----------------------------------------------------------
 
@@ -82,7 +88,7 @@ def test_a_vessel_sits_at_the_depression_its_range_implies() -> None:
     depression angle, which at this scale is two Boson pixels of vertical placement. Dropping it
     would put every distant vessel visibly above its own horizon.
     """
-    vessel = Vessel("v", 5200.0, 95.0, 0.0, "painted_composite", "a", "b", "c")
+    vessel = Vessel("v", 5200.0, 95.0, 0.0, "painted_composite", "r", "a", "b", "c")
     drop = 5200.0**2 / (2.0 * EARTH_RADIUS_M)
     assert drop == pytest.approx(2.12, abs=0.02)
 
@@ -103,7 +109,7 @@ def test_vessels_are_resolved_at_every_demo_range() -> None:
     ifov_mrad = 0.857
     spans = {}
     for name, range_m, length_m, offset_m, material, _node in DEMO_VESSELS:
-        v = Vessel(name, range_m, length_m, offset_m, material, "a", "b", "c")
+        v = Vessel(name, range_m, length_m, offset_m, material, "r", "a", "b", "c")
         spans[name] = v.pixels_across(ifov_mrad)
         assert spans[name] > 5.0
 
@@ -126,3 +132,65 @@ def test_wave_displacement_is_tapered_off_where_the_mesh_cannot_resolve_it() -> 
     # monotone in resolvability
     coarse = [_taper(s, 42.0) for s in (5.0, 10.0, 14.0, 18.0, 21.0)]
     assert all(a >= b for a, b in zip(coarse, coarse[1:], strict=False))
+
+
+# -- the departure track (MM.7) -----------------------------------------------------------
+
+
+def test_the_departure_track_recedes_and_drops_below_the_curve() -> None:
+    """Range grows linearly, depression shrinks toward the horizon, size falls as 1/R.
+
+    The curvature term is what makes the end of the film right: at 6 km the surface has dropped
+    2.8 m, which against a 20 m eye height is a 14 % change in the depression angle. Without it the
+    vessel would sit visibly above the horizon it is supposed to be sinking under.
+    """
+    track = DepartureTrack(start_range_m=250.0, speed_m_s=6.0, camera_height_m=20.0)
+
+    assert track.range_m(0.0) == pytest.approx(250.0)
+    assert track.range_m(960.0) == pytest.approx(6010.0)
+
+    depressions = [track.depression_deg(t) for t in (0.0, 120.0, 480.0, 960.0)]
+    assert all(a > b for a, b in zip(depressions, depressions[1:], strict=False))
+    assert depressions[0] == pytest.approx(4.575, abs=0.01)
+
+    flat = math.degrees(math.atan2(20.0, 6010.0))
+    assert track.depression_deg(960.0) > flat
+    assert track.depression_deg(960.0) / flat == pytest.approx(1.14, abs=0.02)
+
+    # 1/R, so a 90 m hull goes from 420 px to 17.5 px over the film at the Boson's IFOV.
+    assert track.pixels_across(0.0, 90.0, 0.857) == pytest.approx(420.0, rel=0.01)
+    assert track.pixels_across(960.0, 90.0, 0.857) == pytest.approx(17.5, rel=0.01)
+
+
+def test_the_vessel_reaches_the_horizon_at_the_geometric_range() -> None:
+    """It goes hull-down at sqrt(2 h R_e), not when a flat-earth model would say."""
+    track = DepartureTrack(start_range_m=250.0, speed_m_s=6.0, camera_height_m=20.0)
+    far = math.sqrt(2.0 * 20.0 * EARTH_RADIUS_M)
+
+    assert far == pytest.approx(15_963.0, rel=1e-3)
+    assert track.range_m(track.horizon_time_s()) == pytest.approx(far, rel=1e-6)
+    assert track.horizon_time_s() == pytest.approx((far - 250.0) / 6.0, rel=1e-9)
+
+
+def test_a_vessel_that_never_leaves_is_refused() -> None:
+    with pytest.raises(ValueError, match="under way"):
+        DepartureTrack(start_range_m=250.0, speed_m_s=0.0)
+    with pytest.raises(ValueError, match="in front of the camera"):
+        DepartureTrack(start_range_m=0.0, speed_m_s=6.0)
+
+
+def test_the_funnel_is_painted_not_bare_metal() -> None:
+    """A bare-metal funnel reads cold however hot it is, which would delete the whole film.
+
+    Bare aluminium is ε = 0.09 in LWIR: at 450 K it reflects the cold sky far more than it
+    radiates, and the first version of this stage rendered a 155 C funnel as a *dark* rectangle.
+    Real funnels are painted steel. This test exists because the mistake is invisible in the
+    geometry and only shows up in the picture.
+    """
+    from irsim.materials.library import MaterialLibrary
+
+    library = MaterialLibrary.load()
+    painted = library.get("painted_composite").band_properties("lwir").emissivity
+    bare = library.get("bare_aluminium").band_properties("lwir").emissivity
+    assert painted > 0.9
+    assert bare < 0.15

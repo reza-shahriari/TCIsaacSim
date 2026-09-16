@@ -1,0 +1,55 @@
+# A vessel getting under way and steaming out to the horizon, filmed from a fixed shore mount.
+# Schema: irsim.config.scene (v4). Roadmap MM.7.
+#
+# The weather FILE is named here and nowhere else: the Scene loads it once and injects the one
+# WeatherSeries into the atmosphere, the sky, the SEA (its wind is what roughens the surface and
+# what the visible wave train is scaled by) and every target node (CLAUDE.md #6).
+#
+# What this scene is for is the ENGINE. A vessel alongside has a cold uptake; ringing for cruise
+# power puts several megawatts of waste heat into it and the funnel skin climbs over several
+# minutes. Filmed against a receding hull, that gives the one thing a static frame cannot show:
+# a target whose signature is getting STRONGER while it gets SMALLER, which is the regime an
+# infrared search set actually works in.
+#
+# The stack schedule below is a first-order rise, T(t) = 455 - 150 exp(-t / 240 s), sampled. It is
+# written out rather than computed because the phase-1 solver set has no marine uptake node -- see
+# the WART note below. ESTIMATED throughout:
+#   305 K alongside   a cold funnel on a summer afternoon, a little above ambient from the
+#                     auxiliary generator that has been running at the berth
+#   455 K at cruise   published funnel-skin figures for marine diesels run roughly 350-500 K
+#                     depending on lagging and load; this is mid-range and deliberately not the
+#                     most flattering number available
+#   tau 240 s         the uptake's thermal time constant, dominated by the lagging. The first
+#                     number a comparison against public maritime IR imagery should re-fit.
+#
+# KNOWN WART (MM.4): the hull temperature is written here as 290.5 K and the bulk SST again in
+# configs/environments/sea_clear_day.yaml as 290.0 K. Two places naming the same water is exactly
+# the split-brain CLAUDE.md #6 exists to prevent. It is here because there is no "floating body"
+# solver kind yet; MM.4 should add one that takes the sea's own temperature, and this note should
+# disappear with it.
+
+schema_version: 4
+scene:
+  name: vessel_departure_clear_day
+  description: "A 30 m vessel leaving at 7 m/s, funnel warming from cold, filmed from 20 m up"
+  weather_file: weather/coastal_sea_breeze_48h.csv      # relative to the data root
+  atmosphere_preset: us_standard_clear
+  environment_preset: sea_clear_day
+  site: {latitude_deg: 36.8, longitude_deg: -5.4, altitude_m: 0.0}
+  # 16:00 local (UTC+1): the sea-breeze peak at 9 m/s, and a sun low enough to lay a glitter path
+  # across the water rather than flatten it from overhead.
+  start_utc: "2024-06-21T15:00:00Z"
+  targets:
+    # Pinned by the water it floats in. Constant, and saying so is more honest than dressing it up
+    # as a schedule that happens to be flat.
+    - {name: hull, solver: prescribed, schedule_s: [0.0, 1800.0], schedule_k: [290.5, 290.5]}
+
+    # Above the waterline, in air, sun-warmed. `airframe` is T_air(t) + offset, which is what an
+    # unpowered skin at low speed does, and a deck is exactly that.
+    - {name: superstructure, solver: airframe, offset_k: 3.5}
+
+    # THE ENGINE. Cold alongside, then cruise power from t = 0.
+    - name: stack
+      solver: prescribed
+      schedule_s: [0.0,   60.0,  120.0, 240.0, 360.0, 480.0, 600.0, 900.0, 1200.0, 1800.0]
+      schedule_k: [305.0, 338.3, 364.0, 399.8, 421.5, 434.7, 442.7, 451.5, 454.0,  455.0]

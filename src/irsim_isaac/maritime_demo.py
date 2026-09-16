@@ -46,6 +46,7 @@ __all__ = [
     "REFERENCE_WIND_M_S",
     "wave_train_for_wind",
     "Vessel",
+    "DepartureTrack",
     "MaritimeDemoScene",
     "DEMO_VESSELS",
     "build_maritime_demo",
@@ -126,6 +127,53 @@ def wave_train_for_wind(wind_m_s: float) -> tuple[tuple[float, float, float, flo
 
 
 @dataclass(frozen=True)
+class DepartureTrack:
+    """A vessel leaving, straight away from a camera at the origin (MM.7).
+
+    Three numbers with physical meanings rather than a waypoint list: it starts at
+    ``start_range_m`` and steams directly away at ``speed_m_s``, so every quantity the film reports
+    -- range, angular size, depression angle -- is available in closed form for a test to state
+    what it should be.
+
+    The camera does **not** track it. That is the point of filming a departure rather than a pass:
+    against a fixed boresight the vessel climbs through the frame as it recedes, because its
+    depression angle shrinks toward the horizon, and it crosses the sea's own angular gradient on
+    the way. A tracking mount would hold it still and throw that away.
+    """
+
+    start_range_m: float = 150.0
+    speed_m_s: float = 7.0
+    camera_height_m: float = 20.0
+    offset_m: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.start_range_m <= 0.0 or self.speed_m_s <= 0.0:
+            raise ValueError("the vessel must start in front of the camera and be under way")
+
+    def range_m(self, t_s: float) -> float:
+        """Ground range at time ``t_s``; the slant range differs by under 1 % past 150 m."""
+        return float(self.start_range_m + self.speed_m_s * float(t_s))
+
+    def position_m(self, t_s: float) -> tuple[float, float, float]:
+        """Where the waterline sits, with the Earth's curve dropping it as it goes."""
+        r = self.range_m(t_s)
+        drop = r * r / (2.0 * EARTH_RADIUS_M)
+        return (float(self.offset_m), float(-self.camera_height_m - drop), float(-r))
+
+    def depression_deg(self, t_s: float) -> float:
+        r = self.range_m(t_s)
+        return math.degrees(math.atan2(self.camera_height_m + r * r / (2.0 * EARTH_RADIUS_M), r))
+
+    def pixels_across(self, t_s: float, size_m: float, ifov_mrad: float) -> float:
+        return 1e3 * size_m / self.range_m(t_s) / ifov_mrad
+
+    def horizon_time_s(self) -> float:
+        """When the vessel reaches the geometric horizon and starts going hull-down."""
+        far = math.sqrt(2.0 * self.camera_height_m * EARTH_RADIUS_M)
+        return max(0.0, (far - self.start_range_m) / self.speed_m_s)
+
+
+@dataclass(frozen=True)
 class Vessel:
     """One vessel: where it floats, how big, and the three prims it is built from."""
 
@@ -134,6 +182,7 @@ class Vessel:
     length_m: float
     offset_m: float
     material: str
+    root_path: str
     hull_path: str
     superstructure_path: str
     stack_path: str
@@ -367,6 +416,7 @@ def build_maritime_demo(
     water_sectors: int = 448,
     water_half_angle_deg: float = 26.0,
     water_max_depression_deg: float = 70.0,
+    heading_deg: float = 0.0,
     wind_dir_deg: float = 35.0,
     wind_speed_m_s: float = REFERENCE_WIND_M_S,
     wave_phase: float = 0.0,
@@ -421,22 +471,32 @@ def build_maritime_demo(
     built: dict[str, Vessel] = {}
     for name, range_m, length_m, offset_m, material, _node in vessels:
         root = f"/World/Targets/{name}"
-        stage.DefinePrim(root, "Xform")
+        # The parts are authored in the vessel's OWN frame -- centreline at x = 0, waterline at
+        # y = 0, amidships at z = 0 -- and the root Xform puts it on the water. That is what lets a
+        # track move it: rewriting one translate op per frame moves the whole vessel, where prims
+        # authored at absolute world positions would have to be rebuilt (MM.7).
+        xform = UsdGeom.Xform.Define(stage, root)
         drop = range_m**2 / (2.0 * EARTH_RADIUS_M)
-        waterline = -camera_height_m - drop
+        xform.AddTranslateOp().Set(
+            Gf.Vec3d(float(offset_m), float(-camera_height_m - drop), float(-range_m))
+        )
+        # Heading 0 lays the hull along +X, broadside to a camera looking down -Z; 90 turns it
+        # bow-away, which is what a departing vessel shows.
+        xform.AddRotateYOp().Set(float(heading_deg))
+
         beam = max(0.22 * length_m, 2.0)
         hull_h = max(0.10 * length_m, 1.2)
         # Hull sits half in the water; superstructure and stack are stacked on it, with the stack
         # small and tall -- it is the one part that is hundreds of kelvin above everything else, so
         # its *size* is what decides whether it survives the PSF.
         parts = {
-            "hull": ((offset_m, waterline + 0.25 * hull_h, -range_m), (length_m, hull_h, beam)),
+            "hull": ((0.0, 0.25 * hull_h, 0.0), (length_m, hull_h, beam)),
             "superstructure": (
-                (offset_m, waterline + hull_h + 0.30 * length_m * 0.18, -range_m),
+                (0.0, hull_h + 0.30 * length_m * 0.18, 0.0),
                 (0.30 * length_m, 0.36 * length_m * 0.18 * 2, 0.7 * beam),
             ),
             "stack": (
-                (offset_m - 0.06 * length_m, waterline + hull_h + 0.16 * length_m, -range_m),
+                (-0.06 * length_m, hull_h + 0.16 * length_m, 0.0),
                 (0.07 * length_m, 0.10 * length_m, 0.22 * beam),
             ),
         }
@@ -445,7 +505,12 @@ def build_maritime_demo(
             path = f"{root}/{part}"
             mesh = _box(stage, path, centre, size)
             paths[part] = path
-            look = material if part != "stack" else "bare_aluminium"
+            # The funnel is PAINTED, not bare metal. Bare aluminium is eps = 0.09 in LWIR, so a
+            # bare-metal funnel reads cold however hot it is -- it reflects the sky instead of
+            # radiating, and the engine signature this stage exists to show disappears. Real
+            # funnels are painted steel, eps ~ 0.9. (Tried the other way round first; the funnel
+            # was a dark rectangle at 155 C.)
+            look = material if part != "stack" else "painted_composite"
             try:
                 attr = mesh.GetPrim().CreateAttribute("thermal:material", Sdf.ValueTypeNames.String)
                 attr.Set(look)
@@ -462,6 +527,7 @@ def build_maritime_demo(
             length_m=float(length_m),
             offset_m=float(offset_m),
             material=material,
+            root_path=root,
             hull_path=paths["hull"],
             superstructure_path=paths["superstructure"],
             stack_path=paths["stack"],
