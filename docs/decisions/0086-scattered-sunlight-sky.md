@@ -1,7 +1,7 @@
 # 0086 — An isotropic scattered-sunlight sky for the reflective bands
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: M11.10 (§5.3, §5.4)
 
 ## Context

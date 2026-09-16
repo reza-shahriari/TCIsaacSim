@@ -1,6 +1,6 @@
 # 0053 — Splitting the T_FPA effects between the detector and the NUC residual
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.2 (`feat(detector): FPA temperature node and gain/offset(T_FPA) polynomials`)
 - Spec: docs/physics-model.md §9.2 ("FPA temperature coupling"), §6.4, §11.2

@@ -1,7 +1,7 @@
 # 0087 — Point-wise surface temperature, parameterised by the position AOV
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: MP.1 (§6.1, §6.4, §13.1)
 
 ## Context

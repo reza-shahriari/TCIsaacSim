@@ -1,6 +1,6 @@
 # ADR 0006 — Temperature encoding for the render G-buffer
 
-**Status:** Accepted
+**Status:** Accepted; the G-buffer transport it was written for superseded by ADR 0014
 **Date:** 2026-09-10
 
 ## Context

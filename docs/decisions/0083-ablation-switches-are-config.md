@@ -1,7 +1,7 @@
 # 0083 — Ablation switches are config, and `schema_version` is not in the config hash
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: ME.8 (§15 Tier 5 caution 1)
 
 ## Context

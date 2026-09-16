@@ -1,6 +1,6 @@
 # 0056 — The millikelvin → DN conversion reference for the NUC residual
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.6 (`feat(noise): NUC residual — gain/offset drift with ΔT_FPA and growth between FFC`)
 - Spec: docs/physics-model.md §11.2, §2 (g_ij, o_ij), §12.2 `nuc`

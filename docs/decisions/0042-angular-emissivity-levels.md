@@ -1,7 +1,7 @@
 # 0042 — Three angular-emissivity levels, declared per material
 
 Date: 2026-09-16
-Status: accepted
+**Status:** Accepted
 Roadmap: M7.6, RP.4 (§4.2, §13.3, §13.5)
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0059 — MTF conventions: supersample box as MTF_det, band-representative λ, one Gaussian, motion MTF photon-only
 
-**Status:** Accepted
+**Status:** Accepted; the motion-MTF clause superseded by ADR 0077
 **Date:** 2026-09-11
 
 ## Context
@@ -27,8 +27,13 @@ IIR (spec issue S20).
   across a 6 µm band is a second-order effect at ξ_N (≈ ±10 % of MTF_diff) and is accepted.
 - **One Gaussian** (`mtf.aberration_sigma_um`, fitted from a slant edge) stands for aberration and
   defocus; **MTF_elec = 1**.
-- **Motion MTF is photon-detector only** (sinc of the smear during t_int); bolometer smear is the
-  inter-frame IIR of §9.2 (M9.1), never a second blur.
+- ~~**Motion MTF is photon-detector only** (sinc of the smear during t_int); bolometer smear is
+  the inter-frame IIR of §9.2 (M9.1), never a second blur.~~ **Superseded by ADR 0077** (RP.5).
+  The two are different mechanisms and a bolometer has both: the IIR is a *temporal* lag across
+  frames, while a scene crossing the focal plane during an integration smears *within* the frame
+  whatever the detector. ADR 0077 makes `smear_duty(None)` mean a bolometer and therefore 1, so
+  `optics/stage.py` applies the full-frame smear this clause forbade. The clause conflated the
+  thermal lag with the motion MTF; the rest of this ADR stands.
 - `np.sinc` is normalised: the argument is w·ξ. The double-π bug (0.198 instead of 0.637 at Nyquist)
   is pinned by a test.
 

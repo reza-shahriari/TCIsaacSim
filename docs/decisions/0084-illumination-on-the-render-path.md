@@ -1,7 +1,7 @@
 # 0084 — The illumination bundle on the Isaac render path
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: M10.22 (§5.2, §5.4, §5.5)
 
 ## Context

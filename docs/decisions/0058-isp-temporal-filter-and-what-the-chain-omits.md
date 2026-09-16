@@ -1,6 +1,6 @@
 # 0058 — §11.1's temporal filter, and what the wired chain deliberately omits
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.8 (`feat(pipeline): wire IIR, FPA node, housing, drift, defects, NUC residual, FFC into run_frame`)
 - Spec: docs/physics-model.md §11.1, §11.2, §9.2

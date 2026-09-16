@@ -1,6 +1,6 @@
 # 0054 — The fixed-pattern drift model, and which components drift
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.4 (`feat(noise): mean-reverting (OU) drift of fixed-pattern components`)
 - Spec: docs/physics-model.md §10.3 ("pattern breathing"), §10.2, §8.2

@@ -1,7 +1,7 @@
 # 0089 — §6.6's vehicle heat sources need their own solver kind, not the aerial one
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: MP.4a (§6.6)
 
 ## Context

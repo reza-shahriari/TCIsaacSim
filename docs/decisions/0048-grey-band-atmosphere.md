@@ -1,7 +1,7 @@
 # 0048. One grey extinction coefficient per band (the L2 atmosphere)
 
 Date: 2026-09-11
-Status: accepted
+**Status:** Accepted; the ~500 m range clause superseded by ADR 0071 for slant paths
 
 ## Context
 

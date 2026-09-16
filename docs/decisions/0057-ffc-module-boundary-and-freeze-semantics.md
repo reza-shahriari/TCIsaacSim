@@ -1,6 +1,6 @@
 # 0057 — Where the FFC controller lives, and what the freeze does
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.7 (`feat(isp): FFC controller — schedule, freeze, reset; shutterless and ideal modes`)
 - Spec: docs/physics-model.md §11.2, §12.2 `nuc`, §15 Tier 3

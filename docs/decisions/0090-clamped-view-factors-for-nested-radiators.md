@@ -1,7 +1,7 @@
 # 0090 — Clamp summed view factors instead of partitioning nested radiators
 
 Date: 2026-09-16
-Status: accepted
+**Status:** Accepted
 Roadmap: PT.3 (§6.1, §6.6)
 
 ## Context

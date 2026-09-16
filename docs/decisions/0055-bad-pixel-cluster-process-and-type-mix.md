@@ -1,6 +1,6 @@
 # 0055 — The bad-pixel cluster process, the type mix, and where defects are injected
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.5a (`feat(noise): bad-pixel map by a Poisson cluster process and defect injection`)
 - Spec: docs/physics-model.md §10.4, §11.1

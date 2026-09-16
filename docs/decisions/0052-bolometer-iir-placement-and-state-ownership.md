@@ -1,6 +1,6 @@
 # 0052 — Bolometer IIR: where the thermal lag is applied, and who owns the state
 
-- Status: accepted
+- **Status:** Accepted
 - Date: 2026-09-12
 - Step: M9.1 (`feat(detector): bolometer thermal time constant — stateful per-pixel IIR`)
 - Spec: docs/physics-model.md §9.2; spec issue S8

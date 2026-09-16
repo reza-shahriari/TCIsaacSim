@@ -13,6 +13,25 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **ADR status hygiene: one spelling, and supersessions that are actually recorded** (`RP.5`). Three
+  spellings were in use across 88 files — `**Status:** Accepted` (70), `Status: accepted` (11) and
+  `- Status: accepted` (7) — so no single grep answered "what is the state of the record". All are now
+  `**Status:**`, with the bullet preserved where a file's metadata block is a list.
+- **Nothing had ever been marked superseded**, although ADR 0001's template offers it and at least
+  three decisions had been overtaken in part. `0059` ruled that "bolometer smear is the inter-frame
+  IIR of §9.2, never a second blur"; `0077` then made `smear_duty(None)` mean *a bolometer and
+  therefore 1*, and `optics/stage.py:77` applies exactly the second blur that clause forbade. The two
+  are different mechanisms and a bolometer has both — the IIR is a temporal lag across frames, while a
+  scene crossing the focal plane during an integration smears within the frame whatever the detector
+  — so `0077` is right and the clause conflated the thermal lag with the motion MTF. `0006`'s
+  G-buffer transport was removed by `0014`'s measurement that no colour AOV can carry temperature, and
+  `0048`'s ~500 m range clause by `0071`'s layered slant path.
+- None of the three is superseded *entirely*, so the status line names the clause rather than
+  retiring the document, and `0059`'s superseded bullet is struck through in the body — a reader who
+  lands mid-document must not act on what the header retired. `tests/unit/test_adr_status.py` holds
+  it: one label, a sanctioned state word, every "superseded by ADR NNNN" resolving to a file, no
+  self-supersession, and the three pairs recorded. Negative control: reverting `0059` to the old
+  spelling turns three red.
 - **`CHANGELOG.md` is grouped by day, one heading set per section** (`RP.2`). It was a single
   `[Unreleased]` section of 3,300 lines carrying **twenty** repeated `Added` / `Changed` / `Fixed`
   headings — a merge hotspot for three sessions working in one tree, all appending under the same

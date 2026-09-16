@@ -1,7 +1,7 @@
 # 0079 — Sea-water optical constants and the Cox–Munk slope model
 
 Date: 2026-09-16
-Status: accepted
+**Status:** Accepted
 Roadmap: M7.5, MM.1, MM.2, RP.4 (§4.2, §5.3, §7.4, §12.3)
 
 ## Context

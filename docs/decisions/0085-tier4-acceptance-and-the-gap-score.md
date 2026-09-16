@@ -1,7 +1,7 @@
 # 0085 — The Tier 4 acceptance checks, and what a gap score can and cannot say
 
 Date: 2026-09-15
-Status: accepted
+**Status:** Accepted
 Roadmap: ME.6 (§15 T4/T5)
 Extends: ADR 0068
 
