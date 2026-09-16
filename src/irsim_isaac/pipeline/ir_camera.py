@@ -627,6 +627,7 @@ class IrCamera:
                 ),
                 self.scene.t0_s + self._t_rel_s,
                 strict=self.strict_patch_coverage,
+                world_from_local=self._world_from_local(),
             )
         # `to_gbuffer` validates the M0.6 contract; the stages consume the plane dict.
         # An UNMAPPED prim has no emissivity, and `MaterialTable` refuses to invent one
@@ -654,6 +655,38 @@ class IrCamera:
             labels=labels,
         )
         return planes
+
+    def _world_from_local(self) -> dict[str, NDArray[np.float64]]:
+        """``{prim path: world-from-local 4x4}`` for every patch authored in a prim's frame (PT.5).
+
+        Read fresh each frame, because that is the whole point: a patch on a moving prim has to
+        follow it. Patches in world space need nothing, so a scene with none pays one empty dict
+        and never touches USD.
+
+        The matrix is USD's own, row-vector with the translation in the last row;
+        `point_bridge` inverts it and applies it through `irsim.optics.motion.transform_points`,
+        which is where that convention lives.
+        """
+        if self.pointwise is None:
+            return {}
+        frames = self.pointwise.local_frames
+        if not frames:
+            return {}
+        import omni.usd
+        from pxr import Usd, UsdGeom
+
+        stage = self._stage if self._stage is not None else omni.usd.get_context().get_stage()
+        out: dict[str, NDArray[np.float64]] = {}
+        for path in frames:
+            prim = stage.GetPrimAtPath(path)
+            if not prim or not prim.IsValid():
+                raise ValueError(
+                    f"a patch is authored in frame {path!r} but that prim is not on the stage; "
+                    "a missing transform would silently render the patch at the world origin"
+                )
+            matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            out[path] = np.asarray(matrix, dtype=np.float64)
+        return out
 
     def _illumination_planes(self, aovs: Any, geometry: Any) -> dict[str, NDArray[np.float64]]:
         """``l_sun`` / ``l_night`` for this frame, or nothing when no bundle is attached.

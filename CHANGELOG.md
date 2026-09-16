@@ -13,6 +13,29 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **A patch can ride a moving prim** (`PT.5`). `surface_field` had documented a prim path as a legal
+  patch frame since MP.1 — "`world` for a road, a prim path for a panel that moves with its object"
+  — while `point_bridge` refused every frame but `world`. The docstring promised what the code
+  declined, and every aerial and maritime target moves, so the promise was the useful half.
+- `PointwiseTemperature.apply` takes `world_from_local` matrices, `local_frames` says which prims
+  need one, and `IrCamera` reads them off the stage each frame — fresh, because a patch on a moving
+  prim has to follow it. A scene whose patches are all in world space pays an empty dict and never
+  touches USD, and its output is **bit-identical**.
+- Two conventions had to be right at once and both are borrowed rather than restated. The matrix is
+  **world-from-local**, USD's own direction, inverted inside the bridge rather than at the call site
+  — a caller that had to remember to invert would eventually not, and the failure is a patch
+  tracking its prim *backwards*. And USD matrices are **row-vector**, translation in the last row;
+  the multiply goes through `irsim.optics.motion.transform_points`, the one place that convention
+  already lives, rather than a second copy. Getting it backwards transposes every rotation and still
+  produces a believable field — the mistake ADR 0014's M10.19 addendum records costing this project
+  a 164-row horizon — so there is a test that feeds the transposed matrix and requires a different
+  answer.
+- Six new cases. The acceptance one translates a prim 10 m and yaws it 90°, 215° and back, and
+  requires the same material point to read the same cell to **1e-6 K** across all four poses, where
+  one cell spans about 4 K of the field. Its negative control replaces the pose with the identity —
+  what sampling a world position against a local patch amounts to — and requires a **> 5 K**
+  disagreement. In-sim confirmation of the stage read belongs to `IG.2`; the composition is
+  engine-free and fully covered here.
 - **Per-cell solar and shadow: a wall half in sun** (`PT.1`). ADR 0087's own headline case — a
   surface spanning 10–20 K because part of it is lit and part is shaded — was **unimplemented**.
   A patch gave every cell its own temperature, but `SceneSurfaceForcing` carried one `shaded` bool

@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from irsim.optics.motion import transform_points
 from irsim.thermal.facets import FacetForcing, FacetProperties
 from irsim.thermal.surface_field import PlanarPatch, PlanarThermalField
 from irsim_isaac.pipeline.point_bridge import (
@@ -201,7 +202,15 @@ def test_a_pixel_outside_every_patch_raises() -> None:
     assert lenient[0, 0] == pytest.approx(300.0), "non-strict must fall back, not invent"
 
 
-def test_a_patch_in_a_local_frame_is_refused() -> None:
+def test_a_patch_in_a_local_frame_is_accepted_and_declares_what_it_needs() -> None:
+    """Inverted by PT.5: this used to assert the refusal.
+
+    `surface_field` had documented a prim path as a legal frame since MP.1 — "`world` for a road, a
+    prim path for a panel that moves with its object" — while this bridge refused everything but
+    `world`. The docstring promised what the code declined, and every aerial and maritime target
+    moves, so the promise was the useful half. Construction now succeeds and the bridge says which
+    frames it needs a matrix for.
+    """
     patch = PlanarPatch(
         origin_m=np.zeros(3),
         u_axis=EX,
@@ -212,8 +221,8 @@ def test_a_patch_in_a_local_frame_is_refused() -> None:
         dv_m=0.5,
         frame="/World/car",
     )
-    with pytest.raises(ValueError, match="world space"):
-        PointwiseTemperature([SurfaceBinding("/World/car", _field_with_a_ramp(patch))])
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", _field_with_a_ramp(patch))])
+    assert bridge.local_frames == ("/World/car",)
 
 
 def test_shape_and_dtype_mismatches_raise() -> None:
@@ -236,3 +245,150 @@ def test_advance_pushes_every_bound_field() -> None:
     bridge.advance_to(60.0)
     assert field.latest_t_s >= 60.0
     assert other.latest_t_s >= 60.0
+
+
+# ---------------------------------------------------------------------------------------------
+# PT.5 — a patch that rides a moving prim
+# ---------------------------------------------------------------------------------------------
+
+
+def _pose(translation: np.ndarray, yaw_deg: float = 0.0) -> np.ndarray:
+    """A world-from-local 4x4 in USD's **row-vector** convention: `p' = p @ M`.
+
+    The translation goes in the last **row**, and the rotation block is the transpose of the
+    column-convention one. Written this way on purpose: a test that built a column-convention
+    matrix would pass against a column-convention bug and prove nothing about the renderer.
+    """
+    a = np.deg2rad(yaw_deg)
+    rotation = np.array(
+        [[np.cos(a), -np.sin(a), 0.0], [np.sin(a), np.cos(a), 0.0], [0.0, 0.0, 1.0]]
+    )
+    matrix = np.eye(4)
+    matrix[:3, :3] = rotation.T
+    matrix[3, :3] = translation
+    return matrix
+
+
+def _local_patch() -> PlanarPatch:
+    return PlanarPatch(
+        origin_m=np.zeros(3),
+        u_axis=EX,
+        v_axis=EY,
+        n_u=8,
+        n_v=8,
+        du_m=0.5,
+        dv_m=0.5,
+        thickness_m=0.2,
+        frame="/World/car",
+    )
+
+
+def test_a_material_point_keeps_its_cell_when_the_prim_moves() -> None:
+    """The acceptance: translate 10 m and yaw 90°, and the same material point reads the same cell.
+
+    A material point is fixed in the prim's own frame; the renderer reports it in world. If the
+    bridge sampled the world position against a local patch — which is what it did before PT.5,
+    modulo refusing outright — a prim that moved would slide across its own temperature field, and
+    the result would be a smooth, plausible, completely wrong gradient.
+    """
+    patch = _local_patch()
+    field = _field_with_a_ramp(patch)
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", field)])
+
+    local = patch.cell_centres().reshape(*patch.shape, 3)
+    ids = np.full(patch.shape, CAR_ID, dtype=np.uint32)
+    flat = np.full(patch.shape, 300.0, dtype=np.float32)
+
+    poses = [
+        _pose(np.zeros(3)),
+        _pose(np.array([10.0, 0.0, 0.0])),
+        _pose(np.array([10.0, -4.0, 0.0]), yaw_deg=90.0),
+        _pose(np.array([-3.0, 7.5, 2.0]), yaw_deg=215.0),
+    ]
+    reference = None
+    for pose in poses:
+        world = transform_points(local, pose)
+        out = bridge.apply(flat, ids, LABELS, world, 1.0, world_from_local={"/World/car": pose})
+        if reference is None:
+            reference = out
+        # Sub-cell, and in fact far tighter: the transform is exact and only float64 rounding
+        # separates the two. One cell here spans about 4 K of the ramp.
+        assert np.max(np.abs(out.astype(np.float64) - reference.astype(np.float64))) < 1e-6
+
+
+def test_ignoring_the_prim_transform_would_be_visibly_wrong() -> None:
+    """The negative control that gives the test above its teeth."""
+    patch = _local_patch()
+    field = _field_with_a_ramp(patch)
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", field)])
+    local = patch.cell_centres().reshape(*patch.shape, 3)
+    ids = np.full(patch.shape, CAR_ID, dtype=np.uint32)
+    flat = np.full(patch.shape, 300.0, dtype=np.float32)
+
+    pose = _pose(np.array([10.0, 0.0, 0.0]))
+    world = transform_points(local, pose)
+
+    right = bridge.apply(flat, ids, LABELS, world, 1.0, world_from_local={"/World/car": pose})
+    # Sampling the world points against the local patch is what the old code would have had to do.
+    wrong = bridge.apply(
+        flat, ids, LABELS, world, 1.0, strict=False, world_from_local={"/World/car": np.eye(4)}
+    )
+    assert np.max(np.abs(right.astype(np.float64) - wrong.astype(np.float64))) > 5.0
+
+
+def test_the_world_frame_path_is_bit_identical() -> None:
+    """Every existing scene authors patches in world; PT.5 must not have moved any of them."""
+    patch, field, centres, ids, flat = _scene()
+    bridge = PointwiseTemperature([SurfaceBinding("/World/road", field)])
+    without = bridge.apply(flat, ids, LABELS, centres, 1.0)
+    with_matrices = bridge.apply(
+        flat, ids, LABELS, centres, 1.0, world_from_local={"/World/car": _pose(np.ones(3))}
+    )
+    assert np.array_equal(without, with_matrices)
+    assert bridge.local_frames == ()
+
+
+def test_a_local_patch_without_a_matrix_says_which_one_is_missing() -> None:
+    patch = _local_patch()
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", _field_with_a_ramp(patch))])
+    ids = np.full(patch.shape, CAR_ID, dtype=np.uint32)
+    flat = np.full(patch.shape, 300.0, dtype=np.float32)
+    points = patch.cell_centres().reshape(*patch.shape, 3)
+    with pytest.raises(KeyError, match="/World/car"):
+        bridge.apply(flat, ids, LABELS, points, 1.0)
+
+
+def test_a_malformed_transform_is_refused() -> None:
+    patch = _local_patch()
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", _field_with_a_ramp(patch))])
+    ids = np.full(patch.shape, CAR_ID, dtype=np.uint32)
+    flat = np.full(patch.shape, 300.0, dtype=np.float32)
+    points = patch.cell_centres().reshape(*patch.shape, 3)
+    with pytest.raises(ValueError, match="4x4"):
+        bridge.apply(flat, ids, LABELS, points, 1.0, world_from_local={"/World/car": np.eye(3)})
+
+
+def test_the_transform_uses_usd_row_vector_convention() -> None:
+    """The transpose trap, pinned: ADR 0014's M10.19 addendum records it costing 164 rows.
+
+    A yawed prim is where the two conventions separate: `p @ M` and `M @ p` differ by the transpose
+    of the rotation, and both produce a smooth, believable field. So the test asks for a pose with
+    real yaw and checks that feeding the *column*-convention matrix lands somewhere else.
+    """
+    patch = _local_patch()
+    field = _field_with_a_ramp(patch)
+    bridge = PointwiseTemperature([SurfaceBinding("/World/car", field)])
+    local = patch.cell_centres().reshape(*patch.shape, 3)
+    ids = np.full(patch.shape, CAR_ID, dtype=np.uint32)
+    flat = np.full(patch.shape, 300.0, dtype=np.float32)
+
+    pose = _pose(np.array([2.0, -1.0, 0.0]), yaw_deg=40.0)
+    world = transform_points(local, pose)
+
+    right = bridge.apply(flat, ids, LABELS, world, 1.0, world_from_local={"/World/car": pose})
+    transposed = bridge.apply(
+        flat, ids, LABELS, world, 1.0, strict=False, world_from_local={"/World/car": pose.T}
+    )
+    assert np.max(np.abs(right.astype(np.float64) - transposed.astype(np.float64))) > 1.0
+    # And the right one really does reproduce the field, so "different" is not "both wrong".
+    assert np.allclose(right, field.temperature_image(1.0), atol=1e-3)

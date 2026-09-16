@@ -30,6 +30,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from irsim.optics.motion import transform_points
 from irsim.thermal.surface_field import PlanarThermalField
 from irsim_isaac.pipeline.gbuffer_isaac import _as_f64_plane
 from irsim_isaac.pipeline.material_ids import BACKGROUND_INSTANCE_ID, labels_to_paths
@@ -72,6 +73,42 @@ def world_positions(
     return np.asarray(out + np.asarray(camera_position, dtype=np.float64).reshape(3))
 
 
+def _into_frame(
+    frame: str, points_world: NDArray[np.float64], world_from_local: Mapping[str, Any] | None
+) -> NDArray[np.float64]:
+    """World points expressed in ``frame``, which is ``"world"`` or a prim path (PT.5).
+
+    ``surface_field`` has documented a prim path as a legal frame since MP.1 -- "``world`` for a
+    road, a prim path for a panel that moves with its object" -- while this bridge refused every
+    frame but ``world``. The docstring promised what the code declined, and every aerial and
+    maritime target moves, so the promise was the useful half.
+
+    Two conventions have to be right at once and both are borrowed rather than restated.
+
+    **Direction.** The matrix is **world-from-local**, which is what USD's
+    ``ComputeLocalToWorldTransform`` returns, and it is inverted *here* rather than at the call
+    site: a caller that had to remember to invert would eventually not, and the failure is a patch
+    that tracks its prim backwards -- smooth, plausible, and wrong by twice the prim's offset.
+
+    **Row versus column.** USD matrices are row-vector, ``p' = p @ M``, with the translation in the
+    last **row**. Getting that backwards transposes every rotation and still produces a plausible
+    picture, which is the mistake ADR 0014's M10.19 addendum records costing this project a
+    164-row horizon. So the multiply is :func:`irsim.optics.motion.transform_points`, the one
+    place the convention already lives, rather than a second copy of it here.
+    """
+    if frame == "world":
+        return points_world
+    if not world_from_local or frame not in world_from_local:
+        raise KeyError(
+            f"a patch is authored in frame {frame!r} but no world_from_local matrix was supplied "
+            "for it; pass one per moving prim (PointwiseTemperature.local_frames lists them)"
+        )
+    matrix = np.asarray(world_from_local[frame], dtype=np.float64)
+    if matrix.shape != (4, 4):
+        raise ValueError(f"world_from_local[{frame!r}] must be 4x4, got {matrix.shape}")
+    return transform_points(points_world, np.linalg.inv(matrix))
+
+
 @dataclass(frozen=True)
 class SurfaceBinding:
     """One prim's temperature field. Several may share a prim -- a bonnet and a roof, say.
@@ -94,13 +131,6 @@ class PointwiseTemperature:
 
     def __init__(self, bindings: Sequence[SurfaceBinding]) -> None:
         self.bindings = tuple(bindings)
-        for binding in self.bindings:
-            if binding.field.patch.frame != "world":
-                raise ValueError(
-                    f"{binding.prim_path}: patch frame is {binding.field.patch.frame!r}; this "
-                    "bridge samples with world positions, so its patches must be authored in "
-                    "world space"
-                )
         self._by_path: dict[str, list[PlanarThermalField]] = {}
         for binding in self.bindings:
             self._by_path.setdefault(binding.prim_path, []).append(binding.field)
@@ -108,6 +138,24 @@ class PointwiseTemperature:
     @property
     def prim_paths(self) -> tuple[str, ...]:
         return tuple(self._by_path)
+
+    @property
+    def local_frames(self) -> tuple[str, ...]:
+        """The non-world frames this bridge needs a ``world_from_local`` matrix for (PT.5).
+
+        A caller reads these off the bridge rather than guessing which prims move: the frame name
+        is a prim path, and supplying a matrix for it is what lets a patch ride its object.
+        """
+        return tuple(
+            sorted(
+                {
+                    field.patch.frame
+                    for fields in self._by_path.values()
+                    for field in fields
+                    if field.patch.frame != "world"
+                }
+            )
+        )
 
     def advance_to(self, t_s: float) -> None:
         """Push every bound field to ``t_s``. The only method that changes anything."""
@@ -124,6 +172,7 @@ class PointwiseTemperature:
         t_s: float,
         *,
         strict: bool = True,
+        world_from_local: Mapping[str, Any] | None = None,
     ) -> NDArray[np.float32]:
         """Return ``plane`` with every bound prim's pixels replaced by its field's own values.
 
@@ -157,7 +206,11 @@ class PointwiseTemperature:
                 pending = ~filled
                 if not pending.any():
                     break
-                sampled = field.sample_at(t_s, selected[pending])
+                # A patch authored in a prim's own frame rides that prim (PT.5). The points are
+                # world; the patch is not; so the points come back through the prim's transform
+                # before they meet the grid.
+                query = _into_frame(field.patch.frame, selected[pending], world_from_local)
+                sampled = field.sample_at(t_s, query)
                 hit = np.isfinite(sampled)
                 idx = np.flatnonzero(pending)[hit]
                 values[idx] = sampled[hit]
