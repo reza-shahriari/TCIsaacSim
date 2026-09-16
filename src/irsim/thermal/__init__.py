@@ -29,6 +29,7 @@ from irsim.thermal.longwave import (
     longwave_down_from_sample,
     sky_emissivity,
 )
+from irsim.thermal.shadow import ShadowRectangle, cell_shadow, patch_solar_loading
 from irsim.thermal.solar import (
     SunPosition,
     absorbed_solar,
@@ -89,6 +90,9 @@ __all__ = [
     "absorbed_solar",
     "julian_day",
     "solar_loading",
+    "ShadowRectangle",
+    "cell_shadow",
+    "patch_solar_loading",
     "solar_noon_utc",
     "sun_direction",
     "sun_position",

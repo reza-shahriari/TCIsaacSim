@@ -13,6 +13,33 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **Per-cell solar and shadow: a wall half in sun** (`PT.1`). ADR 0087's own headline case — a
+  surface spanning 10–20 K because part of it is lit and part is shaded — was **unimplemented**.
+  A patch gave every cell its own temperature, but `SceneSurfaceForcing` carried one `shaded` bool
+  per *surface*, so the only spatial variation a field could express came from `q_internal_w_m2`, an
+  engine bay under a bonnet. That is why both point-wise scenes shipped so far are **pre-dawn**: the
+  machinery could not have rendered a sunlit one any differently from a flat surface.
+- `irsim.thermal.shadow` supplies the per-cell `shadow` argument `solar_loading` has always accepted
+  and nothing had ever varied. `ShadowRectangle` is an opaque rectangular occluder — the same
+  primitive ADR 0088 uses for a radiator, because a slab, a parapet or a wing reads as one —
+  and `cell_shadow` is an exact ray–rectangle intersection per cell. `patch_solar_loading` is the
+  whole point in one call: the same `solar_loading`, handed an array that varies across the surface.
+- **Measured on a 4 m vertical concrete wall at 45° sun, half occluded by a slab: lit cells settle
+  at 305.1 K and shaded at 283.0 K — a 22.1 K step across one prim**, from 619.8 against
+  55.0 W/m² of absorbed solar. Every cell holds the §6.1 `steady_state_temperature` root for its own
+  flux to under **1 mK**, so this is not a gradient smeared across the surface but each cell being
+  the right number. Negative control: the representation this replaces, a per-surface `shaded` bool,
+  is flat to 1e-6 either way and wrong across half the wall by the full step.
+- Two properties are deliberate rather than incidental. **Shadow gates the direct beam only** — a
+  shaded cell still sees diffuse sky through its own view factor, and zeroing all solar in shade is
+  the usual shortcut that renders shaded surfaces far too cold; the shaded cells here sit at
+  55 W/m², not zero. And **`cell_shadow` reports a back-facing cell as lit**, leaving `max(0, n·s)`
+  to zero the beam, so a self-shadowing result never looks like an occlusion one — the two need
+  different fixes when a scene comes out wrong.
+- Stated limits: hard-edged, so no penumbra (the sun's 0.53° disc would soften the terminator by
+  about 1 cm per metre of standoff), and single-bounce, so no light returns from the occluder onto
+  the shaded part. Both make the shaded side slightly warmer than this model says, which makes the
+  measured step a **lower bound**.
 - **A point-wise surface is declarable in a scene config** (`PT.2`, schema **v7**). `SurfaceSpec`
   carried name, material, tilt, azimuth, shaded and vehicle_speed — nothing spatial — so the only
   point-wise scene that existed was `irsim_isaac.car_demo`, which hand-wrote its bonnet and road
