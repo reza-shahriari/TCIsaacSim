@@ -41,6 +41,21 @@ mistakes are, so each one is named:
   sky-view factor with it -- a smooth, plausible, completely wrong frame. So the default here is
   ``position_frame="camera"`` with the prim's own local-to-world rotation (ADR 0014 addendum).
 
+**Three strictness flags, not one** (roadmap IG.1). A frame can be wrong in three unrelated ways
+and each has its own guard, because a caller who has to tolerate one of them should not be silently
+opting out of the other two:
+
+* ``strict_materials`` -- an instance id is in the picture but not in ``idToLabels``, so the pixel
+  becomes UNMAPPED and takes eps = 1 against its own temperature (ADR 0047).
+* ``strict_thermal_nodes`` -- a rendered prim has no thermal node, so its pixels take ``fill_k``.
+* ``strict_patch_coverage`` -- a pixel lands on a prim that has a temperature *field* bound to it
+  but outside every one of that prim's patches (ADR 0087).
+
+They were one flag until IG.1, and every render script passed it ``False`` to get past the first
+two -- which turned the third off as well, so every frame this project has produced could have
+carried a bonnet that was a field in the middle and a flat value at the edges, with a seam that
+looks like physics. The scripts now name the two they mean; patch coverage stays on.
+
 **Which pipeline runs.** The frame goes through ``irsim.pipeline.run_frame`` -- the CPU reference
 (ADR 0018) -- including the M9 sensor chain when one is attached. The Warp twins (M10.4--M10.8)
 cover stages 1--6 but **not** the chain's post-ADC half: device-side defects, the iterated
@@ -340,6 +355,8 @@ class IrCamera:
         capture_rgb: bool = False,
         debug_unmapped: bool = True,
         strict_materials: bool = True,
+        strict_thermal_nodes: bool = True,
+        strict_patch_coverage: bool = True,
         frame_period_s: float | None = None,
         cloud_seed: int | None = None,
         sea: Any = None,
@@ -375,6 +392,8 @@ class IrCamera:
         self.capture_rgb = capture_rgb
         self.debug_unmapped = debug_unmapped
         self.strict_materials = strict_materials
+        self.strict_thermal_nodes = strict_thermal_nodes
+        self.strict_patch_coverage = strict_patch_coverage
         self.device = device
         self.resolutions = list(resolutions)
         self.analytic_targets = list(analytic_targets)
@@ -588,7 +607,7 @@ class IrCamera:
             sky_mask=geometry.sky_mask,
             elevation_rad=elevation,
             azimuth_rad=azimuth,
-            strict=self.strict_materials,
+            strict=self.strict_thermal_nodes,
         )
         if self.pointwise is not None:
             # The patch-backed prims take their own cells. The absolute weather clock, not the
@@ -607,7 +626,7 @@ class IrCamera:
                     camera_to_world=self._camera_to_world,
                 ),
                 self.scene.t0_s + self._t_rel_s,
-                strict=self.strict_materials,
+                strict=self.strict_patch_coverage,
             )
         # `to_gbuffer` validates the M0.6 contract; the stages consume the plane dict.
         # An UNMAPPED prim has no emissivity, and `MaterialTable` refuses to invent one

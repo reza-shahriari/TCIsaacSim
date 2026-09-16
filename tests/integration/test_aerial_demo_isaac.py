@@ -93,6 +93,7 @@ def _build_demo_camera(tophat_lwir_lut: Any, *, dome: Any = None, capture_rgb: b
         camera_path=demo.camera_path,
         capture_rgb=capture_rgb,
         strict_materials=False,
+        strict_thermal_nodes=False,
     ).open(settle_frames=16)
     camera.demo = demo  # type: ignore[attr-defined]
     return camera

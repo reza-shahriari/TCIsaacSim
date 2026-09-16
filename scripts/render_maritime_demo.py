@@ -320,6 +320,7 @@ def main() -> int:
         ),
         heading_deg=args.heading_deg,
         strict_materials=False,
+        strict_thermal_nodes=False,
         cloud_seed=args.cloud_seed,
         sea=sea,
         background_prim_paths=demo.water_paths,

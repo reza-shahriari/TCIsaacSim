@@ -280,6 +280,7 @@ def main() -> int:
         camera_path=stage.camera_path,
         capture_rgb=args.rgb,
         strict_materials=False,
+        strict_thermal_nodes=False,
         cloud_seed=args.cloud_seed,
         frame_period_s=args.interval_s,
         sea=sea,

@@ -198,6 +198,7 @@ def main() -> int:
         frame_period_s=args.frame_period,
         capture_rgb=args.rgb,
         strict_materials=False,
+        strict_thermal_nodes=False,
     ).open(settle_frames=args.settle)
 
     # FIXED spans, not the camera's AGC -- and **two** of them, because no single linear span

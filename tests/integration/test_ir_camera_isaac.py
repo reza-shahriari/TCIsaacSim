@@ -344,6 +344,7 @@ def camera(simulation_app: Any, tophat_lwir_lut: Any) -> Any:
         resolutions=resolutions,
         camera_path=built.camera_path,
         strict_materials=False,
+        strict_thermal_nodes=False,
     )
     yield cam.open(settle_frames=16)
     cam.close()

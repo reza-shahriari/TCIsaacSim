@@ -75,6 +75,7 @@ def _build(tophat_lwir_lut: Any, track: Any) -> Any:
         resolutions=resolutions,
         camera_path=stage.camera_path,
         strict_materials=False,
+        strict_thermal_nodes=False,
         frame_period_s=1.0 / 30.0,
     ).open(settle_frames=16)
     camera.stage_info = stage  # type: ignore[attr-defined]

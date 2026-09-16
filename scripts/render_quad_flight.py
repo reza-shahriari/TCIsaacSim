@@ -287,6 +287,7 @@ def main() -> int:
         ),
         heading_deg=args.heading_deg,
         strict_materials=False,
+        strict_thermal_nodes=False,
         cloud_seed=args.cloud_seed,
         rotor_mounts=None if args.no_rotors else stage.rotor_mounts(0.0),
         # One capture every `interval_s` of scene time: a time-lapse camera, with every stage

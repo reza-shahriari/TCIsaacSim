@@ -179,6 +179,7 @@ def main() -> int:
         camera_path=demo.camera_path,
         capture_rgb=args.rgb,
         strict_materials=False,
+        strict_thermal_nodes=False,
     ).open(settle_frames=args.settle)
 
     written = []

@@ -108,6 +108,7 @@ def motion_rig(simulation_app: Any, tophat_lwir_lut: Any) -> Any:
         resolutions=resolutions,
         camera_path="/World/IrCamera",
         strict_materials=False,
+        strict_thermal_nodes=False,
     ).open(settle_frames=16)
     tracker = MotionTracker([BAR_PATH], "/World/IrCamera")
     rig = {

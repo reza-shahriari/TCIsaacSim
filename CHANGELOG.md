@@ -53,6 +53,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the test now checks the algorithm's real invariant instead of a proxy for it.
 
 ### Fixed
+- **The patch-coverage guard was off in every frame this project has produced** (`IG.1`).
+  `IrCamera` had one `strict_materials` flag standing in front of three unrelated failures: an
+  instance id the label table does not name, a rendered prim with no thermal node, and a pixel that
+  lands on a prim carrying a temperature *field* but outside every one of that prim's patches. All
+  six render scripts and five integration tests passed it `False` to get past the first two, which
+  turned the third off as well — the one whose own docstring calls the fallback "a seam that looks
+  like physics", because a patch authored smaller than its geometry then renders part of a bonnet as
+  a field and part as a flat value. It is now three flags: `strict_materials`,
+  `strict_thermal_nodes` and `strict_patch_coverage`. The callers name the two they actually mean;
+  patch coverage keeps its `True` default and nothing turns it off implicitly any more.
+- The five new cases in `tests/unit/test_camera_strictness.py` drive the real `IrCamera.planes` over
+  a synthetic frame with a fake AOV reader — no Kit — because the defect is a *routing* one: three
+  flags that are all stored and then all read from the same place pass an attribute test and fail
+  this one. Each guard is shown firing on its own failure and staying silent on the other two, and
+  the headline case asks for exactly what the render scripts now ask for (`strict_materials=False,
+  strict_thermal_nodes=False`) against a frame that is wrong in all three ways, and still raises on
+  the patch gap. Negative control: re-pointing the two new flags back at `strict_materials` turns 3
+  of the 5 red.
+- Writing the test corrected its own oracle. Comparing the rendered plane against the field at
+  `t = 0` missed by 8 mK: the camera samples on the **absolute** clock, and `t0_s` is hours into the
+  weather axis, over which even a 1e9 J/m²K slab radiates a little. Sampled at the clock the camera
+  actually used, the plane matches the field's own cells to under 1e-4 K — and carries a 30 K
+  gradient across one prim, which is the whole point of ADR 0087.
 - **The car scenes' ground radiators no longer over-count a shared solid angle** (`PT.3`, ADR 0090).
   `build_ground_field` summed independently-computed view factors from `underbody`, `engine_bay` and
   `exhaust_pipe` onto the road, but `engine_bay`'s and `exhaust_pipe`'s rectangles lie **entirely

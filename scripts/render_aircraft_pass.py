@@ -287,6 +287,7 @@ def main() -> int:
         ),
         heading_deg=args.heading_deg,
         strict_materials=False,
+        strict_thermal_nodes=False,
         cloud_seed=args.cloud_seed,
         frame_period_s=args.interval_s,
     ).open(settle_frames=args.settle)

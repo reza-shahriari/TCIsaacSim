@@ -123,6 +123,7 @@ def make_camera(targets: tuple, lut: Any, *, hide: bool = True, noise: bool = Fa
         analytic_targets=analytic,
         camera_path=demo.camera_path,
         strict_materials=False,
+        strict_thermal_nodes=False,
     ).open(settle_frames=12)
     camera.demo = demo  # type: ignore[attr-defined]
     camera.analytic = analytic  # type: ignore[attr-defined]
