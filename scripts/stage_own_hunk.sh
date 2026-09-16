@@ -21,6 +21,11 @@
 # id, and two sessions sharing the default slot would overwrite each other's baseline -- which is
 # the same class of bug this script exists to prevent. `status` prints the id in use.
 #
+# `check` is read-only and is what the pre-commit hook (.pre-commit-config.yaml) and `make stage`
+# run before a commit: it refuses when a shared file's staged content is not what `stage` would
+# have produced, which is the signature of a plain `git add` clobbering a hunk this session did
+# not author.
+#
 # The worktree is never modified: everyone's edits stay in it, and the other session's changes are
 # simply left unstaged for them to commit. Because the patch is re-applied to whatever HEAD is at
 # `stage` time, it still works if someone commits in between -- which is the normal case.
@@ -42,7 +47,7 @@ SNAPDIR="$(git rev-parse --git-dir)/stage-own-hunk/$SESSION_ID"
 cd "$ROOT"
 
 usage() {
-    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -105,6 +110,43 @@ cmd_stage() {
     return $rc
 }
 
+cmd_check() {
+    # Pre-commit guard: refuse a commit whose staged content for a shared file could not have come
+    # from `stage` -- the signature of a plain `git add` clobbering a hunk this session did not
+    # author. Read-only: never touches the index or the worktree, so it is safe to run on every
+    # commit, not just ones that used this script.
+    local rc=0
+    for f in "$@"; do
+        git diff --cached --quiet -- "$f" && continue  # nothing staged for this file, nothing to guard
+        git ls-tree --name-only HEAD -- "$f" | grep -qx -- "$f" || continue  # new file, no HEAD to clobber
+
+        local before mine head merged conflicts
+        before=$(snap_path "$f")
+        if [ ! -f "$before" ]; then
+            echo "stage_own_hunk check: $f is staged with no snapshot for session '$SESSION_ID'." >&2
+            echo "  Run 'scripts/stage_own_hunk.sh snapshot $f' before editing shared files, then" >&2
+            echo "  'scripts/stage_own_hunk.sh stage $f' before committing -- see README Contributing." >&2
+            rc=1
+            continue
+        fi
+
+        mine=$(mktemp); head=$(mktemp); merged=$(mktemp)
+        git show ":$f" > "$mine"
+        git show "HEAD:$f" > "$head"
+        conflicts=0
+        git merge-file -q -p -- "$mine" "$before" "$head" > "$merged" || conflicts=$?
+        if [ "$conflicts" -ne 0 ] || ! cmp -s -- "$mine" "$merged"; then
+            echo "stage_own_hunk check: $f's staged content is not the sanctioned merge of your" >&2
+            echo "  snapshot onto current HEAD -- a plain 'git add $f' would clobber a change" >&2
+            echo "  another session committed since your snapshot. Re-run:" >&2
+            echo "  'scripts/stage_own_hunk.sh stage $f' and commit what it stages instead." >&2
+            rc=1
+        fi
+        rm -f "$mine" "$head" "$merged"
+    done
+    return $rc
+}
+
 cmd_status() {
     echo "session id: $SESSION_ID (set STAGE_OWN_HUNK_ID to change it)"
     [ -d "$SNAPDIR" ] || { echo "no snapshots"; return 0; }
@@ -122,6 +164,7 @@ cmd_status() {
 case "${1:-}" in
     snapshot) shift; [ $# -gt 0 ] || usage 2; cmd_snapshot "$@" ;;
     stage)    shift; [ $# -gt 0 ] || usage 2; cmd_stage "$@" ;;
+    check)    shift; [ $# -gt 0 ] || usage 2; cmd_check "$@" ;;
     status)   cmd_status ;;
     -h|--help|"") usage ;;
     *) echo "stage_own_hunk: unknown command '$1'" >&2; usage 2 ;;

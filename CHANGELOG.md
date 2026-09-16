@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`scripts/stage_own_hunk.sh` is now the default commit path for shared files, not just an
+  available one** (`RP.3`). A whole-file write has silently reverted another session's committed
+  work three times in two days; the script already three-way merged a session's edit onto HEAD, but
+  nothing forced anyone to run it. Three additions close that gap: a `check` subcommand (read-only)
+  that refuses when a shared file's staged content is not what `stage` would have produced — the
+  exact signature of a plain `git add` clobbering a commit made since the snapshot; `make stage
+  FILES="README.md CHANGELOG.md docs/roadmap.md"` as the one command to run before committing; and
+  `.pre-commit-config.yaml`, wiring `check` in as a pre-commit hook (`pre-commit install`) so the
+  guard still catches a bypass. The `ship-step` skill and README's Contributing section now teach
+  this path instead of `git add -A`. Verified with a synthetic two-author tree: `check` refuses when
+  session B commits mid-edit and session A then `git add`s over it, and passes when A uses `stage`
+  instead (`tests/unit/test_stage_own_hunk.py`).
 - **`scripts/next_step.py` — "do next" is now deterministic** (roadmap *Do next*). The roadmap's
   stated picking rule, "the first step in phase order whose deps are all ticked", **does not pick a
   step**: measured on revision 4 the day it landed, **51 of 109** open steps satisfied it at once,

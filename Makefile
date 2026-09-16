@@ -9,7 +9,7 @@ PYTHON ?= python
 CI_PYTHON ?= python3.10
 CI_VENV ?= .venv-ci
 
-.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean next
+.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean next stage
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -36,6 +36,16 @@ typecheck:
 next:
 	$(PYTHON) scripts/next_step.py
 	@$(PYTHON) scripts/next_step.py --write
+
+# Stage your own edit to a shared file (README.md, CHANGELOG.md, docs/roadmap.md) without pulling
+# in another session's in-flight prose (RP.3). Snapshot BEFORE editing:
+#   scripts/stage_own_hunk.sh snapshot README.md CHANGELOG.md docs/roadmap.md
+# then, before committing:
+#   make stage FILES="README.md CHANGELOG.md docs/roadmap.md"
+stage:
+	@[ -n "$(FILES)" ] || { echo "usage: make stage FILES=\"README.md CHANGELOG.md ...\""; exit 2; }
+	scripts/stage_own_hunk.sh stage $(FILES)
+	scripts/stage_own_hunk.sh check $(FILES)
 
 check: lint typecheck test
 	@$(PYTHON) scripts/next_step.py --check

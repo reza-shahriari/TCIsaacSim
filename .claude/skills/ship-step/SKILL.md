@@ -89,10 +89,29 @@ Refs: ADR 0004
 Body should say **what physics it implements** and **what the verification showed**. "Added LUT" tells a
 reviewer nothing they could not read from the diff.
 
+Several sessions share this working tree. Never `git add -A`: a blanket add stages whoever else has
+`README.md`, `CHANGELOG.md` or `docs/roadmap.md` open, and their prose lands in your commit under your
+message — this has actually happened, more than once. Stage named paths instead:
+
 ```bash
-git add -A
+git add path/to/your_module.py tests/unit/test_your_module.py   # files only you touched
+make stage FILES="README.md CHANGELOG.md docs/roadmap.md"       # the three shared files, if you
+                                                                  # touched them and snapshotted first
 git commit -F <message-file>     # or -m with a heredoc; keep the body
 ```
+
+`make stage` runs `scripts/stage_own_hunk.sh stage` (three-way merges your edit onto current HEAD, so
+a change someone else *committed* meanwhile is a no-op instead of getting overwritten) followed by
+`scripts/stage_own_hunk.sh check` (refuses and explains if the staged content still isn't safe to
+commit). It only works if you snapshotted the files *before* editing them:
+
+```bash
+scripts/stage_own_hunk.sh snapshot README.md CHANGELOG.md docs/roadmap.md   # before you edit
+```
+
+The same check runs as a pre-commit hook (`.pre-commit-config.yaml`, install once with
+`pre-commit install`) so a plain `git add` on a shared file is refused even if this step is skipped.
+Full detail: README.md's Contributing section.
 
 Do not `git push` unless asked — the user may want to review or amend first.
 

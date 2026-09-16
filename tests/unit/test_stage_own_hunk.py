@@ -170,3 +170,74 @@ def test_sessions_do_not_share_a_snapshot_slot(repo: pathlib.Path) -> None:
     script(repo, "a", "snapshot", "shared.md")
     assert "shared.md" in script(repo, "a", "status").stdout
     assert "no snapshots" in script(repo, "b", "status").stdout
+
+
+# `check` is the pre-commit guard (RP.3): read-only, and it is what makes `stage_own_hunk.sh` the
+# default path instead of an available one -- a plain `git add` on a shared file is refused rather
+# than silently clobbering whatever another session committed since the snapshot was taken.
+
+
+def test_check_refuses_a_plain_git_add_that_would_clobber_a_committed_change(
+    repo: pathlib.Path,
+) -> None:
+    shared = repo / "shared.md"
+    script(repo, "a", "snapshot", "shared.md")
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+
+    # B commits a change elsewhere in the file while A is still editing
+    script(repo, "b", "snapshot", "shared.md")
+    (repo / "shared.md").write_text(SHARED.replace("line 18", "line 18 - B"))
+    assert script(repo, "b", "stage", "shared.md").returncode == 0
+    git(repo, "commit", "-qm", "B's step")
+
+    # A never re-reads B's commit and just `git add`s the file A has been editing since the snapshot
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+    git(repo, "add", "shared.md")
+
+    result = script(repo, "a", "check", "shared.md")
+    assert result.returncode != 0
+    assert "clobber" in result.stderr
+    assert git(repo, "diff", "--cached", "--stat") != "", "check must not touch the index"
+
+
+def test_check_passes_content_staged_by_stage(repo: pathlib.Path) -> None:
+    shared = repo / "shared.md"
+    script(repo, "a", "snapshot", "shared.md")
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+
+    script(repo, "b", "snapshot", "shared.md")
+    (repo / "shared.md").write_text(SHARED.replace("line 18", "line 18 - B"))
+    assert script(repo, "b", "stage", "shared.md").returncode == 0
+    git(repo, "commit", "-qm", "B's step")
+
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+    assert script(repo, "a", "stage", "shared.md").returncode == 0
+
+    result = script(repo, "a", "check", "shared.md")
+    assert result.returncode == 0, result.stderr
+
+
+def test_check_requires_a_snapshot(repo: pathlib.Path) -> None:
+    shared = repo / "shared.md"
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+    git(repo, "add", "shared.md")
+
+    result = script(repo, "a", "check", "shared.md")
+    assert result.returncode != 0
+    assert "no snapshot" in result.stderr.lower()
+
+
+def test_check_ignores_files_with_nothing_staged(repo: pathlib.Path) -> None:
+    result = script(repo, "a", "check", "shared.md")
+    assert result.returncode == 0, result.stderr
+
+
+def test_check_allows_a_solo_edit_with_no_intervening_commit(repo: pathlib.Path) -> None:
+    """The common case: nobody else touched the file, so a plain `git add` is harmless."""
+    shared = repo / "shared.md"
+    script(repo, "a", "snapshot", "shared.md")
+    shared.write_text(SHARED.replace("line 3", "line 3 - A"))
+    git(repo, "add", "shared.md")
+
+    result = script(repo, "a", "check", "shared.md")
+    assert result.returncode == 0, result.stderr

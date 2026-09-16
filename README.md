@@ -378,11 +378,14 @@ rather than a conflict:
 export STAGE_OWN_HUNK_ID=my-session          # snapshots are keyed by this; make it unique
 scripts/stage_own_hunk.sh snapshot README.md CHANGELOG.md   # immediately BEFORE you edit
 # ... edit ...
-scripts/stage_own_hunk.sh stage README.md CHANGELOG.md      # then promptly after
+make stage FILES="README.md CHANGELOG.md"    # stages your diff only, then promptly after
 git commit -m ...
 ```
 
 Snapshot late and stage promptly: the snapshot is the only record of what the file looked like before
-you touched it, so an *uncommitted* edit someone makes inside that window is attributed to you. `stage`
-prints the hunks it staged for exactly that reason. Also remember `make check` lints and type-checks the
-whole tree, so an uncommitted error in your files turns everyone's gate red.
+you touched it, so an *uncommitted* edit someone makes inside that window is attributed to you. `make
+stage` prints the hunks it staged for exactly that reason, and refuses (with an explanation) if the
+result still isn't safe to commit. The same refusal runs as a pre-commit hook
+(`.pre-commit-config.yaml`; install once with `pre-commit install`), so a plain `git add` on one of
+these three files is caught even if `make stage` is skipped. Also remember `make check` lints and
+type-checks the whole tree, so an uncommitted error in your files turns everyone's gate red.
