@@ -23,6 +23,7 @@ import pytest
 from irsim.radiometry.constants import SIGMA_SB
 from irsim.thermal.spatial_sources import (
     RadiantRectangle,
+    clamp_view_factor_sum,
     corner_view_factor,
     occluded_longwave_flux,
     patch_view_factors,
@@ -212,3 +213,61 @@ def test_a_point_in_the_radiators_plane_raises() -> None:
     rect = RadiantRectangle(centre_m=np.zeros(3), u_axis=EX, v_axis=EY, half_u_m=0.5, half_v_m=0.5)
     with pytest.raises(ValueError, match="singular"):
         view_factor_to_parallel_rectangle(np.array([[2.0, 0.0, 0.0]]), rect)
+
+
+# ---------------------------------------------------------------------------------------------
+# clamping nested radiators (ADR 0090, roadmap PT.3)
+# ---------------------------------------------------------------------------------------------
+
+
+def test_clamp_view_factor_sum_is_a_no_op_when_the_sum_is_already_under_one() -> None:
+    a = np.array([0.2, 0.5, 0.9])
+    b = np.array([0.1, 0.3, 0.05])
+    out_a, out_b = clamp_view_factor_sum([a, b])
+    np.testing.assert_array_equal(out_a, a)
+    np.testing.assert_array_equal(out_b, b)
+
+
+def test_clamp_view_factor_sum_caps_the_total_at_one() -> None:
+    """The measured failure: three radiators, one cell over-counted by all three."""
+    underbody = np.array([0.9, 0.3])
+    engine_bay = np.array([0.5, 0.2])
+    exhaust = np.array([0.1, 0.05])
+    with pytest.warns(UserWarning, match="overlap"):
+        out = clamp_view_factor_sum([underbody, engine_bay, exhaust])
+    total = sum(out)
+    assert np.all(total <= 1.0 + 1e-6), total
+    # the untouched cell (index 1, sum 0.55) must be bit-identical
+    assert out[0][1] == pytest.approx(0.3)
+    assert out[1][1] == pytest.approx(0.2)
+    assert out[2][1] == pytest.approx(0.05)
+
+
+def test_clamp_view_factor_sum_preserves_relative_weight() -> None:
+    """Scaling is proportional: the radiator with more raw view factor still dominates after."""
+    underbody = np.array([0.9])
+    engine_bay = np.array([0.6])
+    out_u, out_e = clamp_view_factor_sum([underbody, engine_bay])
+    assert out_u[0] == pytest.approx(0.9 / 1.5)
+    assert out_e[0] == pytest.approx(0.6 / 1.5)
+    assert out_u[0] + out_e[0] == pytest.approx(1.0)
+
+
+def test_clamp_view_factor_sum_scales_the_occlusion_term_the_same_as_the_source_term() -> None:
+    """occluded_longwave_flux is linear in view_factors, so clamping bounds both consistently."""
+    raw = [np.array([0.9]), np.array([0.6])]
+    with pytest.warns(UserWarning):
+        clamped = clamp_view_factor_sum(raw)
+    ratio = float(clamped[0][0] / raw[0][0])
+    flux_raw = occluded_longwave_flux(
+        raw[0], 340.0, 0.9, source_emissivity=0.9, longwave_down_w_m2=250.0, sky_view=1.0
+    )
+    flux_clamped = occluded_longwave_flux(
+        clamped[0], 340.0, 0.9, source_emissivity=0.9, longwave_down_w_m2=250.0, sky_view=1.0
+    )
+    assert float(flux_clamped[0]) == pytest.approx(ratio * float(flux_raw[0]))
+
+
+def test_clamp_view_factor_sum_rejects_an_input_already_out_of_range() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        clamp_view_factor_sum([np.array([1.5]), np.array([0.1])])

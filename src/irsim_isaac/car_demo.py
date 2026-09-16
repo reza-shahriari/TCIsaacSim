@@ -50,6 +50,7 @@ from irsim.thermal.facets import FacetForcing, FacetProperties
 from irsim.thermal.longwave import longwave_down
 from irsim.thermal.spatial_sources import (
     RadiantRectangle,
+    clamp_view_factor_sum,
     occluded_longwave_flux,
     patch_view_factors,
 )
@@ -478,11 +479,20 @@ def build_ground_field(
     Here the occlusion term is the real one (ADR 0088): the car takes away the sky each cell was
     seeing. Under this scene's overcast that nearly cancels the car's own emission, which is why
     the patch is a few tenths of a kelvin rather than the several kelvin a clear night would give.
+
+    ``underbody``, ``engine_bay`` and ``exhaust_pipe`` are nested regions of one floor pan, not
+    three independent bodies (ADR 0090), so their view factors are clamped to sum to at most 1
+    per cell before use -- otherwise a cell under the engine bay is credited with more than one
+    sky's worth of occlusion and source.
     """
     sky_view = np.ones(patch.n_cells)
     environment = _weather_forcing(scene, sky_view, initial_k)
     radiators = geom.ground_radiators()
-    views = tuple((name, patch_view_factors(patch, rect), rect) for name, rect in radiators)
+    raw_views = [patch_view_factors(patch, rect) for _, rect in radiators]
+    clamped_views = clamp_view_factor_sum(raw_views)
+    views = tuple(
+        (name, view, rect) for (name, rect), view in zip(radiators, clamped_views, strict=True)
+    )
 
     def forcing_at(t_abs_s: float) -> FacetForcing:
         t_air, h, q_lw = environment(t_abs_s)

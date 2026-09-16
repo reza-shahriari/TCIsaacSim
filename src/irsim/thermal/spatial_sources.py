@@ -32,6 +32,8 @@ result would be a plausible number, which is the worst kind of wrong here.
 
 from __future__ import annotations
 
+import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,6 +48,7 @@ __all__ = [
     "corner_view_factor",
     "view_factor_to_parallel_rectangle",
     "patch_view_factors",
+    "clamp_view_factor_sum",
     "occluded_longwave_flux",
 ]
 
@@ -177,6 +180,48 @@ def patch_view_factors(patch: PlanarPatch, rect: RadiantRectangle) -> NDArray[np
     return view_factor_to_parallel_rectangle(
         patch.cell_centres(), rect, axes=(patch.u_axis, patch.v_axis)
     )
+
+
+def clamp_view_factor_sum(
+    views: Sequence[Any], *, tol: float = 1e-6
+) -> tuple[NDArray[np.float64], ...]:
+    """Rescale view factors from several radiators to the same patch so their sum never exceeds 1.
+
+    docs/decisions/0090-clamped-view-factors-for-nested-radiators.md. A plane element's view
+    factors to any set of surfaces filling disjoint solid angles sum to at most 1 (Howell). Each
+    :func:`patch_view_factors` call is exact for *one* radiator, but ``car_demo.build_ground_field``
+    calls it once each for ``underbody``, ``engine_bay`` and ``exhaust_pipe`` -- three
+    :class:`RadiantRectangle` authored as *nested* regions of one physical floor pan (ADR 0088's
+    "three rather than one because the picture they make differs"), not three independent bodies
+    filling disjoint angles. Summing their individually-correct view factors therefore double
+    (triple, under the engine bay) counts the solid angle the smaller rectangles share with
+    ``underbody``. Measured peak 1.40 before this function existed.
+
+    The fix rescales every radiator's factor at each cell by the same per-cell ratio wherever the
+    sum would exceed 1, so the *relative* contribution between radiators -- the broad footprint,
+    the brighter pool, the narrow stripe -- is unchanged and only the total is capped at the
+    physical bound. This is an approximation, not a re-derivation of the true partitioned geometry;
+    :func:`occluded_longwave_flux` is linear in its ``view_factors`` argument, so passing the
+    clamped factors caps the occlusion term by the same ratio as the source term, keeping both
+    internally consistent.
+
+    Warns (loudly, not silently) whenever clamping actually changes a value, since the trigger is a
+    modelling gap -- overlapping radiator footprints -- and not routine behaviour.
+    """
+    stacked = np.stack([np.asarray(v, dtype=np.float64) for v in views], axis=0)
+    if np.any(stacked < 0.0) or np.any(stacked > 1.0 + tol):
+        raise ValueError("each input view factor must already lie in [0, 1]")
+    total = stacked.sum(axis=0)
+    over = total > 1.0 + tol
+    if np.any(over):
+        warnings.warn(
+            f"view factors summed to {float(total.max()):.4f} > 1 on {int(np.count_nonzero(over))} "
+            "cell(s) -- radiator footprints overlap; rescaling proportionally to conserve energy "
+            "(docs/decisions/0090-clamped-view-factors-for-nested-radiators.md)",
+            stacklevel=2,
+        )
+    scale = np.where(over, 1.0 / total, 1.0)
+    return tuple(np.asarray(stacked[i] * scale) for i in range(stacked.shape[0]))
 
 
 def occluded_longwave_flux(

@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 
 from irsim.scene import Scene
-from irsim.thermal.spatial_sources import patch_view_factors
+from irsim.thermal.spatial_sources import clamp_view_factor_sum, patch_view_factors
 from irsim_isaac.car_demo import (
     CameraSetup,
     CarGeometry,
@@ -206,6 +206,29 @@ def test_the_bonnet_sees_most_of_the_bay_and_the_wings_see_little() -> None:
     assert grid[grid.shape[0] // 2, grid.shape[1] // 2] > 0.7
     assert grid[0, 0] < 0.25
     assert float(view.max() / max(view.min(), 1e-9)) > 5.0
+
+
+@pytest.mark.parametrize("yaml_path", [SCENE_YAML, CLEAR_YAML])
+def test_ground_radiator_view_factors_never_exceed_one(yaml_path: pathlib.Path) -> None:
+    """PT.3 / ADR 0090: `underbody`, `engine_bay` and `exhaust_pipe` are nested, not disjoint.
+
+    Summing their individually-correct view factors used to reach 1.40 under the engine bay --
+    more sky-and-source credit than a plane element can physically receive. `build_ground_field`
+    now clamps them before use; this reproduces the raw (unclamped) sum the way it used to be
+    computed, on both car scenes' actual geometry and patch, and asserts the physical bound.
+    """
+    geom = CarGeometry()
+    scene = Scene.from_file(yaml_path)
+    demo = build_car_demo(scene, author=False)
+    patch = demo.ground_field.patch
+    raw_total = sum(patch_view_factors(patch, rect) for _, rect in geom.ground_radiators())
+    assert raw_total.max() > 1.0, "the nesting this test guards against should still be present"
+
+    clamped = clamp_view_factor_sum(
+        [patch_view_factors(patch, rect) for _, rect in geom.ground_radiators()]
+    )
+    clamped_total = sum(clamped)
+    assert np.all(clamped_total <= 1.0 + 1e-6), float(clamped_total.max())
 
 
 def test_the_camera_stands_where_it_says_it_does() -> None:

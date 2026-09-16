@@ -53,6 +53,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the test now checks the algorithm's real invariant instead of a proxy for it.
 
 ### Fixed
+- **The car scenes' ground radiators no longer over-count a shared solid angle** (`PT.3`, ADR 0090).
+  `build_ground_field` summed independently-computed view factors from `underbody`, `engine_bay` and
+  `exhaust_pipe` onto the road, but `engine_bay`'s and `exhaust_pipe`'s rectangles lie **entirely
+  inside** `underbody`'s footprint — three descriptions of one floor pan, not three disjoint bodies.
+  Measured peak Σ F = 1.40 across 28 cells under the engine bay, against a hard bound of 1 for a
+  plane element, inflating the clear-night road patch by up to ~40%.
+  `irsim.thermal.spatial_sources.clamp_view_factor_sum` rescales the three radiators' view factors
+  proportionally wherever their sum would exceed 1, preserving the relative footprint/pool/stripe
+  shape ADR 0088 authored three rectangles for, and warns loudly when it triggers.
+  `occluded_longwave_flux` is linear in `view_factors`, so the same scale factor caps its occlusion
+  term along with its source term. Verified against the actual car-scene geometry: Σ F ≤ 1 + 1e-6 on
+  every cell of both `car_ignition_overcast_night.yaml` and `car_ignition_clear_night.yaml`
+  (`tests/unit/test_car_demo.py::test_ground_radiator_view_factors_never_exceed_one`), plus 6 new
+  unit cases for the clamp itself (`tests/unit/test_spatial_sources.py`).
 - **README's component status table is a table again** (RP.1, roadmap revision 4). Four of its fifteen
   rows — `materials`, `detector`, `noise`, `isp` — had lost their **State** cell to pasted changelog
   prose, with the state token pushed to the end of a paragraph up to **1,473 characters** long and the

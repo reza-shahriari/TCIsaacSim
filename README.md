@@ -312,7 +312,10 @@ Stated deliberately — see `docs/physics-model.md` Appendix A for the full list
   lateral conduction within the skin. What *does* spread across a panel is the forcing: ADR 0088's
   configuration factor puts an engine bay's heat onto the bonnet above it as a computed falloff,
   and a warm body onto the ground below it -- single-bounce, isothermal over the radiating
-  rectangle, and parallel surfaces only.
+  rectangle, and parallel surfaces only. The ground's three radiators (underbody, engine-bay floor,
+  exhaust) are nested regions of one floor pan, not disjoint bodies, so their view factors are
+  clamped to sum to at most 1 per cell (ADR 0090) rather than partitioned -- correct in total, but
+  an approximation of which radiator "owns" a cell where their footprints overlap.
 - **A surface field is not spun up with the scene on it.** `spin_up` runs over §12.3's surfaces, so
   a `PlanarThermalField` starts from the *uniform* answer -- the road as it would be with nothing
   standing on it. Frame 0 of the car scenes is therefore the moment the car arrived, and every
