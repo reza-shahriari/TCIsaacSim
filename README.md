@@ -10,6 +10,9 @@ every equation here. Code cites it by section.
 **Spec issues:** [`docs/spec-issues.md`](docs/spec-issues.md) — contradictions found in the spec, with the
 resolution the code assumes and what has been applied; raise new ones there, never diverge silently.
 
+**Next step:** `make next`, or the **Do next** block at the top of
+[`docs/roadmap.md`](docs/roadmap.md) — generated, so it cannot go stale; `make check` fails if it does.
+
 **Plan:** [`docs/roadmap.md`](docs/roadmap.md) — milestones, one-commit steps, risks, ADR backlog. Phase 1
 targets objects in the sky against a sky background, validated against public anti-UAV thermal video;
 phase 2 is ground scenes and automotive (ADR 0003).

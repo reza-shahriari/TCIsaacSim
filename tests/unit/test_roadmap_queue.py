@@ -174,3 +174,34 @@ def test_the_roadmap_points_at_the_script(steps: dict) -> None:
     """A rule nobody can find is not a rule."""
     text = ROADMAP.read_text(encoding="utf-8")
     assert "next_step.py" in text, "the roadmap must tell a reader how to get the next step"
+
+
+def test_the_published_queue_matches_the_tables(ns, steps: dict, queue: list) -> None:
+    """The roadmap shows the queue, so the shown queue must be the computed one.
+
+    A pasted list is normally a liability: it goes stale the moment a step is ticked, and a stale
+    queue is worse than none because it still answers. It is safe here only because it is generated
+    and this test -- plus `next_step.py --check` inside `make check` -- fails on drift. Regenerate
+    with `make next`.
+    """
+    score = ns.leverage(steps)
+    expected = ns.publish(ns.render_block(steps, queue, score), ROADMAP)
+    assert expected == ROADMAP.read_text(encoding="utf-8"), (
+        "the queue published in docs/roadmap.md has drifted from its own tables.\n  Run: make next"
+    )
+
+
+def test_the_generated_block_is_not_mistaken_for_step_rows(ns, steps: dict) -> None:
+    """The block lives inside the file the parser reads, so it must not parse as steps itself.
+
+    Its rows begin with a position number rather than a step id, which is what keeps them out of
+    `STEP_ROW`. If that ever changed, the queue would start counting itself.
+    """
+    text = ROADMAP.read_text(encoding="utf-8")
+    start, stop = text.find(ns.BEGIN), text.find(ns.END)
+    assert start >= 0 and stop > start, "the next:begin / next:end markers are gone"
+    block = text[start:stop]
+    assert not [ln for ln in block.splitlines() if ns.STEP_ROW.match(ln)], (
+        "a generated queue row parses as a roadmap step row"
+    )
+    assert len(steps) == len(ns.load(ROADMAP)), "publishing the queue changed the step count"

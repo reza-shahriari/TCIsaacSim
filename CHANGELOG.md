@@ -21,9 +21,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `RP.3` makes `stage_own_hunk.sh` the default commit path. It unblocks nothing so the mechanical key
   sorts it ninth, but a whole-file write has silently reverted committed work **three times in two
   days**, and the cost falls on other sessions' shipped work.
-- **The queue is not pasted into the roadmap.** A written list goes stale the moment a step is ticked,
-  and a stale queue is worse than none because it still answers. Ticking a row is all that is needed;
-  the next call recomputes — verified by simulating two ticks (`RP.3` → `PT.3` → `IG.1`).
+- **The queue is published in the roadmap**, between `next:begin` / `next:end` markers, so opening the
+  plan shows a `Start here →` block and the next fifteen steps without running anything. A pasted list
+  is normally a liability — it goes stale the moment a step is ticked, and a stale queue is worse than
+  none because it still answers — so it is *generated* by `--write`, never hand-edited, and
+  `--check` runs inside `make check`. Drift fails the gate rather than misleading the next reader.
+  `make next` prints the head and republishes. Verified by simulating two ticks
+  (`RP.3` → `PT.3` → `IG.1`), and by a negative control that ticks a step and confirms both the gate
+  and the test catch the stale block.
 - `tests/unit/test_roadmap_queue.py` is what makes the answer safe to act on without reading the
   document: the order is **total** (one head, two runs agree), **sound** (no step before its deps),
   **complete** (every open step exactly once, so nothing is silently dropped), and **every pick is the

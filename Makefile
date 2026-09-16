@@ -9,7 +9,7 @@ PYTHON ?= python
 CI_PYTHON ?= python3.10
 CI_VENV ?= .venv-ci
 
-.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean
+.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean next
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -31,7 +31,14 @@ fmt:
 typecheck:
 	$(PYTHON) -m mypy src/irsim src/irsim_isaac src/irsim_eval
 
+# What to start now, and republish the queue the roadmap shows. `make next` regenerates it;
+# `make check` only verifies it, so a stale queue fails the gate instead of misleading a reader.
+next:
+	$(PYTHON) scripts/next_step.py
+	@$(PYTHON) scripts/next_step.py --write
+
 check: lint typecheck test
+	@$(PYTHON) scripts/next_step.py --check
 	@echo "OK — safe to commit"
 
 ci:
