@@ -153,6 +153,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 ### Fixed
+- **A patch rotated in its own plane no longer mis-reads its radiator** (`PT.4`).
+  `view_factor_to_parallel_rectangle` took an `axes=` argument "so the offsets are measured in a
+  frame the caller chose", and `patch_view_factors` passed the **receiver's** axes. That mixes
+  frames: `du` came out along the patch's u while `half_u_m` is an extent along the *rectangle's*, so
+  a surface whose grid is not aligned to its radiator was evaluated as though the radiator had turned
+  with it. Measured on a 2.0 × 0.5 m radiator: 0.152 against 0.104 for the same element, with no
+  exception raised — the "plausible number, the worst kind of wrong" the module docstring refuses.
+- **The parameter is removed rather than guarded.** It could not have been right, because the
+  quantity does not depend on it: this is Howell C-11, a *differential element* to a parallel
+  rectangle, and a plane element has no in-plane orientation for the answer to depend on. The
+  roadmap's acceptance asked for a rotated configuration to **raise**; computing it correctly is
+  strictly better, so a rotated patch now returns the right view factors instead of being refused.
+  The parallel-surface guard, which is a real precondition, is untouched and still tested.
+- Latent until now only because `car_demo` authors every patch on world EX/EZ — the first ship deck
+  or wing would have hit it. Six new cases, including a **world-space quadrature oracle** that walks
+  the rectangle's real corners instead of assuming an axis, so it fails on a frame mix-up rather than
+  merely on a disagreement; the one-rectangle-two-labellings invariant; and a whole-configuration
+  rotation about the shared normal. Negative control: re-mixing the frames turns three red, two of
+  them the new oracle.
+
 - **The G-buffer's dtype guard admits no float16 anywhere** (`IG.8`). `_as_f64_plane` refused fp16
   only on `distance_m` and `position`, and carved out normals, occlusion and motion on the stated
   grounds that "the renderer on this build delivers the normals AOV as float16 whether we like it or

@@ -271,3 +271,141 @@ def test_clamp_view_factor_sum_scales_the_occlusion_term_the_same_as_the_source_
 def test_clamp_view_factor_sum_rejects_an_input_already_out_of_range() -> None:
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         clamp_view_factor_sum([np.array([1.5]), np.array([0.1])])
+
+
+# ---------------------------------------------------------------------------------------------
+# PT.4 — the configuration factor does not depend on how the receiver is parameterised
+# ---------------------------------------------------------------------------------------------
+
+EZ = np.array([0.0, 0.0, 1.0])
+
+
+def _brute_rectangle(point: np.ndarray, rect: RadiantRectangle, n: int = 1200) -> float:
+    """F from one element to a whole rectangle, integrated in world space.
+
+    Independent of the corner superposition under test: it places a grid over the rectangle's real
+    extent and sums `cos(theta1) cos(theta2) dA / (pi r^2)` with both cosines taken against the
+    shared normal, which is what "parallel" means.
+    """
+    us = (np.arange(n) + 0.5) / n * 2.0 * rect.half_u_m - rect.half_u_m
+    vs = (np.arange(n) + 0.5) / n * 2.0 * rect.half_v_m - rect.half_v_m
+    grid_u, grid_v = np.meshgrid(us, vs, indexing="ij")
+    pts = rect.centre_m + grid_u[..., None] * rect.u_axis + grid_v[..., None] * rect.v_axis
+    d = pts - np.asarray(point, dtype=np.float64)
+    r2 = np.sum(d * d, axis=-1)
+    cos = np.abs(d @ rect.normal) / np.sqrt(r2)
+    da = (2.0 * rect.half_u_m / n) * (2.0 * rect.half_v_m / n)
+    return float(np.sum(cos * cos / (np.pi * r2)) * da)
+
+
+def _rect(u_axis: np.ndarray, v_axis: np.ndarray, half_u: float, half_v: float) -> RadiantRectangle:
+    return RadiantRectangle(
+        centre_m=np.array([0.0, -1.0, 0.0]),
+        u_axis=u_axis,
+        v_axis=v_axis,
+        half_u_m=half_u,
+        half_v_m=half_v,
+    )
+
+
+def test_one_rectangle_described_two_ways_gives_one_answer() -> None:
+    """The invariant PT.4 is about: an in-plane relabelling is not a physical change.
+
+    The same 2.0 x 0.5 m radiator, once with u along x and once with u along z. Same body, same
+    element, so the same configuration factor -- to the last bit, because the corner terms are
+    merely summed in a different order.
+    """
+    plain = _rect(EX, EZ, 1.0, 0.25)
+    relabelled = _rect(EZ, -EX, 0.25, 1.0)
+    points = np.array([[0.7, 0.0, 0.15], [0.0, 0.0, 0.0], [-1.3, 0.0, -0.2]])
+    assert view_factor_to_parallel_rectangle(points, plain) == pytest.approx(
+        view_factor_to_parallel_rectangle(points, relabelled), rel=1e-12
+    )
+
+
+@pytest.mark.parametrize("point", [[0.7, 0.0, 0.15], [0.0, 0.0, 0.0], [1.6, 0.0, -0.4]])
+def test_the_closed_form_matches_a_world_space_quadrature(point: list[float]) -> None:
+    """The oracle that would catch a frame mix-up rather than merely a disagreement.
+
+    `_brute_rectangle` never touches `half_u_m` as a scalar extent along an assumed axis: it walks
+    the rectangle's real corners in world space. A version of the closed form that measured the
+    offset in one frame and the extent in another would fail this at any offset off the centre.
+    """
+    rect = _rect(EX, EZ, 1.0, 0.25)
+    p = np.array([point], dtype=np.float64)
+    got = float(view_factor_to_parallel_rectangle(p, rect)[0])
+    assert got == pytest.approx(_brute_rectangle(np.array(point), rect), rel=2e-3)
+
+
+def test_a_patch_rotated_in_its_own_plane_sees_the_same_radiator() -> None:
+    """The defect as it would have reached a scene (PT.4).
+
+    `patch_view_factors` used to hand the *patch's* in-plane axes to the kernel while the extents
+    came from the *rectangle's*. A deck, a wing or any surface whose grid is not aligned to the
+    radiator's axes was therefore evaluated as though the radiator had turned with it. Latent only
+    because `car_demo` happens to author every patch on world EX/EZ.
+
+    Here two patches cover the same world region with axes 90 degrees apart, so cell k of one is a
+    different world point from cell k of the other -- but the *set* of cells is the same region, so
+    the sorted view factors must agree.
+    """
+    rect = _rect(EX, EZ, 0.9, 0.3)
+    common = {"origin_m": np.array([-0.6, 0.0, -0.6]), "n_u": 6, "n_v": 6, "du_m": 0.2, "dv_m": 0.2}
+    aligned = PlanarPatch(u_axis=EX, v_axis=EZ, **common)
+    turned = PlanarPatch(
+        origin_m=np.array([0.6, 0.0, -0.6]), u_axis=EZ, v_axis=-EX, n_u=6, n_v=6, du_m=0.2, dv_m=0.2
+    )
+    assert np.allclose(
+        np.sort(patch_view_factors(aligned, rect)),
+        np.sort(patch_view_factors(turned, rect)),
+        rtol=1e-12,
+    )
+
+
+def test_a_patch_and_a_radiator_turned_together_are_unchanged() -> None:
+    """Rotating the whole configuration about the shared normal changes nothing physical."""
+    rect = _rect(EX, EZ, 0.9, 0.3)
+    patch = PlanarPatch(
+        origin_m=np.array([-0.6, 0.0, -0.6]),
+        u_axis=EX,
+        v_axis=EZ,
+        n_u=5,
+        n_v=5,
+        du_m=0.24,
+        dv_m=0.24,
+    )
+    before = patch_view_factors(patch, rect)
+
+    # A 90-degree turn of both, about the shared +Y normal: (x, z) -> (z, -x).
+    def turn(v: np.ndarray) -> np.ndarray:
+        return np.array([v[2], v[1], -v[0]])
+
+    rect_t = RadiantRectangle(
+        centre_m=turn(rect.centre_m),
+        u_axis=turn(EX),
+        v_axis=turn(EZ),
+        half_u_m=rect.half_u_m,
+        half_v_m=rect.half_v_m,
+    )
+    patch_t = PlanarPatch(
+        origin_m=turn(patch.origin_m),
+        u_axis=turn(EX),
+        v_axis=turn(EZ),
+        n_u=5,
+        n_v=5,
+        du_m=0.24,
+        dv_m=0.24,
+    )
+    assert patch_view_factors(patch_t, rect_t) == pytest.approx(before, rel=1e-12)
+
+
+def test_the_parallel_guard_still_refuses_a_tilted_radiator() -> None:
+    """Removing `axes` must not have removed the check that the closed form applies at all."""
+    patch = PlanarPatch(
+        origin_m=np.zeros(3), u_axis=EX, v_axis=EZ, n_u=3, n_v=3, du_m=0.2, dv_m=0.2
+    )
+    tilted = RadiantRectangle(
+        centre_m=np.array([0.0, -1.0, 0.0]), u_axis=EX, v_axis=EY, half_u_m=0.5, half_v_m=0.5
+    )
+    with pytest.raises(ValueError, match="parallel"):
+        patch_view_factors(patch, tilted)

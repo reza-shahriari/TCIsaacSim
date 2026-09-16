@@ -126,30 +126,31 @@ class RadiantRectangle:
         return float(4.0 * self.half_u_m * self.half_v_m)
 
 
-def view_factor_to_parallel_rectangle(
-    points: Any, rect: RadiantRectangle, *, axes: tuple[Any, Any] | None = None
-) -> NDArray[np.float64]:
+def view_factor_to_parallel_rectangle(points: Any, rect: RadiantRectangle) -> NDArray[np.float64]:
     """F from each point to ``rect``, by superposing the four signed corner terms.
 
-    ``points`` must lie on a plane parallel to the rectangle; ``axes`` names the receiving plane's
-    (u, v) so the offsets are measured in a frame the caller chose, defaulting to the rectangle's
-    own. Points level with the rectangle's plane raise -- the configuration factor is singular
-    there and a clamped value would be a fiction.
+    ``points`` must lie on a plane parallel to the rectangle. Points level with the rectangle's
+    plane raise -- the configuration factor is singular there and a clamped value would be a
+    fiction.
+
+    **The offsets are measured in the rectangle's own axes, and there is no option** (PT.4). This
+    used to take an ``axes=`` argument "so the offsets are measured in a frame the caller chose",
+    and :func:`patch_view_factors` passed the *receiver's* axes. That mixes frames: ``du`` came out
+    along the patch's u while ``half_u_m`` is an extent along the rectangle's, so a receiver rotated
+    in its own plane was evaluated as though the rectangle had turned with it.
+
+    The parameter could not have been right, because the quantity does not depend on it. This is
+    Howell C-11, a **differential element** to a parallel rectangle: the element contributes its
+    position and its normal, and a plane element has no in-plane orientation for the answer to
+    depend on. How the receiving surface happens to be parameterised is bookkeeping for the caller's
+    array order, never an input to the configuration factor.
     """
     p = np.asarray(points, dtype=np.float64)
     if p.ndim == 0 or p.shape[-1] != 3:
         raise ValueError(f"points must have a trailing axis of 3, got shape {p.shape}")
-    u_axis, v_axis = (
-        (rect.u_axis, rect.v_axis)
-        if axes is None
-        else (
-            np.asarray(axes[0], dtype=np.float64).reshape(3),
-            np.asarray(axes[1], dtype=np.float64).reshape(3),
-        )
-    )
     offset = p - rect.centre_m
-    du = offset @ u_axis
-    dv = offset @ v_axis
+    du = offset @ rect.u_axis
+    dv = offset @ rect.v_axis
     c = np.abs(offset @ rect.normal)
     if np.any(c <= 0.0):
         raise ValueError(
@@ -177,9 +178,10 @@ def patch_view_factors(patch: PlanarPatch, rect: RadiantRectangle) -> NDArray[np
             "the closed form is for parallel surfaces only; this patch and radiator are not "
             "parallel, and evaluating it anyway would return a plausible wrong number"
         )
-    return view_factor_to_parallel_rectangle(
-        patch.cell_centres(), rect, axes=(patch.u_axis, patch.v_axis)
-    )
+    # The rectangle's own axes, always -- see `view_factor_to_parallel_rectangle`. Passing the
+    # patch's here is what PT.4 removed: it made the result depend on how the receiver happened to
+    # be parameterised, which the configuration factor does not.
+    return view_factor_to_parallel_rectangle(patch.cell_centres(), rect)
 
 
 def clamp_view_factor_sum(
