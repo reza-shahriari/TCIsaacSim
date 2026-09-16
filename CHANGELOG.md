@@ -6,6 +6,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The two ADRs shipped code has been citing for weeks now exist** (`RP.4`). CLAUDE.md's reason for
+  ADRs is that a reader who was not in the conversation can recover the reasoning; a citation pointing
+  at a file nobody wrote is worse than none, because it tells that reader the reasoning exists and
+  sends them to look for it. **ADR 0042** records the angular-emissivity level policy — the level is a
+  property of the *material*, not of the caller; specular Fresnel stands in for 1 − ε only at Level A
+  (the resolution `docs/spec-issues.md` S12 already named); the baked table carries (ε₀, a, p) rather
+  than pinning p = 4 (S18); and the Level B fit refuses on *shape* before error, because aluminium's ε
+  is so small that a completely wrong shape scores an RMS residual of 0.0034, inside the 0.02 bar.
+  **ADR 0079** records the sea-water optical constants and the Cox–Munk slope model, including why
+  `slope_variance` returns components rather than the published isotropic total: Cox & Munk fitted the
+  two separately on the same data and they disagree by 0.8 % in variance.
+- ADR 0079 also supplies the **salinity bound ADR 0078 deferred to it** and that had existed only as a
+  forward reference. No redistributable sea-water n/k table covers the LWIR window, so the substitution
+  cannot be checked directly; what is measured instead is the sensitivity the substitution would move
+  along. Perturbing the whole table by +1 % and recomputing ε_B(θ) through the project's own
+  `band_directional_emissivity` gives a maximum Δε_B of **3.0e-3 for n** and **5.6e-4 for k**, both
+  peaking at **85°** of incidence — so ε_B is about five times more sensitive to n than to k, and the
+  sensitivity is worst exactly in the near-horizon band a low maritime camera spends its pixels on. At
+  a 20 K sea-to-sky contrast that is 60 mK at 85° against 15 mK at nadir, so the bound is conditional
+  but usable: a salinity shift of under 1 % in n costs about one NETD at the worst angle.
+- **`tests/unit/test_adr_citations.py` keeps it true.** It walks every `ADR NNNN` in `src/`, `tests/`,
+  `docs/`, `scripts/` and `configs/` and fails on one that does not resolve. The parser reads the
+  compound forms the repository actually uses — `ADRs 0031, 0058`, `ADR 0053/0054`,
+  `ADR 0025 and 0023` — because one reading only the leading number would have silently passed twenty
+  citations it never checked. A deliberately unresolvable mention goes in a `PHANTOMS` allowlist with
+  its reason (one entry: the roadmap's post-mortem of a rejected revision records that that revision
+  cited a non-existent ADR 0069, and deleting the mention would delete the record of the mistake), and
+  a second test fails that entry once the text or the ADR changes, so the allowlist cannot rot.
+  Negative control: hiding ADR 0042 turns the invariant and the contents check red.
 - **Every Isaac entry point picks its GPU through one helper** (`irsim_isaac.env.simulation_app_config`).
   This workstation has two cards and the owner works on the second one, so a render that spreads
   across both takes memory somebody is using — and Kit's multi-GPU render graph does exactly that by

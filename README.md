@@ -386,6 +386,15 @@ temperature flows, noise in radiance space, Kirchhoff closure) and the per-step 
 Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
 one commit.
 
+**An ADR you cite must exist.** `tests/unit/test_adr_citations.py` walks every `ADR NNNN` in `src/`,
+`tests/`, `docs/`, `scripts/` and `configs/` and fails if the file is missing — including the compound
+forms (`ADRs 0031, 0058`, `ADR 0053/0054`, `ADR 0025 and 0023`), which twenty citations use. A
+citation pointing at an unwritten file is worse than none: it tells a reader the reasoning exists and
+sends them to look for it. Forward-allocating a number in a docstring is therefore not a way to defer
+writing the record. A deliberately unresolvable mention — prose about an ADR that never existed — goes
+in that file's `PHANTOMS` allowlist with its reason, and a second test deletes the entry's excuse once
+the text or the ADR changes.
+
 **Several people work in one tree at once.** Commit named paths, never `git add -A`: a blanket add
 stages whoever else had `README.md`, `CHANGELOG.md` or `docs/roadmap.md` open, and their prose lands in
 your commit under your message. For shared files, `scripts/stage_own_hunk.sh` stages your edit alone —
