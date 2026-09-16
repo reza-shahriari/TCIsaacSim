@@ -153,6 +153,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 ### Fixed
+- **CLAUDE.md's layout block describes the repository that exists** (`RP.8`). Two claims had drifted
+  into fiction in the one document every session reads first and nobody re-checks. `src/irsim_isaac/spg/`
+  was advertised as holding ".cu kernels, .cu.lua launch scripts, .usda shader defs"; it holds one
+  README whose own first paragraph says "**This directory is empty on purpose**" — the four steps
+  that would fill it are blocked (`DC.1`). And `docs/maps/` was sold as "per-module JSON maps used for
+  fast navigation of the physics core"; the JSON is there, but its own README calls it frozen
+  2026-09-10 snapshots and it has **one commit** in its history, so a reader sent there for navigation
+  got a stale picture of a fast-moving tree with no warning.
+- **Scope, stated because it is a judgement call.** `docs/spec-issues.md` records that the user asked
+  CLAUDE.md not be edited by the plan. That is read here as covering *policy and wording* — line 13 on
+  Unreal, the commit-scope list, the Isaac version string, all of which stay with open questions 2 and
+  9 and are untouched — and not as protecting statements of fact about paths that are simply untrue.
+  If that reading is wrong, the two edits are one revert.
+- `tests/unit/test_claude_md_layout.py` is the durable half: it parses the layout block, asserts every
+  path exists, asserts a directory advertised as holding a file type contains one, and asserts that a
+  directory whose own README disclaims currency is not described as live. A claim about the tree that
+  a test can check stops being something someone has to remember. Negative control: restoring either
+  sentence turns the matching test red.
+
 - **A patch rotated in its own plane no longer mis-reads its radiator** (`PT.4`).
   `view_factor_to_parallel_rectangle` took an `axes=` argument "so the offsets are measured in a
   frame the caller chose", and `patch_view_factors` passed the **receiver's** axes. That mixes

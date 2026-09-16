@@ -81,7 +81,8 @@ src/irsim/              # engine-free physics core (pure Python + NumPy)
 
 src/irsim_isaac/        # Isaac Sim glue — the ONLY place engine imports are allowed
   pipeline/             # AOV setup, annotators, Warp-based reference pipeline
-  spg/                  # SPG assets: .cu kernels, .cu.lua launch scripts, .usda shader defs
+  spg/                  # empty on purpose: the .cu / .cu.lua / .usda assets are blocked on one
+                         # capability question, written down in its README (DC.1)
 
 tests/
   conftest.py           # synthetic G-buffer fixtures (ramp, uniform, two-material, grazing sphere,
@@ -100,7 +101,8 @@ docs/physics-model.md   # THE physics specification
 docs/roadmap.md         # milestones, one-commit steps, risks, ADR backlog
 docs/spec-issues.md     # contradictions found in physics-model.md and the resolution the code assumes
 docs/decisions/         # ADRs — one file per significant decision
-docs/maps/              # per-module JSON maps used for fast navigation of the physics core
+docs/maps/              # frozen 2026-09-10 subsystem snapshots, not maintained — history, not
+                         # navigation; read the tree itself for the current shape
 scripts/                # LUT generation, validation reports, dataset export
 .github/workflows/      # CI: plain-CPython gate only, no GPU, no Isaac Sim (mirrors `make ci`)
 ```
