@@ -18,3 +18,8 @@ outputs/
 # Validation datasets are not in git (ADR 0003, roadmap ME.1); the index is.
 data/validation/*/
 docs/validation/.*-clips.json
+
+# pytest-cov leaves these behind; they are a measurement of one run, not a property of the repo.
+.coverage
+.coverage.*
+htmlcov/
