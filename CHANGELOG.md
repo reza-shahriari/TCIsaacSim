@@ -133,6 +133,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 ### Fixed
+- **The motion AOV no longer reaches the G-buffer, and its convention is never guessed** (`IG.5`).
+  Three places in the repository said this plane was omitted on this build — `gbuffer_isaac`'s own
+  channel table, `irsim.optics.motion`'s opening paragraph ("the `motion_px` plane of the G-buffer
+  had to be left empty", which is *why* the analytic tracker exists), and ADR 0014's addendum, which
+  measured `motion_vectors` sitting at a ~6e-5 floor after a **180 px** displacement. The code
+  delivered it anyway: `_reject_reason` applies its all-zero test only to *required* channels, and
+  6e-5 is not zero in any case, so the plane reached `RawAovs.motion`, was scaled by a **defaulted**
+  `motion_convention="pixels"`, and arrived in the G-buffer where `irsim.optics.stage` ran the smear
+  path on it.
+- Numerically that was a no-op; the hazard was the convention. Nothing had ever checked the sign,
+  Replicator's documentation gives both signs opposite to this project's contract, and a plane that
+  is noise today is a plane that is backwards the day a build starts filling it in. The three
+  conventions differ by a factor of the **resolution** and by the sign of y: the same raw 0.01
+  becomes 0.01, 1.28 or 2.56 px/frame at 256 px, with `ndc` pointing y the other way from `uv`.
+- Two changes. `UNVERIFIED_CHANNELS` marks a channel whose annotator returns *something* whose
+  meaning has never been established; `AovReader` does not attach it unless a caller names it
+  (`unverified=("motion",)`), which `geometry_probe` does, because surveying it is the only way it
+  could ever stop being unverified. And `geometry_planes`' `motion_convention` lost its default: a
+  motion plane supplied without one now raises instead of being scaled by a guess. Requiring an
+  unverified channel is refused outright, so the reader cannot drop it and then blame the build for
+  producing no data.
+- The motion the pipeline uses is still the synthesised one (`irsim.optics.motion`, verified in-sim
+  to 0.1 px). Wiring it into `IrCamera` is `IG.6`; this step only stops the AOV competing with it.
+  Negative control: restoring the `"pixels"` default and emptying `UNVERIFIED_CHANNELS` turns 5 of
+  the 10 new cases red.
+
 - **The patch-coverage guard was off in every frame this project has produced** (`IG.1`).
   `IrCamera` had one `strict_materials` flag standing in front of three unrelated failures: an
   instance id the label table does not name, a rendered prim with no thermal node, and a pixel that

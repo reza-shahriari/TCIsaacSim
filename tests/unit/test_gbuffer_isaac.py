@@ -245,6 +245,8 @@ def test_sky_pixels_are_masked_and_left_finite() -> None:
             motion=np.full((*shape, 2), 2.0, dtype=np.float32),
         ),
         camera_position=CAMERA_POSITION,
+        # Named, not defaulted: there is no safe default convention (IG.5).
+        motion_convention="pixels",
     )
     assert planes.sky_mask[0].all() and planes.sky_mask[1].all()
     assert not planes.sky_mask[2:].any()
@@ -272,6 +274,7 @@ def test_to_gbuffer_satisfies_the_m0_6_contract() -> None:
             motion=np.zeros((*shape, 2), dtype=np.float32),
         ),
         camera_position=CAMERA_POSITION,
+        motion_convention="pixels",
     )
     gbuf = to_gbuffer(
         planes,

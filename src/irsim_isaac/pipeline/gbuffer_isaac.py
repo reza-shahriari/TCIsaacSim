@@ -20,8 +20,11 @@ G-buffer plane       annotator (measured)    note
 ``normal_dot_up``    ``normals``             against the stage up axis; the AOV is world space
 ``sky_view_factor``  --                      ``occlusion * (1 + n.up)/2`` (ADR 0045); no ambient
                                              occlusion AOV delivers, so occlusion = 1
-``motion_px``        --                      no motion AOV transports motion on this build; the
-                                             plane is omitted (it is optional in M0.6)
+``motion_px``        --                      no motion AOV transports motion on this build, so the
+                                             channel is **not attached** (``UNVERIFIED_CHANNELS``)
+                                             and the plane is omitted -- it is optional in M0.6.
+                                             The pipeline's motion is synthesised instead
+                                             (:mod:`irsim.optics.motion`)
 ``semantic_id``      ``semantic_segmentation``
 ``sky_mask``         ``DistanceToCameraSD``  no geometry hit: the ray length is ``inf``
 ===================  ======================  =================================================
@@ -58,6 +61,7 @@ the device.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -81,6 +85,7 @@ __all__ = [
     "to_gbuffer",
     "motion_px_per_frame",
     "AOV_NAMES",
+    "UNVERIFIED_CHANNELS",
     "AOV_INIT_PARAMS",
 ]
 
@@ -117,6 +122,26 @@ UP_AXIS_VECTOR: dict[str, tuple[float, float, float]] = {
 #: collapses every unlabelled prim into a single ``UNLABELLED`` id. ADR 0014 recorded it as exact
 #: per prim, but its ramp scene labelled all 64 quads, so the degeneracy never showed. An asset
 #: with unlabelled prims would silently paint them all one material.
+#: Channels whose annotator returns *something* on this build but whose meaning has never been
+#: established, so :class:`AovReader` does not attach them for production use. A caller that wants
+#: one has to ask for it by name (``unverified=("motion",)``), which is what the probe does.
+#:
+#: ``motion`` is the only member and the reason is IG.5. ADR 0014's addendum measured
+#: ``motion_vectors`` sitting at a ~6e-5 floor after a **180 px** displacement -- it transports no
+#: motion -- and ``Motion2d`` returns nothing. But ``_reject_reason`` applies its all-zero test
+#: only to *required* channels, and 6e-5 is not zero anyway, so the plane was reaching the
+#: G-buffer and :func:`irsim.optics.stage` was running the smear path on it. Numerically that is a
+#: no-op; the hazard is the **convention**. Nothing has ever checked the sign, Replicator's own
+#: documentation gives both signs opposite to this project's contract, and a plane that is noise
+#: today becomes a plane that is backwards the day a build starts filling it in.
+#:
+#: The motion the pipeline actually uses is synthesised from rigid-body transforms instead
+#: (:mod:`irsim.optics.motion`, M10.1b) -- which exists precisely because this AOV does not work,
+#: and is verified in-sim to 0.1 px. Reinstating the AOV means asserting its sign against a known
+#: displacement first, which is what ``tests/integration/test_motion_px_isaac.py`` already does for
+#: the analytic path.
+UNVERIFIED_CHANNELS = frozenset({"motion"})
+
 AOV_NAMES: dict[str, tuple[str, ...]] = {
     "distance": ("DistanceToCameraSD",),
     "position": ("Camera3dPositionSD", "PtWorldPos"),
@@ -323,7 +348,7 @@ def geometry_planes(
     position_frame: PositionFrame = "world",
     camera_position: Any = None,
     camera_to_world: Any = None,
-    motion_convention: MotionConvention = "pixels",
+    motion_convention: MotionConvention | None = None,
     default_occlusion: float = 1.0,
 ) -> GeometryPlanes:
     """Turn one frame of raw AOVs into the geometry half of the G-buffer (ADR 0014, ADR 0045).
@@ -377,6 +402,14 @@ def geometry_planes(
 
     motion = None
     if aovs.motion is not None:
+        if motion_convention is None:
+            raise ValueError(
+                "a motion AOV was supplied with no motion_convention. There is no safe default: "
+                "the three conventions differ by a factor of the resolution and by the sign of y, "
+                "and Replicator's documentation gives both signs opposite to this project's "
+                "contract, so a guess produces smear in the wrong direction rather than an error "
+                "(IG.5). Name the convention, or use irsim.optics.motion's synthesised plane."
+            )
         # `.shape` is `tuple[int, ...]`; the plane is 2-D by construction and the callee wants
         # that stated, so it is narrowed here rather than widened there.
         plane_shape = (int(distance.shape[0]), int(distance.shape[1]))
@@ -479,10 +512,32 @@ class AovReader:
         names: dict[str, tuple[str, ...]] | None = None,
         required: tuple[str, ...] = ("distance", "position", "normal"),
         expected_shape: tuple[int, int] | None = None,
+        unverified: Sequence[str] = (),
     ) -> None:
         self.render_product_path = render_product_path
         self.device = device
-        self.names = dict(names or AOV_NAMES)
+        # A channel in `UNVERIFIED_CHANNELS` is attached only when the caller names it (IG.5). It
+        # is dropped rather than rejected later, because `_reject_reason` cannot tell a plane whose
+        # *values* are meaningless from one whose values are fine.
+        wanted = set(unverified)
+        unknown = wanted - UNVERIFIED_CHANNELS
+        if unknown:
+            raise ValueError(
+                f"{sorted(unknown)} are not unverified channels; "
+                f"the unverified set is {sorted(UNVERIFIED_CHANNELS)}"
+            )
+        self.names = {
+            channel: candidates
+            for channel, candidates in dict(names or AOV_NAMES).items()
+            if channel not in UNVERIFIED_CHANNELS or channel in wanted
+        }
+        self.skipped = tuple(sorted((set(dict(names or AOV_NAMES)) & UNVERIFIED_CHANNELS) - wanted))
+        blocked = set(required) & set(self.skipped)
+        if blocked:
+            raise ValueError(
+                f"{sorted(blocked)} cannot be required while unverified: pass "
+                f"unverified={tuple(sorted(blocked))!r} to attach it deliberately"
+            )
         self.required = required
         self.expected_shape = expected_shape
         self.resolved: dict[str, str] = {}

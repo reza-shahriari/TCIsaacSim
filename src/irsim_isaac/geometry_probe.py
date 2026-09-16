@@ -681,7 +681,11 @@ def probe_geometry_aovs(
     """
     import omni.replicator.core as rep
 
-    from irsim_isaac.pipeline.gbuffer_isaac import AOV_NAMES, AovReader
+    from irsim_isaac.pipeline.gbuffer_isaac import (
+        AOV_NAMES,
+        UNVERIFIED_CHANNELS,
+        AovReader,
+    )
 
     report_settings = configure_renderer(None if disable_aa else {"/rtx/post/aa/op": 1})
 
@@ -697,7 +701,11 @@ def probe_geometry_aovs(
         "candidates": {k: list(v) for k, v in AOV_NAMES.items()},
         "errors": {},
     }
-    reader = AovReader(rp_path, device="cpu", required=())
+    # The survey attaches the unverified channels too -- establishing what they return is the
+    # whole point of a probe, and is how one of them would ever stop being unverified (IG.5).
+    reader = AovReader(
+        rp_path, device="cpu", required=(), unverified=tuple(sorted(UNVERIFIED_CHANNELS))
+    )
     try:
         reader.attach(settle_frames=settle_frames, rt_subframes=rt_subframes)
     except RuntimeError as exc:  # required=() makes this unreachable, kept for safety
