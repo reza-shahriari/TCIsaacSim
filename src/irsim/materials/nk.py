@@ -35,7 +35,13 @@ from numpy.typing import NDArray
 
 from irsim.config.loader import resolve_data_dir
 from irsim.materials.fresnel import fresnel_reflectance
-from irsim.radiometry.band_average import T_REF_K, Spectrum, WeightingForm, band_average
+from irsim.radiometry.band_average import (
+    T_REF_K,
+    Spectrum,
+    WeightingForm,
+    band_average,
+    tabulated,
+)
 from irsim.radiometry.spectral_response import SpectralResponse
 
 __all__ = [
@@ -44,6 +50,7 @@ __all__ = [
     "load_nk_table",
     "fresnel_from_table",
     "band_directional_emissivity",
+    "band_slab_transmittance",
 ]
 
 #: Where n/k tables live under the data root.
@@ -195,3 +202,50 @@ def band_directional_emissivity(
         dtype=np.float64,
     )
     return np.asarray(out.reshape(shape) if shape else out[0], dtype=np.float64)
+
+
+def band_slab_transmittance(
+    table: NKTable,
+    response: SpectralResponse,
+    thickness_m: float,
+    t_ref_k: float = T_REF_K,
+    form: WeightingForm = "energy",
+) -> float:
+    """Band-averaged transmittance of a slab of ``table``'s material, ``thickness_m`` thick.
+
+    docs/physics-model.md §4.4. Beer-Lambert absorption inside the slab, with the two surfaces and
+    the multiple internal reflections between them:
+
+        alpha(lambda) = 4 pi k / lambda,  tau_i = exp(-alpha d)
+        tau = (1 - R)^2 tau_i / (1 - (R tau_i)^2)
+
+    **The surfaces are part of the answer, not a refinement.** Internal absorption alone reports a
+    slab of glass in NIR as transmitting 1.00, when about 8 % of the light never gets in: the
+    quantity a material file authors as ``transmittance_per_band`` is what leaves the far side,
+    which is `1 - eps - rho` by Kirchhoff (CLAUDE.md #4), so it must carry the Fresnel loss.
+
+    Normal incidence only. The angular form is the same expression with R(theta) and a path length
+    d/cos(theta_refracted), which nothing needs yet -- ``transmittance_per_band`` is a normal-
+    incidence band scalar by definition, and the angular dependence enters through
+    :func:`band_directional_emissivity`.
+
+    The multiple-reflection sum is the incoherent one: a 5 mm slab is thousands of wavelengths
+    thick, so the internal beams add in intensity rather than amplitude and no interference term
+    survives averaging over a band.
+    """
+    if thickness_m <= 0.0:
+        raise ValueError(f"thickness must be positive, got {thickness_m}")
+    lo, hi = table.support_um
+    r_lo, r_hi = response.support_um
+    if r_lo < lo or r_hi > hi:
+        raise ValueError(
+            f"spectral response spans [{r_lo:.4g}, {r_hi:.4g}] µm but the {table.name} n/k table "
+            f"only covers [{lo:.4g}, {hi:.4g}] µm; extend the table rather than extrapolating it"
+        )
+    lam = np.linspace(r_lo, r_hi, 2001)
+    n, k = table.at(lam)
+    thickness_um = float(thickness_m) * 1e6
+    internal = np.exp(-4.0 * np.pi * k / lam * thickness_um)
+    reflectance, _, _ = fresnel_reflectance(n, k, 1.0)
+    slab = (1.0 - reflectance) ** 2 * internal / (1.0 - (reflectance * internal) ** 2)
+    return float(band_average(response, tabulated(lam, slab), t_ref_k, form))

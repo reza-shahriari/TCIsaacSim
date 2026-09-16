@@ -386,6 +386,16 @@ temperature flows, noise in radiance space, Kirchhoff closure) and the per-step 
 Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
 one commit.
 
+**A ledger nobody can audit goes stale.** Two more guards, in the same spirit. `docs/spec-issues.md`
+carries a **status** on each of its sixty rows — `ADR NNNN`, `code — <step>`, or `open` — and
+`tests/unit/test_spec_issue_status.py` checks that every ADR a status names exists, that no row is
+`open` while the ADR its own resolution names is already written, and that the summary paragraph's
+counts are the table's own. That paragraph previously read "Everything else is open" while fifty-six
+of the sixty rows had shipped. And a material's `transmittance_per_band` must either match the
+Beer-Lambert transmittance of its own n/k table or declare `transmittance_derivation: "authored:
+<issue>"` naming an open spec issue — `tests/unit/test_transmittance_derivation.py`. Glass takes the
+second branch: its table is a fused-silica proxy that supplies angular shape, not magnitude.
+
 **An ADR you cite must exist.** `tests/unit/test_adr_citations.py` walks every `ADR NNNN` in `src/`,
 `tests/`, `docs/`, `scripts/` and `configs/` and fails if the file is missing — including the compound
 forms (`ADRs 0031, 0058`, `ADR 0053/0054`, `ADR 0025 and 0023`), which twenty citations use. A

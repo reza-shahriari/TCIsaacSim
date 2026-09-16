@@ -16,6 +16,16 @@ material:
     emissivity_per_band: {nir: 0.15, swir: 0.22, mwir: 0.85, lwir: 0.88}
     transmittance_per_band: {nir: 0.77, swir: 0.70, mwir: 0.02, lwir: 0.0}
     roughness_per_band: {nir: 0.05, swir: 0.05, mwir: 0.04, lwir: 0.03}
+    # NOT derivable from the n/k table below, and this says so rather than letting the table sit
+    # there looking like the source (spec issue S13). That table is fused silica; these numbers are
+    # soda-lime. Beer-Lambert over the authored 5 mm of the checked-in k gives nir 0.935, swir 0.936,
+    # mwir 0.109, lwir 0.000 against the 0.77 / 0.70 / 0.02 / 0.0 here -- fused silica has none of
+    # the iron and alkali that make real windscreen glass absorb in the near infrared, so the proxy
+    # is transparent where soda-lime is not. Only the LWIR value is reproduced, because there the
+    # Si-O reststrahlen band dominates and both glasses are opaque. LWIR/MWIR come from §16.2 and
+    # the SWIR/NIR triple is ESTIMATED; S13 stays open until a soda-lime source or a measured tau
+    # replaces them.
+    transmittance_derivation: "authored: S13"
     # Level A (M7.5). Glass is the material §4.2 singles out as violating Level C, and a single
     # Level B (a, p) cannot serve it either: the Si-O reststrahlen band makes the LWIR angular
     # shape genuinely different from the other three (fitting the table per band gives a = 1.42 in

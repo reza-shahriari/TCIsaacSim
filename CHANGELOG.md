@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`docs/spec-issues.md` now says per row what has been applied** (`RP.7`). Its header had always
+  promised that "the **status** column below records what has been applied"; there was no status
+  column. In its place was one sentence listing ten M0-era resolutions and ending "Everything else is
+  open" — wrong for months, because **fifty-six of the sixty rows had shipped**, thirty-seven of them
+  with an ADR written. Every row now carries `ADR NNNN`, `code — <step>` or `open`, and the four that
+  are genuinely open are named: `S9`, `S15`, `S16` are edits to `docs/physics-model.md` belonging to
+  the spec owner, and `S13` is reopened below. `S40` gained the ADR 0042 pointer `RP.4` created.
+- `tests/unit/test_spec_issue_status.py` keeps that ledger honest: every ADR a status names must
+  exist, no row may be `open` while the ADR its own resolution names is already written — the exact
+  way the old sentence went stale — and **the summary paragraph's counts are recomputed from the
+  table**, spelled out in words so a status edit cannot leave the prose behind. Negative control:
+  marking `S19` open while ADR 0045 exists turns two red.
+- **`transmittance_derivation` on the material schema**, and the guard behind it. A
+  `transmittance_per_band` must now either match the Beer-Lambert transmittance of the material's own
+  n/k table to within 0.10 per band, or declare `authored: <spec issue>` naming an issue that is
+  still open. `irsim.materials.nk.band_slab_transmittance` is the physics (§4.4): Beer-Lambert
+  absorption with the two surfaces and the incoherent multiple reflections between them, because
+  internal absorption alone calls a glass slab in NIR a perfect transmitter when about 8 % of the
+  light never gets in.
+
 - **The two ADRs shipped code has been citing for weeks now exist** (`RP.4`). CLAUDE.md's reason for
   ADRs is that a reader who was not in the conversation can recover the reasoning; a citation pointing
   at a file nobody wrote is worse than none, because it tells that reader the reasoning exists and
@@ -96,6 +116,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only precede an earlier-phase one if something depended on it. `PT.7` (phase C) legitimately
   precedes `XD.3` (phase B) because `XD.3` is still waiting on its own dependencies at that point, so
   the test now checks the algorithm's real invariant instead of a proxy for it.
+
+### Changed
+- **Spec issue `S13` is reopened, and its proposed resolution was wrong** (`RP.7`). S13 asked for
+  glass's τ_mwir to be computed by Beer-Lambert over 5 mm of the checked-in k(λ). That cannot be
+  done: `data/nk/glass.csv` is **fused silica** standing in for soda-lime and, by the design the
+  material file states outright, supplies the angular *shape* while `emissivity_per_band` supplies
+  the magnitude. Recomputing over the authored 5 mm gives **nir 0.935 / swir 0.936 / mwir 0.109 /
+  lwir 0.000** against the authored **0.77 / 0.70 / 0.02 / 0.0** — three bands disagree, not one.
+  Fused silica has none of the iron and alkali that make real windscreen glass absorb in the near
+  infrared, so the proxy is transparent where soda-lime is not; only LWIR agrees, where the Si–O
+  reststrahlen band makes both opaque, which is also why the table is usable for angular shape at
+  all (ADR 0042). `mwir: 0.02` was authored in `412f019`, six commits before the table existed
+  (`1a0f13c`), so the table never was its source. The fix is therefore **not** to change the number
+  to match the proxy — the number is plausible for soda-lime — but to make the file declare which of
+  the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 ### Fixed
 - **The patch-coverage guard was off in every frame this project has produced** (`IG.1`).

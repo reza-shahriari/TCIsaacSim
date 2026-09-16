@@ -114,6 +114,14 @@ class OpticalSpec(_Frozen):
     reflectance_per_band: dict[str, Fraction] | None = None
     transmittance_per_band: dict[str, Fraction] | None = None
     roughness_per_band: dict[str, Fraction] | None = None
+    #: Where ``transmittance_per_band`` came from: ``derived`` (it is the Beer-Lambert
+    #: transmittance of ``angular_model``'s n/k table over ``thermal.thickness_m``, and
+    #: `tests/unit/test_transmittance_derivation.py` checks that it is) or
+    #: ``authored: <spec issue>`` (it is not, and the named issue says why). Omitted means
+    #: ``derived`` for a material that has a table. The point is that a number which cannot
+    #: be recomputed from checked-in data has to *say so*, naming a live issue, rather than
+    #: sitting beside a table that looks like its source (spec issue S13).
+    transmittance_derivation: str | None = None
     angular_model: AngularModel = ConstantAngular(type="constant")
 
     @field_validator(
@@ -125,6 +133,24 @@ class OpticalSpec(_Frozen):
     @classmethod
     def _bands(cls, v: dict[str, float] | None, info: ValidationInfo) -> dict[str, float] | None:
         return _check_band_keys(v, str(info.field_name))
+
+    @field_validator("transmittance_derivation")
+    @classmethod
+    def _derivation(cls, v: str | None) -> str | None:
+        """``derived``, or ``authored: <issue>`` naming a row of `docs/spec-issues.md`."""
+        if v is None:
+            return None
+        text = v.strip()
+        if text == "derived":
+            return text
+        match = re.fullmatch(r"authored:\s*([ST]\d+)", text)
+        if match is None:
+            raise ValueError(
+                f"transmittance_derivation must be 'derived' or 'authored: <issue>' with an "
+                f"issue id like S13, got {v!r}. A number that cannot be recomputed from "
+                "checked-in data has to name the issue that explains why."
+            )
+        return f"authored: {match.group(1)}"
 
     @model_validator(mode="after")
     def _exactly_one_authored(self) -> OpticalSpec:
@@ -148,6 +174,11 @@ class OpticalSpec(_Frozen):
             path = getattr(self, name)
             if path is not None and not path.strip():
                 raise ValueError(f"{name} must be a file path")
+        if self.transmittance_derivation is not None and self.transmittance_per_band is None:
+            raise ValueError(
+                "transmittance_derivation describes where transmittance_per_band came from, "
+                "and this material authors no transmittance_per_band"
+            )
         scalar = self.emissivity_per_band or self.reflectance_per_band
         if scalar is not None and self.transmittance_per_band is not None:
             for band, tau in self.transmittance_per_band.items():
