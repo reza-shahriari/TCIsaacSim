@@ -169,27 +169,34 @@ _SKY_NORMAL_DOT_UP = np.float32(1.0)
 _SKY_SKY_VIEW_FACTOR = np.float32(1.0)
 
 
-def _as_f64_plane(
-    name: str, value: Any, channels: int | None, *, precision_critical: bool = False
-) -> NDArray[np.float64]:
-    """Validate one float AOV, refusing float16 only where half precision actually costs physics.
+def _as_f64_plane(name: str, value: Any, channels: int | None) -> NDArray[np.float64]:
+    """Validate one float AOV. **No plane may arrive as float16** (CLAUDE.md #2, roadmap IG.8).
 
-    This follows the M0.6 contract rather than banning float16 outright. ``distance_m`` scales the
-    optical depth and the 1/R^2 falloff, so fp16's 0.5 % relative spacing there is a real error;
-    the position AOV is the same quantity in three components. Normals, occlusion and motion are
-    *directions and fractions* feeding a cosine that the M10.1 tolerance allows 0.01 of slack on --
-    fp16 costs about 1e-3 there -- and the renderer on this build delivers the normals AOV as
-    float16 whether we like it or not (measured; ADR 0014 addendum). Banning it would have meant
-    no normals at all, which is strictly worse physics than a 1e-3 cosine error.
+    This used to carve out normals, occlusion and motion, on the stated grounds that "the renderer
+    on this build delivers the normals AOV as float16 whether we like it or not (measured;
+    ADR 0014 addendum)" -- so banning fp16 "would have meant no normals at all".
+
+    **That claim was wrong, and it was the whole justification.** ADR 0014's own addendum table
+    records ``normals`` as **float32 x4 at full resolution** and marks it *use*; this build's
+    Replicator registry agrees, registering
+    ``"normals": AnnotatorParams("NormalSD", np.float32, 4, ...)``. Nothing was being rescued. The
+    fp16 plane the addendum *does* record is ``PtWorldNormal``, which is half-resolution and all
+    zero, and which :class:`AovReader` rejects for those reasons rather than for its dtype.
+
+    So the carve-out bought no physics and spent the one rule that has no cheap symptom: fp16's
+    0.5 % relative spacing is invisible in a rendered frame and fatal in a radiometric one. If a
+    future build really does deliver a half-precision plane the pipeline needs, that is a
+    measurement and a decision to record -- not a default to inherit from a sentence.
     """
     arr = np.asarray(value)
     if not np.issubdtype(arr.dtype, np.floating):
         raise TypeError(f"{name} must be a float AOV, got {arr.dtype}")
-    if arr.dtype == np.float16 and precision_critical:
+    if arr.dtype == np.float16:
         raise TypeError(
-            f"{name} arrived as float16. It scales path length and the 1/R^2 falloff, so half "
-            "precision here is the silent-failure mode of CLAUDE.md non-negotiable #2. "
-            "Register the annotator with output_data_type=np.float32 (ADR 0014)."
+            f"{name} arrived as float16, which no plane of the G-buffer may be: half precision "
+            "spaces values 0.5 % apart, which is the silent-failure mode CLAUDE.md non-negotiable "
+            "#2 exists to stop. Register the annotator with output_data_type=np.float32 "
+            "(ADR 0014; the registry already does for every channel this pipeline reads)."
         )
     if channels is None:
         if arr.ndim != 2:
@@ -279,7 +286,7 @@ def ray_directions(
     Degenerate rays (a point at the camera, or a sky pixel whose position is 0/inf) come back as
     ``(0, 0, 0)`` and are masked out by the caller.
     """
-    pos = _as_f64_plane("position", position, 3, precision_critical=True)
+    pos = _as_f64_plane("position", position, 3)
     if frame == "world":
         if camera_position is None:
             raise ValueError("frame='world' needs camera_position")
@@ -366,7 +373,7 @@ def geometry_planes(
         raise ValueError(f"up_axis must be one of {sorted(UP_AXIS_VECTOR)}, got {up_axis!r}")
     up = np.asarray(UP_AXIS_VECTOR[up_axis], dtype=np.float64)
 
-    distance = _as_f64_plane("distance_m", aovs.distance_m, None, precision_critical=True)
+    distance = _as_f64_plane("distance_m", aovs.distance_m, None)
     sky = ~np.isfinite(distance)
     if aovs.instance_id is not None:
         # Background id 0 is the other half of the same fact (ADR 0014); either marks sky.

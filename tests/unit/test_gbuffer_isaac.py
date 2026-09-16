@@ -290,17 +290,56 @@ def test_to_gbuffer_satisfies_the_m0_6_contract() -> None:
     assert gbuf.sky_mask is not None and gbuf.sky_mask[0, 0]
 
 
-def test_float16_normals_are_accepted_and_upcast() -> None:
-    """This build delivers fp16 normals (ADR 0014 addendum): a cosine input, not a radiance."""
+def test_float16_normals_are_refused() -> None:
+    """Inverted by IG.8. This test used to assert the opposite, on a false premise.
+
+    Its docstring read "this build delivers fp16 normals (ADR 0014 addendum)". ADR 0014's addendum
+    records `normals` as **float32 x4 at full resolution** and marks it *use*, and the build's
+    Replicator registry registers it as float32. The fp16 plane in that table is `PtWorldNormal`,
+    which `AovReader` rejects anyway for being half-resolution and all zero. The carve-out was
+    rescuing nothing and spending CLAUDE.md non-negotiable #2 to do it.
+    """
     aovs = _plane_aovs((0.0, 1.0, 0.0))
     half = RawAovs(
         distance_m=aovs.distance_m,
         normal=aovs.normal.astype(np.float16),
         position=aovs.position,
     )
-    planes = geometry_planes(half, camera_position=CAMERA_POSITION)
+    with pytest.raises(TypeError, match="float16"):
+        geometry_planes(half, camera_position=CAMERA_POSITION)
+
+
+def test_float32_normals_still_work() -> None:
+    """The guard must refuse the dtype, not the channel: float32 normals go through untouched."""
+    planes = geometry_planes(_plane_aovs((0.0, 1.0, 0.0)), camera_position=CAMERA_POSITION)
     assert planes.normal_dot_up.dtype == np.float32
     assert np.allclose(planes.sky_view_factor, 1.0, atol=1e-3)
+
+
+def test_float16_occlusion_is_refused() -> None:
+    """The other plane the carve-out covered. No AO AOV delivers here, so nothing is lost."""
+    aovs = _plane_aovs((0.0, 1.0, 0.0))
+    half = RawAovs(
+        distance_m=aovs.distance_m,
+        normal=aovs.normal,
+        position=aovs.position,
+        occlusion=np.full(aovs.distance_m.shape, 0.5, dtype=np.float16),
+    )
+    with pytest.raises(TypeError, match="float16"):
+        geometry_planes(half, camera_position=CAMERA_POSITION)
+
+
+def test_float16_motion_is_refused() -> None:
+    """The third, reachable only by a caller that named a convention (IG.5)."""
+    aovs = _plane_aovs((0.0, 1.0, 0.0))
+    half = RawAovs(
+        distance_m=aovs.distance_m,
+        normal=aovs.normal,
+        position=aovs.position,
+        motion=np.zeros((*aovs.distance_m.shape, 2), dtype=np.float16),
+    )
+    with pytest.raises(TypeError, match="float16"):
+        geometry_planes(half, camera_position=CAMERA_POSITION, motion_convention="pixels")
 
 
 def test_float16_distance_is_refused() -> None:

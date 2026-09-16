@@ -153,6 +153,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 ### Fixed
+- **The G-buffer's dtype guard admits no float16 anywhere** (`IG.8`). `_as_f64_plane` refused fp16
+  only on `distance_m` and `position`, and carved out normals, occlusion and motion on the stated
+  grounds that "the renderer on this build delivers the normals AOV as float16 whether we like it or
+  not (measured; ADR 0014 addendum)" — so banning it "would have meant no normals at all".
+- **That claim was wrong, and it was the entire justification.** ADR 0014's own addendum table
+  records `normals` as **float32 ×4 at full resolution** and marks it *use*; this build's Replicator
+  registry agrees, registering `"normals": AnnotatorParams("NormalSD", np.float32, 4, ...)`. The
+  fp16 plane in that table is `PtWorldNormal`, which `AovReader` rejects anyway for being
+  half-resolution and all-zero. Nothing was being rescued — the carve-out spent CLAUDE.md
+  non-negotiable #2, the one rule whose violation has no visible symptom, and bought no physics.
+- `precision_critical` is gone; every float AOV is held to the same rule. The test that asserted
+  the opposite (`test_float16_normals_are_accepted_and_upcast`, whose docstring repeated the false
+  premise) is inverted, and occlusion and motion gained their own refusals. A companion test checks
+  the guard refuses the *dtype* and not the channel: float32 normals still go through untouched.
+  Negative control: reinstating the carve-out turns three red. The non-negotiable enforcement map's
+  gap for rule #2 is closed — what remains there is `IG.13` and `IG.2`.
+
 - **The motion AOV no longer reaches the G-buffer, and its convention is never guessed** (`IG.5`).
   Three places in the repository said this plane was omitted on this build — `gbuffer_isaac`'s own
   channel table, `irsim.optics.motion`'s opening paragraph ("the `motion_px` plane of the G-buffer

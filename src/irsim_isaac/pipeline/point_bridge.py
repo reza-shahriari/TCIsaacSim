@@ -54,7 +54,7 @@ def world_positions(
     # The same validation `ray_directions` applies, from the same helper rather than a second
     # copy: the annotator delivers (H, W, 4) with an unused alpha, and a private reimplementation
     # here would be one more place for the channel count or the float16 rule to drift.
-    pos = _as_f64_plane("position", position, 3, precision_critical=True)
+    pos = _as_f64_plane("position", position, 3)
     if frame == "world":
         return pos
     if frame != "camera":
