@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`scripts/next_step.py` — "do next" is now deterministic** (roadmap *Do next*). The roadmap's
+  stated picking rule, "the first step in phase order whose deps are all ticked", **does not pick a
+  step**: measured on revision 4 the day it landed, **51 of 109** open steps satisfied it at once,
+  thirteen of them in phase 0 alone, and **67 of 109** open steps have no dependents at all, so the
+  dependency graph cannot order the majority of the plan. What was actually choosing was the row's
+  position in a table — not a rule, and not stable under an edit.
+- The script is a **topological sort** (no step before its dependencies) with a documented total-order
+  tiebreak: promoted, then phase 0→A→B→C→X, then transitive dependents descending, then size
+  ascending, then step id. A dependency may pull a phase-X step forward — `XD.1` unblocks eight — and
+  the sort does that on its own rather than needing a special case.
+- **Promotion is the only place judgement overrides the rule**, and it is bounded at three entries
+  with a reason each, because a long list would mean the rule itself is wrong. There is one today:
+  `RP.3` makes `stage_own_hunk.sh` the default commit path. It unblocks nothing so the mechanical key
+  sorts it ninth, but a whole-file write has silently reverted committed work **three times in two
+  days**, and the cost falls on other sessions' shipped work.
+- **The queue is not pasted into the roadmap.** A written list goes stale the moment a step is ticked,
+  and a stale queue is worse than none because it still answers. Ticking a row is all that is needed;
+  the next call recomputes — verified by simulating two ticks (`RP.3` → `PT.3` → `IG.1`).
+- `tests/unit/test_roadmap_queue.py` is what makes the answer safe to act on without reading the
+  document: the order is **total** (one head, two runs agree), **sound** (no step before its deps),
+  **complete** (every open step exactly once, so nothing is silently dropped), and **every pick is the
+  best available one at that moment** — so disagreeing with the queue means disagreeing with the
+  published key, which is editable. Checked with a negative control that introduces a dangling
+  dependency and fails the guard.
+- Writing the guard corrected its own premise: an early draft asserted that a later-phase step could
+  only precede an earlier-phase one if something depended on it. `PT.7` (phase C) legitimately
+  precedes `XD.3` (phase B) because `XD.3` is still waiting on its own dependencies at that point, so
+  the test now checks the algorithm's real invariant instead of a proxy for it.
+
 ### Fixed
 - **README's component status table is a table again** (RP.1, roadmap revision 4). Four of its fifteen
   rows — `materials`, `detector`, `noise`, `isp` — had lost their **State** cell to pasted changelog

@@ -121,6 +121,46 @@ off a rendered frame.
 
 ---
 
+## Do next
+
+**Ask the script, not the table.**
+
+```bash
+python scripts/next_step.py            # the one step to start now
+python scripts/next_step.py --queue 20 # the next twenty, in order
+python scripts/next_step.py --lane PT  # restrict to one lane
+```
+
+The picking rule stated in *How to read this* — "the first step in phase order whose deps are all
+ticked" — **does not pick a step**. Measured on this revision the day it landed: **51 of 109** open
+steps satisfied it at once, thirteen of them in phase 0 alone, and **67 of 109** open steps have no
+dependents at all, so the dependency graph cannot order the majority of the plan. What was actually
+choosing the next step was its row's position in a table. That is not a rule, it changes whenever
+anyone reorders a table, and it cannot be argued with.
+
+`scripts/next_step.py` is the rule. It is a **topological sort**, so a step never comes before
+something it depends on, with ties broken by a total order:
+
+| | tiebreak | why |
+|---|---|---|
+| 1 | **Promoted** | The documented exceptions, and the only place judgement enters. The mechanical key counts dependents; it cannot see that a step prevents a recurring loss. Kept to three at most — a long list means the rule itself is wrong |
+| 2 | **Phase**, 0 → A → B → C → X | Where the owner's ordering lives. A dependency may still pull an X step forward; the sort does that on its own |
+| 3 | **Dependents, descending** | Transitive, not immediate. A step unblocking ten outranks one unblocking two |
+| 4 | **Size, ascending** | Between equal leverage, the small one first |
+| 5 | **Step id** | A total order, so two sessions asking "what next" get the same answer |
+
+**The queue is deliberately not written into this document.** A pasted list goes stale the moment a
+step is ticked, and a stale queue is worse than none because it still answers. Ticking a step in the
+table is all that is needed; the next call recomputes.
+
+`tests/unit/test_roadmap_queue.py` is the guard, and it is what makes the answer safe to act on
+without reading this document: the order is **total** (one head, two runs agree), **sound** (no step
+before its dependencies), **complete** (every open step appears exactly once, so nothing is silently
+dropped), and every pick is **the best available one at that moment** — so a disagreement with the
+queue is a disagreement with the key above, which you can change.
+
+---
+
 ## Phase plan
 
 Ordered by the owner's application order, with one phase before all of them for damage that is live in
@@ -345,7 +385,7 @@ published acceptance limits. None of this needs a camera — a Boson Engineering
 | SC.11 | **Thermal polarity as a config switch and an evaluation axis.** MaCVi 2026 had to normalise inverted thermal scaling across real maritime clips. White-hot stays the default (the owner's preference, and all five configs carry `palette: gray`). | A polarity-flipped condition appears in the detector evaluation and in the ablation switch set. Red today: a detector trained only on white-hot fails on half the real world and nothing measures that. | — | S | X |
 | SC.12 | **Record the size-of-source effect** (~0.8–1.0 K for uncooled microbolometers per VDI/VDE 5585, against ~0.1–0.2 K for cooled MCT) as a known omission in `docs/spec-issues.md`. | A spec-issue row with the number. It is larger than several effects the chain does model, so leaving it unrecorded misstates the chain's own error budget. | RP.7 | S | X |
 | SC.13 | **Close the ISP temporal-filter question.** `sensor_chain.py:241` says the filter "stays an identity until ME.5's temporal PSD on flat sky shows whether real cores low-pass their output at all". ME.5 landed and measured a one-pole time constant of 2563 frames at a drift fraction of 0.9276, above the 0.5 the report itself calls untrustworthy. | The answer — "not measurable on this set" — is recorded in the ADR and the dangling conditional is removed, so the next session does not re-open a question that was answered. | — | S | X |
-| SC.14 | **Carry M9.9's two open criteria rather than dropping them.** The Tier 3 sensor-chain bench landed amber with an aerial edge-asymmetry band (legacy ME.4) and the real-vs-synthetic comparison (legacy ME.6) open; both need statistics measured from public real imagery. This row keeps them tracked and is what `test_tier3_sensor_chain.py` asserts against. | The test reads this row and fails if it stops naming both, or if it is marked done while `EV.6` and `XD` have not supplied the measured bands. An untracked criterion is one nobody will close. | EV.6, XD.1 | S | 2 |
+| SC.14 | **Carry M9.9's two open criteria rather than dropping them.** The Tier 3 sensor-chain bench landed amber with an aerial edge-asymmetry band (legacy ME.4) and the real-vs-synthetic comparison (legacy ME.6) open; both need statistics measured from public real imagery. This row keeps them tracked and is what `test_tier3_sensor_chain.py` asserts against. | The test reads this row and fails if it stops naming both, or if it is marked done while `EV.6` and `XD` have not supplied the measured bands. An untracked criterion is one nobody will close. | EV.6, XD.1 | S | X |
 
 ---
 
