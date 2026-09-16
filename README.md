@@ -386,6 +386,13 @@ temperature flows, noise in radiance space, Kirchhoff closure) and the per-step 
 Every step: `make check` green → README status updated → CHANGELOG entry → ADR if a decision was made →
 one commit.
 
+**Shipped work points at a commit.** Each row of `docs/roadmap.md`'s shipped ledger carries the hash
+of the last commit that *claimed* one of that milestone's steps, and
+`tests/unit/test_shipped_ledger.py` checks that the hash **resolves in this repository** — a 7-hex
+string of the right shape and the wrong value reads as evidence, which is worse than the `pending` it
+replaced. The point is recoverability: one hash per row is where to start a `git log` after this file
+gets overwritten again.
+
 **A ledger nobody can audit goes stale.** Two more guards, in the same spirit. `docs/spec-issues.md`
 carries a **status** on each of its sixty rows — `ADR NNNN`, `code — <step>`, or `open` — and
 `tests/unit/test_spec_issue_status.py` checks that every ADR a status names exists, that no row is

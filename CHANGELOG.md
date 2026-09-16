@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **The shipped ledger points at commits instead of saying `pending`** (`RP.6`). Revision 3 of the
+  roadmap prescribed `done YYYY-MM-DD <hash>` and **zero of its 162 done rows carried one** — M0.1
+  included, the row it used as the example of the format. All seventeen shipped milestones now carry
+  a hash; `IU`, the one open row, correctly carries none.
+- The rule is stated rather than assumed: **the last commit that *claimed* one of the milestone's
+  steps**, by the three markers this project's commit messages actually use — `(M9.4)` closing the
+  subject, `Roadmap MP.1` in the body, or `Implements M12.2`. Deliberately not "the last commit that
+  mentions the milestone": mature milestones are cited by everything downstream, and that looser rule
+  hands `M9` the roadmap-rewrite commit and `M2` a point-bridge commit that merely cites M2.4. Two
+  independent cross-checks came out right — `MM` resolves into the same `ca5a663` lineage its own note
+  already cited for Tier 3, and `M7` resolves to `1a0f13c`, which `RP.7` separately identified as the
+  commit where `data/nk/glass.csv` first appeared.
+- `tests/unit/test_shipped_ledger.py` checks the half that matters: every hash must **resolve in this
+  repository**, not merely look like one. A 7-hex string of the right shape and the wrong value reads
+  as evidence, which is worse than the `pending` it replaced. It also enforces the section's own
+  200-character row cap — the thing that keeps the table mergeable, against revision 3's 1,234-character
+  average — and skips the resolution half outside a git checkout rather than failing there. Negative
+  controls: reverting one row to `pending` turns two red, and replacing its hash with a well-formed
+  `deadbee` turns the resolution test red on its own.
+
 - **`docs/spec-issues.md` now says per row what has been applied** (`RP.7`). Its header had always
   promised that "the **status** column below records what has been applied"; there was no status
   column. In its place was one sentence listing ten M0-era resolutions and ending "Everything else is
