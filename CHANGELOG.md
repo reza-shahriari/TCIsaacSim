@@ -13,6 +13,41 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **Every pixel takes its own slant path** (`AT.1`). `pipeline/atmosphere.py` passed elevation
+  **0.0 unconditionally**, so every *resolved* pixel was given surface-density extinction and
+  surface-temperature emission over its whole slant range — while the *unresolved* point-target path
+  beside it used `target.elevation_rad`, and so did the sky behind it. Contrast jumped at the
+  resolved/unresolved handoff for a reason that was in the code rather than in the sky, and the
+  error grows with elevation exactly where phase 1's subject lives.
+- **Measured on `us_standard_clear`, LWIR, 5 km: τ 0.5995 horizontal against 0.7230 at 45° (+21 %),
+  and L_path 18.27 against 11.60 W/m²/sr (−37 %)** — applied to every pixel of every sloping ray.
+- `column_length`, `optical_depths` and `transmittance` now broadcast elevation against distance, so
+  a frame is one call. Path radiance needed more: it was a 4000-step quadrature per *scalar* range,
+  unusable per pixel. `cumulative_path_table` integrates once per elevation and **hands back the
+  range dependence for free**, because integrating to a given distance is choosing the upper limit
+  of the same integral. `path_radiance_plane` interpolates that table.
+- Two coordinate choices carry the accuracy, and both were measured rather than assumed. The grid is
+  uniform in **w = 1 − e^{−u}**, not in u: substituting leaves ∫ L_B dw with no exponential in it, so
+  an isothermal path — what every horizontal ray reduces to — is *exactly linear* and a trapezoid is
+  exact to **2e-14**. A uniform u grid spends its points where the exponential has already killed the
+  integrand, and measured **77 mK** at 90° where the whole optical depth is a fraction of one step.
+  The method returns w rather than u for the same reason: interpolating the same table in u costs
+  1.2e-4 where w costs 2e-7.
+- The elevation nodes are uniform in **sin θ**, and **θ = 0 is a node rather than a clamp**. An
+  earlier draft clamped below 0.25° to the horizontal closed form and left a **209 mK step** there —
+  four times the NETD, right where long-range scene sits. Near the horizon the flat-earth column
+  expands to `d(1 − d sinθ/2H)`, linear in sin θ, so a sin θ grid anchored on the exact horizontal
+  answer is continuous by construction; measured at **<0.1 mK** across the join.
+- Accuracy against the quadrature it replaces: **2.4 mK** worst over 0.05–90° and 200 m–20 km, with
+  129 nodes (33 leave 68 mK, 65 leave 14 mK). Beyond 20 km it degrades to 65 mK at 100 km, which is
+  recorded in a test rather than engineered away — ADR 0071 bounds the model itself well inside that.
+  The table is cached per thermal tick: 0.15 s to build, 267 ms for a 640×512 frame.
+- `elevation_rad` joins the M0.6 contract as an **optional** plane and a precision-critical one, so a
+  scene that does not supply it renders bit-identically and fp16 is refused — it scales the optical
+  depth of the whole slant path. `IrCamera` fills it from the ray elevations it has computed since
+  M10.18 for the sky temperature and simply never passed on. The Warp twin still mirrors the old
+  horizontal form and is **not** updated here: it cannot be verified without a GPU, and an
+  unverified device kernel is worse than a recorded gap.
 - **A patch can ride a moving prim** (`PT.5`). `surface_field` had documented a prim path as a legal
   patch frame since MP.1 — "`world` for a road, a prim path for a panel that moves with its object"
   — while `point_bridge` refused every frame but `world`. The docstring promised what the code

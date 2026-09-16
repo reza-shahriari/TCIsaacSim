@@ -641,6 +641,11 @@ class IrCamera:
                 geometry, sky_mask=np.asarray(geometry.sky_mask | unmapped, dtype=np.bool_)
             )
         planes = to_gbuffer(geometry, temperature_k=temperature, material_id=material_id).to_dict()
+        # Each pixel's own ray elevation, so the atmosphere takes its slant path rather than the
+        # horizontal one (AT.1). It has been computed a few lines above since M10.18 for the sky
+        # temperature; the atmosphere stage simply never received it, and passed 0.0 for every
+        # resolved pixel while the point-target path beside it used the target's real elevation.
+        planes["elevation_rad"] = np.asarray(elevation, dtype=np.float32)
         # The reflective terms ride *outside* the M0.6 contract, the way `radiance_behind` does:
         # they are stage-1 inputs, not geometry, and `GBuffer` refuses keys it does not know.
         planes.update(self._illumination_planes(aovs, geometry))

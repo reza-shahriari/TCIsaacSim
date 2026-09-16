@@ -61,15 +61,37 @@ def apply_layered_gbuffer(
     distance_m: NDArray[np.floating],
     quantity: str,
     sky_mask: NDArray[np.bool_] | None = None,
+    elevation_rad: NDArray[np.floating] | None = None,
 ) -> NDArray[np.floating]:
-    """Per-term horizontal form of MS.1 on the radiance plane (per-pixel slant paths: MS.8)."""
+    """MS.1 on the radiance plane, each pixel along its own slant ray when one is given (AT.1).
+
+    ``elevation_rad`` is optional and its absence is the old behaviour exactly: a horizontal path
+    for every pixel. That used to be the *only* behaviour, with ``0.0`` passed unconditionally --
+    so every **resolved** pixel got surface-density extinction and surface-temperature emission
+    over its whole slant range, while the **unresolved** point-target path beside it used the
+    target's real elevation, and so did the sky behind it. Contrast therefore jumped at the
+    resolved/unresolved handoff for no physical reason.
+    """
     l_in = np.asarray(radiance)
     if l_in.dtype == np.float16:
         raise TypeError("radiance is float16 (non-negotiable #2)")
     d = np.asarray(distance_m)
     if d.shape != l_in.shape:
         raise ValueError(f"distance_m shape {d.shape} != radiance shape {l_in.shape}")
-    out = atmosphere.apply(band, t_s, l_in, d, 0.0, quantity)  # type: ignore[arg-type]
+    if elevation_rad is None:
+        out = atmosphere.apply(band, t_s, l_in, d, 0.0, quantity)  # type: ignore[arg-type]
+    else:
+        el = np.asarray(elevation_rad)
+        if el.dtype == np.float16:
+            raise TypeError("elevation_rad is float16 (non-negotiable #2)")
+        if el.shape != l_in.shape:
+            raise ValueError(f"elevation_rad shape {el.shape} != radiance shape {l_in.shape}")
+        tau = atmosphere.exponential_sum(band, t_s).transmittance(d, el)
+        path = atmosphere.path_radiance_plane(band, t_s, d, el, quantity)  # type: ignore[arg-type]
+        out = np.asarray(
+            tau * l_in.astype(np.float64) + path,
+            dtype=l_in.dtype if np.issubdtype(l_in.dtype, np.floating) else np.float64,
+        )
     if sky_mask is not None:
         sky = np.asarray(sky_mask)
         if sky.dtype != np.bool_ or sky.shape != l_in.shape:
@@ -94,6 +116,7 @@ def atmosphere_stage(planes: Planes, config: PipelineConfig, state: PipelineStat
                 np.asarray(planes["distance_m"]),
                 config.quantity,
                 sky_mask=planes.get("sky_mask"),
+                elevation_rad=planes.get("elevation_rad"),
             )
         }
     atm_state = config.atmosphere.state(state.t_s)

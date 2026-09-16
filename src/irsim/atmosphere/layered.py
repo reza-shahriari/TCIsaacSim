@@ -154,14 +154,26 @@ def class_weights(
     return np.asarray(out / out.sum(), dtype=np.float64)
 
 
-def column_length(distance_m: Any, elevation_rad: float, scale_height_m: float) -> Any:
-    """∫₀^d e^{−s sinθ/H} ds on a flat-earth ray: d at θ = 0, else H/sinθ (1 − e^{−d sinθ/H})."""
+def column_length(distance_m: Any, elevation_rad: Any, scale_height_m: float) -> Any:
+    """∫₀^d e^{−s sinθ/H} ds on a flat-earth ray: d at θ = 0, else H/sinθ (1 − e^{−d sinθ/H}).
+
+    ``elevation_rad`` broadcasts against ``distance_m`` (AT.1), so one call answers a whole frame
+    whose pixels each look along their own ray. It used to be a scalar, and the pipeline passed
+    **0.0 unconditionally** -- every resolved pixel got surface-density extinction over its whole
+    slant range, while the unresolved point-target path beside it used the target's real elevation.
+
+    A ray at or below the horizon keeps the horizontal form: the flat-earth column is then ``d``,
+    and the descending branch is the sea's business (ADR 0078), not this model's.
+    """
     d = np.asarray(distance_m, dtype=np.float64)
-    st = math.sin(elevation_rad)
-    if st <= 0.0:
-        return d
-    with np.errstate(over="ignore"):
-        return scale_height_m / st * (1.0 - np.exp(-d * st / scale_height_m))
+    st = np.sin(np.asarray(elevation_rad, dtype=np.float64))
+    up = st > 0.0
+    # `np.where` evaluates both branches, so the divide is guarded rather than masked afterwards:
+    # a zero sine would raise and a negative one would return a negative column.
+    safe = np.where(up, st, 1.0)
+    with np.errstate(over="ignore", invalid="ignore"):
+        slant = scale_height_m / safe * (1.0 - np.exp(-d * safe / scale_height_m))
+    return np.asarray(np.where(up, slant, np.broadcast_to(d, np.shape(slant))))
 
 
 def _scaled(gamma: float, column: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -191,26 +203,33 @@ class ExponentialSum:
     def n_terms(self) -> int:
         return int(self.weights.size)
 
-    def optical_depths(self, distance_m: Any, elevation_rad: float) -> NDArray[np.float64]:
-        """Per class optical depth along the ray, shape (n_terms, *distance.shape)."""
-        d = np.asarray(distance_m, dtype=np.float64)
-        col_aer = np.asarray(
-            column_length(d, elevation_rad, self.aerosol_scale_height_m), dtype=np.float64
+    def optical_depths(self, distance_m: Any, elevation_rad: Any = 0.0) -> NDArray[np.float64]:
+        """Per class optical depth along the ray, shape ``(n_terms, *broadcast shape)``.
+
+        ``elevation_rad`` broadcasts against ``distance_m``, so a frame is one call (AT.1).
+        """
+        d, el = np.broadcast_arrays(
+            np.asarray(distance_m, dtype=np.float64), np.asarray(elevation_rad, dtype=np.float64)
         )
+        col_aer = np.asarray(column_length(d, el, self.aerosol_scale_height_m), dtype=np.float64)
         # 0 * inf (a zero extinction on an infinite horizontal path) is 0, not NaN
         aer = _scaled(self.gamma_aerosol, col_aer)
         out = np.empty((self.n_terms, *d.shape))
         for k in range(self.n_terms):
-            col = column_length(d, elevation_rad, float(self.scale_heights_m[k]))
+            col = column_length(d, el, float(self.scale_heights_m[k]))
             out[k] = _scaled(float(self.gamma_0[k]), np.asarray(col, dtype=np.float64)) + aer
         return out
 
-    def transmittance(self, distance_m: Any, elevation_rad: float = 0.0) -> NDArray[np.float64]:
+    def transmittance(self, distance_m: Any, elevation_rad: Any = 0.0) -> NDArray[np.float64]:
         od = self.optical_depths(distance_m, elevation_rad)
         with np.errstate(over="ignore", invalid="ignore"):
             tau = np.tensordot(self.weights, np.exp(-od), axes=1)
-        d = np.asarray(distance_m, dtype=np.float64)
-        tau = np.where(np.isinf(d) & (math.sin(elevation_rad) <= 0.0), 0.0, tau)
+        d, el = np.broadcast_arrays(
+            np.asarray(distance_m, dtype=np.float64), np.asarray(elevation_rad, dtype=np.float64)
+        )
+        # An infinite *horizontal* path is opaque; an infinite upward one is not, because the
+        # column saturates at H/sin(theta). The mask is therefore per pixel, not a scalar branch.
+        tau = np.where(np.isinf(d) & (np.sin(el) <= 0.0), 0.0, tau)
         return np.asarray(tau, dtype=np.float64)
 
     def gamma_at(self, height_m: Any) -> NDArray[np.float64]:
@@ -270,6 +289,80 @@ class ExponentialSum:
             lb = lb_of_height(s_of_u * st)
             out[k] = float(simpson(lb * np.exp(-u), float(u[1] - u[0])))
         return out
+
+    #: Elevation nodes for the per-pixel slant LUT, uniform in **sin θ** (AT.1). The flat-earth
+    #: column saturates as ``H/sin θ``, so sin θ is the coordinate the quantity is smooth in;
+    #: tabulating in the angle itself leaves a cusp at the horizon that refinement barely touches
+    #: (the same trap `irsim.atmosphere.sea` records for the sea profile). Measured on the Boson
+    #: LWIR band over 200 m-20 km and 0.05-90 deg against the 4000-step quadrature it replaces:
+    #: 33 nodes leave 68 mK of apparent temperature, 65 leave 14 mK, and 129 leave **2.4 mK**
+    #: against a 50 mK NETD. Beyond 20 km it degrades -- 65 mK at 100 km -- which is recorded
+    #: rather than engineered away, since ADR 0071 bounds the model itself well inside that.
+    SLANT_ELEVATION_NODES = 129
+    #: The horizontal ray is **node zero**, not a clamped special case (AT.1). Near the horizon the
+    #: flat-earth column ``H/sinθ (1 - e^{-d sinθ/H})`` expands to ``d (1 - d sinθ / 2H)``, which is
+    #: *linear in sin θ* -- so a grid uniform in sin θ, anchored at the exact horizontal answer, is
+    #: continuous at θ = 0 by construction. An earlier draft clamped below 0.25 deg instead and left
+    #: a 209 mK step there, four times the NETD, right where long-range scene sits.
+    HORIZONTAL_IS_NODE_ZERO = True
+
+    def cumulative_path_table(
+        self,
+        elevation_rad: float,
+        lb_of_height: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+        n_steps: int = 2000,
+        u_max: float = 40.0,
+        s_max_m: float = 300e3,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """``(w, cumulative)`` for one elevation: per class ∫₀^u L_B(T(h(s))) e^{-u'} du'.
+
+        **The grid returned is w = 1 - e^{-u}, not u, and that is the whole design.** Substituting,
+        the integral becomes ∫ L_B(T(h)) dw with no exponential left in it, so an isothermal path --
+        the case every horizontal ray reduces to -- is *exactly linear* in w and a linear
+        interpolation between nodes is exact. Handing back ``u`` instead would invite a caller to
+        interpolate in the wrong coordinate: measured on an isothermal path, that costs 1.2e-4
+        relative where interpolating in w costs 2e-7.
+
+        The range dependence falls out of this for free, which is the point. :meth:`path_radiance`
+        integrates to a *given* distance by choosing the upper limit of the same integral, so one
+        cumulative pass answers every range at that elevation -- rather than a two-dimensional
+        table over (elevation, range) costing a few thousand quadratures per frame.
+
+        Returns ``w`` of shape ``(n + 1,)``, uniformly spaced, and ``cumulative`` of shape
+        ``(n_terms, n + 1)``. A caller converts its own optical depth with ``w = 1 - exp(-od)``.
+        """
+        st = math.sin(elevation_rad)
+        if st <= 0.0:
+            raise ValueError(
+                "the cumulative table is for upward rays; theta <= 0 has a closed form"
+            )
+        n = n_steps if n_steps % 2 == 0 else n_steps + 1
+        s_dense = np.concatenate([[0.0], np.logspace(-3, math.log10(s_max_m), 20000)])
+        od_dense = self.optical_depths(s_dense, elevation_rad)
+
+        # The grid is uniform in **w = 1 - e^{-u}**, not in u. Substituting, the integral becomes
+        # ∫ L_B(T(h)) dw with no exponential left in it, so an isothermal path -- the case every
+        # horizontal ray reduces to -- is *exactly linear* in w and a trapezoid is exact. A uniform
+        # u grid instead spends its points where e^{-u} has already killed the integrand: at 90 deg
+        # the whole optical depth is a fraction of one grid step, and the error measured 77 mK
+        # against a 50 mK NETD. In w it is three orders of magnitude smaller.
+        # `1 - exp(-40)` rounds to exactly 1.0 in float64, and `log1p(-1)` is -inf, so the top of
+        # the grid is held one ulp below 1. That still reaches u = 36.7, where e^{-u} is 1e-16.
+        w_top = min(1.0 - math.exp(-u_max), float(np.nextafter(1.0, 0.0)))
+        w = np.linspace(0.0, w_top, n + 1)
+        u = -np.log1p(-w)
+        cumulative = np.zeros((self.n_terms, u.size))
+        for k in range(self.n_terms):
+            if float(od_dense[k, -1]) <= 0.0:
+                continue
+            s_of_u = np.interp(u, od_dense[k], s_dense)
+            lb = lb_of_height(s_of_u * st)
+            # Cumulative trapezoid in w. Composite Simpson is only defined on an even number of
+            # intervals, so a running Simpson would be exact at alternate nodes and interpolated
+            # between them -- worse here than an exact-in-the-limit trapezoid.
+            step = float(w[1] - w[0])
+            cumulative[k, 1:] = np.cumsum(0.5 * step * (lb[1:] + lb[:-1]))
+        return w, cumulative
 
     def path_radiance(
         self,
@@ -376,6 +469,10 @@ class LayeredAtmosphere:
         self._luts = dict(luts or {})
         self._responses = dict(responses or {})
         self._weights: dict[str, NDArray[np.float64]] = {}
+        #: AT.1's per-elevation cumulative tables, keyed by (band, quantity, exponential sum).
+        #: Keyed on the sum's identity rather than on `t_s`, so it turns over exactly when the
+        #: thermal tick does and not once per frame.
+        self._slant_cache: dict[tuple[str, str, int], tuple[Any, Any, float, int]] = {}
 
     @property
     def preset(self) -> AtmospherePreset:
@@ -461,6 +558,104 @@ class LayeredAtmosphere:
         p = self._preset.profile
         h = np.minimum(np.asarray(height_m, dtype=np.float64), p.tropopause_m)
         return np.asarray(t0 - p.lapse_rate_k_per_m * h, dtype=np.float64)
+
+    def _slant_tables(
+        self, band: str, t_s: float, quantity: Quantity
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], float, int]:
+        """``(sin nodes, cumulative, w step, n)`` for the per-pixel slant path (AT.1), cached.
+
+        Cached on ``(band, quantity, thermal tick)`` because the table depends on the temperature
+        profile and nothing else that moves within a tick. Rebuilding it per frame would dominate
+        the stage; rebuilding it per tick is what the rest of the thermal path already does.
+        """
+        es = self.exponential_sum(band, t_s)
+        key = (band, quantity, id(es))
+        cached = self._slant_cache.get(key)
+        if cached is not None:
+            return cached
+        lb_of_height = self._lb_of_height(band, t_s, quantity)
+        sin_nodes = np.linspace(0.0, 1.0, ExponentialSum.SLANT_ELEVATION_NODES)
+        tables = []
+        w_grid = None
+        for sin_theta in sin_nodes[1:]:
+            w_grid, cumulative = es.cumulative_path_table(float(math.asin(sin_theta)), lb_of_height)
+            tables.append(cumulative)
+        assert w_grid is not None
+        # Node zero is the horizontal ray, and it is *analytic*: the ray never leaves h = 0, so
+        # L_B is constant along it and the cumulative integral is exactly `L_B(0) · w`. Anchoring
+        # the grid on the closed form rather than on a near-horizontal quadrature is what makes the
+        # join at θ = 0 continuous instead of a step.
+        lb0 = float(lb_of_height(np.zeros(1))[0])
+        tables.insert(0, np.broadcast_to(lb0 * w_grid, (es.n_terms, w_grid.size)).copy())
+        stacked = np.stack(tables)  # (nodes, K, n + 1)
+        n = w_grid.size - 1
+        # The w grid is uniform, so a pixel's position along it is exact arithmetic rather than a
+        # search: w = 1 - exp(-od), index = w / step.
+        w_step = float(w_grid[1] - w_grid[0])
+        out = (sin_nodes, stacked, w_step, n)
+        self._slant_cache[key] = out
+        return out
+
+    def path_radiance_plane(
+        self,
+        band: str,
+        t_s: float,
+        distance_m: Any,
+        elevation_rad: Any,
+        quantity: Quantity = "lb",
+    ) -> NDArray[np.float64]:
+        """L_path per pixel, each along its own slant ray (AT.1).
+
+        The stage used to pass elevation **0.0 unconditionally**, so every resolved pixel was given
+        surface-density extinction and surface-temperature emission over its whole slant range,
+        while the unresolved point-target path beside it used the target's real elevation and so did
+        the sky behind it. Measured on `us_standard_clear` at 5 km, LWIR: L_path 18.27 W/m²/sr
+        horizontal against 11.60 at 45°, a **37 %** over-estimate on every pixel of every sloping
+        ray.
+
+        Rays at or below the horizon take the exact horizontal closed form; everything above it
+        goes through the table, whose **first node is that same closed form**, so the join at θ = 0
+        is continuous by construction rather than by a tolerance.
+        """
+        d, el = np.broadcast_arrays(
+            np.asarray(distance_m, dtype=np.float64), np.asarray(elevation_rad, dtype=np.float64)
+        )
+        es = self.exponential_sum(band, t_s)
+        out = np.zeros(d.shape, dtype=np.float64)
+
+        # Only rays that do not rise at all. Everything above the horizon goes through the table,
+        # whose first node *is* the horizontal answer, so there is no clamp and no step.
+        flat = np.sin(el) <= 0.0
+        if flat.any():
+            lb0 = self.air_radiance(band, t_s, quantity)
+            with np.errstate(over="ignore", invalid="ignore"):
+                tau_k = np.exp(-es.optical_depths(d, 0.0))
+            horizontal = np.tensordot(es.weights, 1.0 - tau_k, axes=1) * lb0
+            out = np.where(flat, horizontal, out)
+        if flat.all():
+            return out
+
+        sin_nodes, tables, w_step, n = self._slant_tables(band, t_s, quantity)
+        sin_el = np.clip(np.sin(el), 0.0, 1.0)
+        # Which two elevation nodes bracket each pixel, and how far between them it sits.
+        node = np.clip(np.searchsorted(sin_nodes, sin_el, side="right") - 1, 0, sin_nodes.size - 2)
+        span = sin_nodes[node + 1] - sin_nodes[node]
+        safe_span = np.where(span > 0.0, span, 1.0)
+        blend = np.where(span > 0.0, (sin_el - sin_nodes[node]) / safe_span, 0.0)
+
+        od = es.optical_depths(d, el)  # (K, ...)
+        with np.errstate(over="ignore", invalid="ignore"):
+            position = np.clip((1.0 - np.exp(-od)) / w_step, 0.0, float(n) - 1e-9)
+        lower = position.astype(np.int64)
+        frac = position - lower
+
+        slant = np.zeros(d.shape, dtype=np.float64)
+        for k in range(es.n_terms):
+            i0, f = lower[k], frac[k]
+            low = tables[node, k, i0] * (1.0 - f) + tables[node, k, i0 + 1] * f
+            high = tables[node + 1, k, i0] * (1.0 - f) + tables[node + 1, k, i0 + 1] * f
+            slant += es.weights[k] * (low * (1.0 - blend) + high * blend)
+        return np.asarray(np.where(flat, out, slant))
 
     def _lb_of_height(
         self, band: str, t_s: float, quantity: Quantity

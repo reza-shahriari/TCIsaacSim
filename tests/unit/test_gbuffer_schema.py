@@ -36,12 +36,17 @@ FROZEN_OPTIONAL = {
     "sky_mask",
     "shadow_mask",
     "sun_cos_incidence",
+    # Added deliberately by AT.1, which is what this frozen set is for: the per-pixel ray
+    # elevation, so the atmosphere can take each pixel's own slant path instead of the
+    # horizontal one it used for every resolved pixel.
+    "elevation_rad",
 }
 FROZEN_DTYPES = {
     "temperature_k": np.float32,
     "encoded_t": np.float32,
     "normal_dot_view": np.float32,
     "distance_m": np.float32,
+    "elevation_rad": np.float32,
     "material_id": np.int32,
     "sky_view_factor": np.float32,
     "motion_px": np.float32,

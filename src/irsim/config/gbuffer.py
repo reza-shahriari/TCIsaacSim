@@ -55,8 +55,21 @@ REQUIRED_KEYS: frozenset[str] = frozenset(
 # same polarity as ``irsim.thermal.solar.solar_loading``, because the two must never
 # disagree about which pixels the sun reaches. ``sun_cos_incidence`` is n·ŝ, which an
 # adapter forms from its normal AOV and the scene's own NOAA sun direction.
+# ``elevation_rad`` is each pixel's own ray elevation above the horizon, positive up (AT.1).
+# Optional like the rest: without it the atmosphere keeps the horizontal path it has always used,
+# so a scene that does not supply it renders bit-identically. With it, every resolved pixel gets
+# the slant path the *unresolved* point-target path -- and the sky behind it -- were already using,
+# which is the discontinuity AT.1 exists to close.
 OPTIONAL_KEYS: frozenset[str] = frozenset(
-    {"encoded_t", "motion_px", "semantic_id", "sky_mask", "shadow_mask", "sun_cos_incidence"}
+    {
+        "encoded_t",
+        "motion_px",
+        "semantic_id",
+        "sky_mask",
+        "shadow_mask",
+        "sun_cos_incidence",
+        "elevation_rad",
+    }
 )
 INTEGER_KEYS: dict[str, type] = {"material_id": np.int32, "semantic_id": np.uint32}
 # Boolean planes: accept bool or an integer 0/1 plane (the adapter may hand a uint8 AOV); floats
@@ -64,7 +77,12 @@ INTEGER_KEYS: dict[str, type] = {"material_id": np.int32, "semantic_id": np.uint
 BOOL_KEYS: frozenset[str] = frozenset({"sky_mask"})
 # Keys where float16 is an error rather than something to upcast. Any key whose name starts with
 # "radiance" is treated the same way, so later stages can add radiance planes without editing here.
-PRECISION_CRITICAL_KEYS: frozenset[str] = frozenset({"temperature_k", "encoded_t", "distance_m"})
+PRECISION_CRITICAL_KEYS: frozenset[str] = frozenset(
+    # `elevation_rad` joins these because it scales the optical depth of the whole slant path
+    # (AT.1): fp16 spaces 1 degree at about 0.03 degrees near the horizon, where the airmass is
+    # steepest and a tenth of a degree is metres of column.
+    {"temperature_k", "encoded_t", "distance_m", "elevation_rad"}
+)
 UNMAPPED_MATERIAL_ID = 0
 # encoded_t must decode to temperature_k within this (the AOV round-trip budget, §13.3).
 ENCODED_T_CONSISTENCY_TOL_K = 0.010
@@ -91,6 +109,7 @@ class GBuffer:
     sky_mask: NDArray[np.bool_] | None = None
     shadow_mask: NDArray[np.float32] | None = None
     sun_cos_incidence: NDArray[np.float32] | None = None
+    elevation_rad: NDArray[np.float32] | None = None
     extra: dict[str, NDArray[Any]] = field(default_factory=dict)
 
     @property
