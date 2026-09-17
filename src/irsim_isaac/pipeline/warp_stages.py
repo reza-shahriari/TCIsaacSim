@@ -1850,9 +1850,20 @@ def agc_lut_warp(
     one lookup per pixel.
 
     The histogram and the plateau clip run on device (atomics, then ``wp.utils.array_scan`` for the
-    exclusive CDF). The last few scalars -- the percentile positions, the occupied-bin span -- are
-    read back and finished on the host: they are O(1) reductions over a 65536-entry array, and a
-    device implementation of each would be more code than the whole kernel it feeds.
+    exclusive CDF), and the table is then **finished on the host**.
+
+    **What that costs, stated accurately.** An earlier version of this docstring said "the last few
+    scalars are read back". That is not what happens: ``counts.numpy()`` pulls the *whole*
+    ``2**bit_depth`` histogram across the bus, plateau mode pulls a second array of the same size
+    for the inclusive CDF, and the finished table goes back the other way -- three transfers of
+    65536 entries per frame at 16 bits, not a few scalars. Each one is a **synchronisation point**,
+    so the frame cannot overlap with anything.
+
+    It is still a deliberate trade rather than an oversight -- the percentile search and the
+    occupied-bin span are irregular reductions that would each be more code than the kernel they
+    feed -- but it is a real per-frame stall and the honest justification is "not yet worth the
+    kernels", not "only scalars move". The device-side version is a roadmap step; the loop in
+    :func:`replace_bad_pixels_warp` is the worse offender and is named there too.
     """
     warp = _require()
     import warp.utils as wputils
@@ -2117,6 +2128,12 @@ def launch_replacement(
         work, work_next = work_next, work
         valid, valid_next = valid_next, valid
         passes += 1
+        # A full device synchronisation per pass, to read two integers. This is the sharper of the
+        # module's two host readbacks: the histogram stalls once per frame, this stalls once per
+        # *iteration*. The loop condition belongs in a kernel -- an unfilled-count flag the passes
+        # write and a launch bound that does not depend on reading it back. Recorded as a roadmap
+        # step rather than done here, because a device kernel cannot be verified without a GPU and
+        # the CPU reference leads (ADR 0018).
         remaining, filled = (int(v) for v in counters.numpy())
         if remaining == 0:
             break

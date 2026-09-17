@@ -10,6 +10,41 @@ repeated `Added` / `Changed` / `Fixed` headings was a single merge hotspot for t
 working in one tree; two commits already exist whose whole subject is restoring lost entries.
 `tests/unit/test_changelog_structure.py` fails on a repeated heading inside a dated section.
 
+### 2026-09-17
+
+#### Fixed
+- **The Warp ISP's host-readback justification was wrong, and is corrected.** `agc_lut_warp`'s
+  docstring said "the last few scalars — the percentile positions, the occupied-bin span — are read
+  back". That is not what happens: `counts.numpy()` pulls the **whole 2^bit_depth histogram**, plateau
+  mode pulls a second array of the same size for the inclusive CDF, and the finished table goes back
+  — three 65536-entry transfers per frame at 16 bits, each a synchronisation point. The trade is
+  still deliberate (the percentile search and occupied-bin span are irregular reductions), but the
+  honest justification is "not yet worth the kernels", not "only scalars move".
+- `replace_bad_pixels_warp`'s `counters.numpy()` is now named at its site as the sharper of the two:
+  the histogram stalls once per frame, that loop stalls once per **iteration**, to read two integers.
+  Neither readback is removed here — a device kernel cannot be verified without a GPU and the CPU
+  reference leads (ADR 0018) — so `IG.16` carries the work.
+- Both were raised by an external review of the codebase and verified against
+  `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
+
+#### Changed
+- **Two deferrals from the same review, recorded with their reasons.** **MCT (HgCdTe)** was called
+  "completely ignored"; it is narrower than that — `dark_current_a` takes `band_gap_ev` as an authored
+  sensor field, so an MCT camera is configurable today and only the Hansen–Schmit E_g(x, T) relation
+  is missing. And an **unconditionally stable two-node solver**: the review proposed Backward Euler,
+  which is not free, because ADR 0036 chose RK2 over Euler on *bias* — the T⁴ term makes explicit
+  Euler inflate the diurnal swing that §6.3's acceptance test measures, and Backward Euler damps the
+  same quantity. The stiffness is all in conduction (1/R₁₂ = 37 500 against h + 4εσT³ ≈ 43), so IMEX
+  is the shape that pays, and `PT.11` already needs that machinery.
+- Two of the review's four criticisms needed no change. Its Tier 4 root cause (accurate simulated
+  noise against codec-scrubbed real clips, fix by adding a DNR pass) is contradicted by the project's
+  own report, which says `noise_scale` at the top of the feature list means the **signal path**
+  separates the sets — and `noise_scale` is the heaviest feature at 3.98. `EV.2` already measured the
+  real cause: six clips taken alphabetically with none of the three gates built for them, on an
+  archive where 81 of 365 are moving and only 28 support a noise table. Adding a DNR pass now would
+  tune the simulator to an artefact of clip selection. And its MATLAB-MCOS parser recommendation is
+  work `XD.11` already avoids: ~100–200 Python-readable boxes are what `EV.11` needs, not Halmstad's.
+
 ### 2026-09-16
 
 #### Added

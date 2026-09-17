@@ -132,7 +132,7 @@ off a rendered frame.
 
 `GT.1` is phase A, size M, and unblocks 2 other step(s).
 
-#### Then, in order — 90 open steps
+#### Then, in order — 91 open steps
 
 | # | step | lane | phase | size | unblocks | waiting on |
 |---|---|---|---|---|---|---|
@@ -152,7 +152,7 @@ off a rendered frame.
 | 14 | **`WM.3`** | WM | B | M | 8 | `WM.2` |
 | 15 | **`PT.9`** | PT | A | M | 3 | `WM.3` |
 
-…and 75 more — `python scripts/next_step.py --queue 40`.
+…and 76 more — `python scripts/next_step.py --queue 40`.
 
 <!-- next:end -->
 
@@ -513,6 +513,7 @@ job. Several of these rows are not new features but *documented invariants that 
 | IG.13 | **Float32 planes and a config-hash sidecar from every render driver.** `write_frame` appears only in `render_aerial_demo`, `render_maritime_demo` and `render_car_ignition`; `quad_flight`, `aircraft_pass` and `vessel_departure` are PNG-only — the aerial and maritime flight renders. `render_multiband.SCENES` covers 3 of 8 scenes. | ADR 0068 says 8-bit lossy frames cannot support a radiometric claim, so the owner's exit bar is amended to require float32 planes and a sidecar. After: all six drivers write them, all eight scenes covered. | — | M | A |
 | IG.14 | **One lane driver behind the six render scripts.** Measured: 281 identical lines between `render_quad_flight` and `render_aircraft_pass`, 73 % line similarity. They have already drifted — only three call `write_frame`, only one exposes `flat_field_enabled`. | Adding a lane stops meaning copying 500 lines, and a fix like IG.13 stops meaning fixing it three times. Each existing driver's output is bit-identical before and after the refactor, which is the test. | IG.13 | M | X |
 | IG.15 | **Live IR in the Isaac viewport.** The owner's standing requirement. `display_render_var` is RGBA-unorm-only, so this means publishing an 8-bit grayscale AOV (or deliberately overwriting `LdrColor`, which is the documented way to reach existing consumers). | The white-hot display stream appears in the viewport during a render, matching the written PNG to within the AGC's own quantisation. Note the hazard the SPG docs state: AOV name collisions are **silent** and the built-in shadows yours, so the `Ir*` prefix is load-bearing. | DC.1 | M | X |
+| IG.16 | **Take the Warp ISP's host readbacks off the per-frame path.** `replace_bad_pixels_warp` calls `counters.numpy()` **inside its pass loop** — a device sync per iteration to read two ints. `agc_lut_warp` pulls the whole 2^bit_depth histogram, plus a second array in plateau mode, then uploads the table. | The loop condition becomes a device flag and the LUT is built in a kernel; M10.7b's bit-exact replacement and M10.8's ±1 display code still hold. Raised by external review; both readbacks verified. | — | M | B |
 
 ---
 
@@ -594,6 +595,8 @@ over ADR 0073.
 
 | item | why deferred | revisit when |
 |---|---|---|
+| **MCT (HgCdTe) detectors** via the Hansen–Schmit E_g(x, T) relation | Raised by an external review as "completely ignored". Narrower than that: `dark_current_a` takes `band_gap_ev` as an authored sensor field (InSb 0.23, InGaAs 0.75, Si 1.12), so an MCT camera is configurable today by authoring its gap; what is missing is only the gap *following* the Cd fraction and temperature. No MCT camera is on hand (ADR 0003), the reference cameras are Boson-class, and the order is aerial → maritime → ground | A scene needs an MCT camera whose Cd fraction or FPA temperature varies, so one authored gap stops describing it |
+| **An unconditionally stable two-node solver for thin panels** | ADR 0036 sends thin panels to a single node with a resistive back rather than fixing the 0.235 s explicit bound. An external review proposed Backward Euler. Not free: ADR 0036 chose RK2 over Euler on *bias*, because the T⁴ term makes explicit Euler inflate the diurnal swing — the quantity §6.3's acceptance test measures — and Backward Euler damps the same quantity. The stiffness is all in conduction (1/R₁₂ = 37 500 W m⁻² K⁻¹ against h + 4εσT³ ≈ 43), so **IMEX** — implicit conduction, explicit radiation — is the shape that pays, and `PT.11` already needs that machinery | `PT.11` lands, or a scene needs a thin panel resolved in depth |
 | §8.2 narcissus | §8.2 gives only a phenomenological form and no amplitude data | A Tier 4 flat-field PSD shows a radial low-frequency term |
 | §13.8 performance | No implementation and no citation outside one open step's spec column | Dataset throughput binds — see the composed Warp frame below |
 | §6.6 exhaust plume | Needs a participating-medium term absent from §2; a surface-radiometry pipeline cannot represent it. **Deferred without a number**; the old instruction to "record as ADR 0073" would overwrite a live Accepted record | MWIR Tier 3 |
