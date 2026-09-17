@@ -37,12 +37,29 @@ sensor:
     fill_factor: 0.90                            # ESTIMATED
     frame_rate_hz: 60
     bit_depth: 16
-    thermal_time_constant_ms: 10.0               # ESTIMATED (typical VOx 8-12 ms)
+    thermal_time_constant_ms: 8.0                # [R24] Table/S5: "Nominally 8 msec". Was 10.0,
+                                                 # carried as ESTIMATED from the generic VOx 8-12 ms
+                                                 # range while the datasheet states the number (SC.3)
     tcr_per_k: -0.021                            # ESTIMATED (typical VOx)
 
   noise:
-    netd_mk_at_300k: 50.0                        # "professional" grade; 60 consumer, 40 industrial
-    ratios_3d:                                   # relative to sigma_TVH
+    netd_mk_at_300k: 50.0                        # "professional" grade; 60 consumer, 40 industrial.
+                                                 # [R24] Table 13 publishes this as sigma_TVH, the
+                                                 # *random temporal* component, not a scalar NETD --
+                                                 # which is the convention ADR 0025 already assumes
+    ratios_3d:                                   # relative to sigma_TVH. **ESTIMATED, mostly.**
+      # [R24] Table 13 bounds exactly three of these seven, as acceptance-test limits at f/1.0
+      # lensless, high gain, 20 C camera, 30 C background, averager off, free-running:
+      #     grade         tvh       th (column)   tv (row)
+      #     industrial    < 40 mK   < 14 mK       < 14 mK
+      #     professional  < 50 mK   < 18 mK       < 18 mK
+      #     consumer      < 60 mK   < 21 mK       < 21 mK
+      # Every limit ratio is th/tvh = tv/tvh = 0.35, against the 0.05 configured below -- so this
+      # camera is modelled **7x more spatially uniform than FLIR guarantees**. That is compliant
+      # (2.5 mK against an 18 mK limit) and it is not a measurement: a ratio of two upper bounds
+      # is not the ratio of two typical values, so the limits cannot decide the number. `SC.2`
+      # substitutes ME.5's *measured* ratios, which is the only thing that can. vh, h, v and t
+      # are bounded by nothing published at all.
       tvh: 1.00
       vh:  0.30
       h:   0.15
@@ -56,7 +73,11 @@ sensor:
 
   nuc:
     mode: shuttered
-    ffc_interval_s: 180
+    ffc_interval_s: 300                          # [R24] S5: FFC Period factory default, "300
+                                                 # represents a 300 second (5 minute) maximum
+                                                 # time between successive FFC events". Was 180,
+                                                 # which matched no published default (SC.3;
+                                                 # ADR 0091 on the datasheet's self-contradiction)
     ffc_freeze_ms: 700
     residual_gain_ppm_per_k: 900                 # ESTIMATED
     residual_offset_mk_per_k: 45                 # ESTIMATED

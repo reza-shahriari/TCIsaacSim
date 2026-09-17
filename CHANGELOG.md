@@ -13,6 +13,29 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **Three committed Boson values disagreed with FLIR's own datasheet** (`SC.3`, ADR 0091). [R24],
+  Doc. # 102-2013-40 Release 340, is free, public and EAR99 — the only external anchor a project
+  with no camera has for its reference core. `ffc_interval_s` was **180 s**, which matches no
+  published default; `thermal_time_constant_ms` was **10.0**, the midpoint of the generic VOx
+  8–12 ms range carried as ESTIMATED while the datasheet says "nominally 8 msec" outright; and the
+  `ratios_3d` blocks carried no provenance marker at all, in files whose headers promise one. All
+  three corrected in both Boson configs, with the citation beside each value.
+- **The datasheet contradicts itself about the FFC defaults, and which reading the configs take is
+  now recorded.** Section 5 says the factory default FFC Period is **300 s** and FFC Temp Delta
+  **1.0 °C**; Table 8 of the same document says 1200 s and 3.0 °C. ADR 0091 takes Section 5:
+  Table 8 carries its own staleness note, its pair matches the **2018** FFC/NUC application note
+  rather than this 2021 release, and Section 5 is internally consistent in a way Table 8 is not —
+  its start-up paragraph says an FFC occurs "every 1/3rd degree" against a default that "results
+  in an FFC event every 1 degree", true of 1.0 °C and false of 3.0 °C.
+- **`tests/unit/test_boson_datasheet.py`** (9 cases) reproduces Table 13's stated acceptance
+  conditions — lensless at f/1.0, high gain, 20 °C camera, 30 °C background, averager disabled —
+  and measures **tvh 48.5 mK, th 2.4 mK, tv 2.6 mK** against limits of < 50 / < 18 / < 18. The
+  camera is compliant and **seven times more spatially uniform than FLIR guarantees**: every grade
+  in Table 13 gives th/tvh = 0.35 against the configured 0.05. The ratios are left alone and
+  marked ESTIMATED rather than raised to 0.35, because Table 13 publishes **upper bounds** and the
+  ratio of two upper bounds is not the ratio of two typical values; `SC.2` substitutes ME.5's
+  measured ratios, which is the only thing that can settle it. The check has a failing direction:
+  at th/tvh = 0.5 the bench reads 25 mK and the camera is out of spec.
 - **Every photon camera this project has rendered was anchored to a NETD it could not use**
   (`SC.1`). ADR 0025's M11.6 addendum says a photon FPA's noise should be built from its electron
   datasheet — quantum efficiency, well, integration time, read noise, dark current — with NETD
@@ -143,6 +166,27 @@ working in one tree; two commits already exist whose whole subject is restoring 
   `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
 
 #### Changed
+- **The corrected schedule and membrane move three things, all in the unexpected direction.** The
+  membrane is *faster*, not slower — α at 60 Hz goes 0.811 → 0.876, so irsim had been modelling a
+  laggier detector than FLIR ships. ENBW is 1/(4τ), so the temperature-fluctuation floor *rises*,
+  66.6 → 74.5 mK. And the shutter now fires every 300 s instead of 180 s, so the worst-case NUC
+  residual under a 0.05 K/s drift grows **1.67×**, 403 → 673 mK — a correction that makes the
+  simulated camera worse, which is the point of anchoring to a datasheet rather than to taste.
+- `MIN_INTERVAL_CLIP_S` moves 180 s → 300 s with the schedule it is derived from. Its own docstring
+  ties it to the camera ("a clip below this can only ever catch one event"), so leaving it behind
+  would have let a 250 s clip report an FFC interval it cannot have measured.
+- The FFC, membrane and NETD-floor tests now read their constants **off the committed config**
+  instead of restating them, so the next correction moves the tests rather than leaving them
+  asserting a camera the repository no longer models.
+- **Every golden array is bit-identical**; only the config hashes in the five sidecars moved, and
+  the store refused them as STALE rather than reporting a physics failure — ADR 0004's mechanism
+  doing exactly its job. That the arrays did not move is explainable rather than lucky: the
+  sensor-chain golden runs 60 s at 6 fps on a static scene, where the FFC cannot fire (it needs
+  180 s *or* 300 s) and the membrane cannot show (α = 1 − 1e-8 at either τ).
+- A second wall-clock assertion replaced by a ratio, found by this step's own run.
+  `test_build_is_fast_enough` asserted `elapsed < 2.0` and failed under load while passing in
+  isolation. It now compares the full LUT build against a quarter-size one, so load cancels:
+  linear reads ~4×, quadratic would read ~16×, and the bound is 8×.
 - `test_every_scene_is_long_enough_to_watch` measures a clip in **seconds**, not frames. The old
   form read 90 frames as "three seconds" while silently assuming 30 fps, which the car driver has
   never used — it plays at 10. Each count is now divided by that driver's own `--fps` default.

@@ -38,10 +38,13 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON = yaml.safe_load((REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
 
 SHAPE = (16, 20)
-TAU_S = 10.0e-3  # the committed Boson's thermal_time_constant_ms
+#: Read off the committed config, not written here, so a correction to it moves these tests
+#: rather than leaving them asserting a detector the repository no longer models. SC.3 took it
+#: from an ESTIMATED 10 ms to [R24]'s nominal 8 ms.
+TAU_S = float(BOSON["sensor"]["fpa"]["thermal_time_constant_ms"]) * 1e-3
 FPS = 60.0
 DT_S = 1.0 / FPS
-#: exp(-dt/tau) at 60 Hz on a 10 ms membrane: the ratio of successive step-response residuals.
+#: exp(-dt/tau) at 60 Hz on the 8 ms membrane: the ratio of successive step-response residuals.
 DECAY = math.exp(-DT_S / TAU_S)
 #: 1 - exp(-dt/tau): the fraction of a step the first frame shows. §9.2's "0.6 frames" phrase is
 #: tau/dt and not this (spec issue S8).
@@ -124,7 +127,10 @@ def test_the_first_frame_shows_exactly_alpha_of_the_step(tophat_lwir_lut: BandLU
     config = _config(tophat_lwir_lut)
     cold = _step_sequence(config, 1, cold=300.0, hot=300.0)[0]
     seq = _step_sequence(config, 12)
-    assert pytest.approx(0.811124, abs=1e-6) == ALPHA
+    # 8 ms at 60 Hz. It was 0.811124 at the 10 ms this project carried as ESTIMATED, so the
+    # corrected detector is *faster* -- it shows more of a step in its first frame, not less.
+    assert pytest.approx(8.0e-3) == TAU_S
+    assert pytest.approx(0.875486, abs=1e-6) == ALPHA
     assert (seq[0] - cold) / (seq[-1] - cold) == pytest.approx(ALPHA, abs=1e-6)
 
 

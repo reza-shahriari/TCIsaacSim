@@ -99,7 +99,7 @@ def test_hash_invariant_to_comments_whitespace_key_order(
     stripped = "\n".join(line.split("#")[0].rstrip() for line in boson_text.splitlines())
     reordered = yaml.safe_dump(yaml.safe_load(boson_text), sort_keys=True)
     ints_as_floats = boson_text.replace("frame_rate_hz: 60", "frame_rate_hz: 60.0").replace(
-        "ffc_interval_s: 180", "ffc_interval_s: 180.00"
+        "ffc_interval_s: 300", "ffc_interval_s: 300.00"
     )
     for text in (stripped, reordered, ints_as_floats):
         other = _load_text(text, tmp_path / "b.yaml", data_dir)

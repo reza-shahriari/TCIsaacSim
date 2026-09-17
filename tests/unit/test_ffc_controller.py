@@ -4,11 +4,13 @@
 a perception stack must survive. Simulating it is worth more than another decimal place of
 radiometry" -- so the tests are about behaviour, at the frame level:
 
-* at 60 Hz / 180 s / 700 ms the shutter closes on frame 10800 and the output is held for exactly
+* at 60 Hz / 300 s / 700 ms the shutter closes on frame 18000 and the output is held for exactly
   42 frames, bit-identical while the input keeps changing underneath;
 * the rounding rule is round, not ceil: 9 Hz x 0.7 s is 6 frames, not 7;
 * the residual immediately after the event is below one LSB (it is exactly zero);
-* 179 s after the event under a 0.05 K/s drift the residual is M9.6's prediction within 5 %;
+* one second before the next event, under a 0.05 K/s drift, the residual is M9.6's prediction
+  within 5 % -- 673 mK at the corrected 300 s schedule, where the 180 s this project used to carry
+  gave 403 mK (SC.3, ADR 0091);
 * ``ideal`` never freezes and never has a residual;
 * ``shutterless`` never freezes and its residual at 540 s is at most 1.5x its 180 s value, because
   a scene-based correction bounds it rather than letting it grow.
@@ -34,6 +36,11 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON = yaml.safe_load((REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())
 SEED = 777
 DN_PER_K = 178.0  # the committed Boson chain at 300 K (ADR 0056); pinned by test_nuc_residual
+FPS = 60.0
+#: The schedule is read off the committed config rather than written here, so a correction to it
+#: moves these tests instead of leaving them asserting a camera the repository no longer models.
+INTERVAL_S = float(BOSON["sensor"]["nuc"]["ffc_interval_s"])
+EVENT = int(round(INTERVAL_S * FPS))
 
 
 def _nuc(**over: Any):  # type: ignore[no-untyped-def]
@@ -56,13 +63,14 @@ class _Spy:
 
 
 def test_boson_schedule_at_60_hz() -> None:
-    """180 s at 60 Hz is 10800 frames; 700 ms is 42."""
+    """300 s at 60 Hz is 18000 frames; 700 ms is 42 ([R24] S5's FFC Period, SC.3)."""
     c = FfcController(nuc=_nuc(), fps=60.0)
-    assert c.interval_frames == 10_800
+    assert INTERVAL_S == 300.0 and EVENT == 18_000
+    assert c.interval_frames == EVENT
     assert c.freeze_frames == 42
-    assert c.fires_on(10_800)
-    assert not c.fires_on(10_799)
-    assert c.fires_on(21_600)
+    assert c.fires_on(EVENT)
+    assert not c.fires_on(EVENT - 1)
+    assert c.fires_on(2 * EVENT)
 
 
 def test_the_rounding_rule_at_9_hz() -> None:
@@ -94,7 +102,7 @@ def test_an_interval_below_one_frame_is_refused() -> None:
 # -- the freeze ------------------------------------------------------------------------------
 
 
-def _run(c: FfcController, n_frames: int, start: int = 10_780) -> list[tuple[np.ndarray, Any]]:
+def _run(c: FfcController, n_frames: int, start: int = EVENT - 20) -> list[tuple[np.ndarray, Any]]:
     """Feed a frame whose value is its own index, so a held frame is instantly recognisable."""
     out = []
     for i in range(start, start + n_frames):
@@ -111,13 +119,13 @@ def test_the_freeze_lasts_exactly_42_frames_and_holds_the_last_good_one() -> Non
     c = FfcController(nuc=_nuc(), fps=60.0)
     results = _run(c, 80)
 
-    frozen_at = [10_780 + i for i, (_, e) in enumerate(results) if e.frozen]
-    assert frozen_at == list(range(10_800, 10_842))  # exactly 42 frames, starting at the event
+    frozen_at = [EVENT - 20 + i for i, (_, e) in enumerate(results) if e.frozen]
+    assert frozen_at == list(range(EVENT, EVENT + 42))  # exactly 42, starting at the event
     assert len(frozen_at) == 42
 
-    held_value = 10_799.0  # the last live frame before the shutter closed
+    held_value = float(EVENT - 1)  # the last live frame before the shutter closed
     for i, (frame, event) in enumerate(results):
-        index = 10_780 + i
+        index = EVENT - 20 + i
         if event.frozen:
             assert np.all(frame == held_value), f"frame {index} is not the held one"
         else:
@@ -137,7 +145,7 @@ def test_the_event_is_reported_on_exactly_one_frame() -> None:
     c = FfcController(nuc=_nuc(), fps=60.0)
     fired = [e.fired for _, e in _run(c, 80)]
     assert sum(fired) == 1
-    assert fired.index(True) == 10_800 - 10_780
+    assert fired.index(True) == 20
 
 
 def test_resettables_are_called_once_per_event() -> None:
@@ -145,8 +153,8 @@ def test_resettables_are_called_once_per_event() -> None:
     spy_a, spy_b = _Spy(), _Spy()
     c.register(spy_a, spy_b)
     _run(c, 80)
-    assert spy_a.calls == [10_800]
-    assert spy_b.calls == [10_800]
+    assert spy_a.calls == [EVENT]
+    assert spy_b.calls == [EVENT]
 
 
 def test_an_object_without_a_reset_hook_is_refused() -> None:
@@ -179,19 +187,25 @@ def test_the_residual_is_below_one_lsb_right_after_the_event() -> None:
 
     # Drift for a while so there is something to correct, then fire.
     t_fpa = 300.0
-    for _ in range(1, 10_800):
+    for _ in range(1, EVENT):
         t_fpa += 0.05 / 60.0
         c.update_delta_t(t_fpa, 1.0 / 60.0)
-    assert c.delta_t_eff_k > 8.0  # ~9 K of drift accumulated
+    assert c.delta_t_eff_k > 14.0  # ~15 K of drift accumulated over the 300 s schedule
 
-    c.process(np.zeros((32, 32), dtype=np.float32), 10_800, t_fpa_k=t_fpa)
+    c.process(np.zeros((32, 32), dtype=np.float32), EVENT, t_fpa_k=t_fpa)
     assert c.delta_t_eff_k == 0.0
     assert float(residual.offset_dn(c.delta_t_eff_k).std()) < 1.0
     assert float(np.abs(residual.gain(c.delta_t_eff_k) - 1.0).max()) == 0.0
 
 
-def test_179_s_after_the_event_the_residual_matches_the_m9_6_prediction() -> None:
-    """0.05 K/s for 179 s is 8.95 K, so 45 mK/K gives 402.75 mK, within 5 %."""
+def test_just_before_the_next_event_the_residual_matches_the_m9_6_prediction() -> None:
+    """The worst case the schedule allows: one second short of the next shutter.
+
+    0.05 K/s for 299 s is 14.95 K, so 45 mK/K gives 672.75 mK. At the 180 s this project carried
+    before SC.3 the same drift gave 402.75 mK -- correcting the FFC Period to FLIR's published
+    300 s makes the worst-case NUC residual **1.67x larger**, because the pattern has that much
+    longer to grow. Nothing about the residual model changed; the schedule did.
+    """
     nuc = _nuc()
     c = FfcController(nuc=nuc, fps=60.0)
     residual = NucResidual(nuc=nuc, shape=(128, 128), dn_per_k=DN_PER_K, sensor_seed=SEED)
@@ -199,14 +213,18 @@ def test_179_s_after_the_event_the_residual_matches_the_m9_6_prediction() -> Non
 
     t_fpa = 300.0
     dt = 1.0 / 60.0
-    c.process(np.zeros((4, 4), dtype=np.float32), 10_800, t_fpa_k=t_fpa)
-    for _ in range(int(round(179.0 * 60.0))):
+    seconds = INTERVAL_S - 1.0
+    c.process(np.zeros((4, 4), dtype=np.float32), EVENT, t_fpa_k=t_fpa)
+    for _ in range(int(round(seconds * FPS))):
         t_fpa += 0.05 * dt
         c.update_delta_t(t_fpa, dt)
 
-    assert c.delta_t_eff_k == pytest.approx(8.95, rel=0.01)
+    drift_k = 0.05 * seconds
+    assert drift_k == pytest.approx(14.95, rel=1e-9)
+    assert c.delta_t_eff_k == pytest.approx(drift_k, rel=0.01)
     sigma_mk = float(residual.offset_dn(c.delta_t_eff_k).std()) / DN_PER_K * 1e3
-    assert sigma_mk == pytest.approx(45.0 * 8.95, rel=0.05)
+    assert sigma_mk == pytest.approx(45.0 * drift_k, rel=0.05)
+    assert sigma_mk == pytest.approx(672.75, rel=0.05)
 
 
 def test_the_next_event_resets_it_again() -> None:
@@ -215,11 +233,11 @@ def test_the_next_event_resets_it_again() -> None:
     spy = _Spy()
     c.register(spy)
     t_fpa = 300.0
-    for i in range(1, 3 * 10_800 + 1):
+    for i in range(1, 3 * EVENT + 1):
         t_fpa += 0.05 / 60.0
         c.process(np.zeros((2, 2), dtype=np.float32), i, t_fpa_k=t_fpa)
         c.update_delta_t(t_fpa, 1.0 / 60.0)
-    assert spy.calls == [10_800, 21_600, 32_400]
+    assert spy.calls == [EVENT, 2 * EVENT, 3 * EVENT]
 
 
 # -- ideal -----------------------------------------------------------------------------------

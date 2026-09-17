@@ -189,10 +189,21 @@ def test_aperture_convention_in_netd(tophat_mwir_lut: BandLUT) -> None:
 
 def test_boson_floors_are_finite_and_plausible(tophat_lwir_lut: BandLUT) -> None:
     """Best-estimate VOx constants give finite first-principles floors in [5, 500] mK, and a
-    Boson-class D* of order 1e8-1e10 cm·Hz^½/W; the anchor (M4.6) overrides the magnitude."""
+    Boson-class D* of order 1e8-1e10 cm·Hz^½/W; the anchor (M4.6) overrides the magnitude.
+
+    ENBW is 1/(4 tau), so it is set by the membrane and by nothing else: at the datasheet's
+    nominal 8 ms (SC.3, ADR 0091) that is 31.25 Hz, where the 10 ms this project carried as
+    ESTIMATED gave 25 Hz. A faster membrane passes more bandwidth and therefore has a *higher*
+    temperature-fluctuation floor -- 74.5 mK against 66.6 mK, which is above the 50 mK the
+    datasheet claims. That is not a contradiction: this floor is computed from the generic VOx
+    thermal conductance and heat capacity in the config, both still ESTIMATED, and the anchor
+    overrides the magnitude. It is recorded here because it is the direction nobody expects.
+    """
     s = _boson()
     floors = bolometer_floors(s, tophat_lwir_lut)
-    assert floors["enbw_hz"] == 25.0
+    assert floors["enbw_hz"] == pytest.approx(31.25)
+    assert floors["enbw_hz"] == pytest.approx(1.0 / (4.0 * s.fpa.thermal_time_constant_ms * 1e-3))
+    assert floors["netd_temperature_fluctuation_k"] == pytest.approx(0.0745, rel=1e-2)
     for key in ("netd_temperature_fluctuation_k", "netd_johnson_k"):
         assert 1e-3 < floors[key] < 0.5, (key, floors[key])
     total = math.hypot(floors["netd_temperature_fluctuation_k"], floors["netd_johnson_k"])

@@ -133,13 +133,13 @@ def test_the_controller_and_the_detector_agree_frame_for_frame() -> None:
 
 
 def test_a_ten_second_clip_may_not_report_an_interval() -> None:
-    """Halmstad's clips are 10 s and the Boson's schedule is 180 s (ME.1a's index says both)."""
+    """Halmstad's clips are 10 s and the Boson's schedule is 300 s (ME.1a's index, [R24] S5)."""
     cube, _ = _held_clip(600, interval_s=3.0)
     freezes = find_freezes(cube, fps=FPS)
     assert len(freezes) >= 2, "the freezes themselves are perfectly measurable"
     with pytest.raises(ValueError, match="cannot show an FFC interval"):
         freeze_intervals_s(freezes, fps=FPS, n_frames=600)
-    assert MIN_INTERVAL_CLIP_S == 180.0
+    assert MIN_INTERVAL_CLIP_S == 300.0
 
 
 @needs_ffmpeg

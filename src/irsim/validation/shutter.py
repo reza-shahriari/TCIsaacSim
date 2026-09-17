@@ -60,9 +60,11 @@ __all__ = [
     "pattern_energy",
 ]
 
-#: Shortest clip an FFC *interval* may be reported from. The Boson's schedule is 180 s, so a clip
-#: below this can only ever catch one event and an interval measured on it is an artefact.
-MIN_INTERVAL_CLIP_S = 180.0
+#: Shortest clip an FFC *interval* may be reported from. The Boson's factory-default FFC Period is
+#: 300 s ([R24] S5; ADR 0091), so a clip below this can only ever catch one event and an interval
+#: measured on it is an artefact. Tied to the schedule, not to the estimator: it moved with the
+#: schedule when SC.3 corrected the configs from an interval FLIR never published.
+MIN_INTERVAL_CLIP_S = 300.0
 
 
 @dataclass(frozen=True)

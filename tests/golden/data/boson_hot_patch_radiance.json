@@ -1,6 +1,6 @@
 {
   "atol": null,
-  "config_hash": "00e451e8e6b5bc69bcf6155bc55c4ea51c9d219c1fe41315fb8a449b8828c55b",
+  "config_hash": "723e3d33c71a0353d9b7bcb27432afd67a5809084f4cf28e34a15655ab33aa48",
   "dtype": "float32",
   "name": "boson_hot_patch_radiance",
   "numpy_version": "2.3.1",

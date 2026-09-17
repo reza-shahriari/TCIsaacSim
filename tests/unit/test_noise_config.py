@@ -81,7 +81,7 @@ def test_netd_reference_f_number() -> None:
 
 def test_nuc_block_loads_and_bounds() -> None:
     nuc = SensorConfig.model_validate(BOSON).sensor.nuc
-    assert nuc.mode == "shuttered" and nuc.ffc_interval_s == 180 and nuc.ffc_freeze_ms == 700
+    assert nuc.mode == "shuttered" and nuc.ffc_interval_s == 300 and nuc.ffc_freeze_ms == 700
     with pytest.raises(ValidationError):
         SensorConfig.model_validate(_with("sensor.nuc.mode", "manual"))
     with pytest.raises(ValidationError):

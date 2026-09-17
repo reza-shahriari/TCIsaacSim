@@ -74,7 +74,9 @@ def test_frame_period_and_bolometer_smear_ratio(boson: SensorConfig) -> None:
     s = boson.sensor
     assert s.frame_period_s == pytest.approx(1.0 / 60.0, rel=1e-12)
     assert isinstance(s.fpa, BolometerFpa)
-    assert s.fpa.thermal_time_constant_ms * 1e-3 / s.frame_period_s == pytest.approx(0.6, rel=0.01)
+    # tau/frame period: 8 ms at 60 Hz ([R24]'s nominal figure, SC.3). It was 0.6 while the
+    # config carried an ESTIMATED 10 ms, so the modelled detector was slower than the part.
+    assert s.fpa.thermal_time_constant_ms * 1e-3 / s.frame_period_s == pytest.approx(0.48, rel=0.01)
     assert s.dn_max == 65535
 
 

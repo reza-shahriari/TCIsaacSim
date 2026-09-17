@@ -1,6 +1,6 @@
 {
   "atol": 0.02,
-  "config_hash": "25aa977a0ad2cd78294bdffdcc92698cc787f96734157a2800341cf4a1824689",
+  "config_hash": "919f0bc9bdefca42e9c2b6ce05e1cd0d870373dae9c9466f9c679898e949c9fe",
   "dtype": "float32",
   "name": "boson_sensor_chain_apparent_t",
   "numpy_version": "2.3.1",

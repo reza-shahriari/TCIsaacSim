@@ -62,7 +62,9 @@ def test_anchor_reproduces_target_exactly(
     b = anchor_noise(s, tophat_lwir_lut)
     assert b.kind == "bolometer" and b.sigma_gaussian > 0.0
     assert predict_netd_k(300.0, s, tophat_lwir_lut, b) == pytest.approx(0.050, rel=1e-9)
-    assert "netd_temperature_fluctuation_k" in b.floors and b.floors["enbw_hz"] == 25.0
+    assert "netd_temperature_fluctuation_k" in b.floors
+    # 1/(4 tau) on [R24]'s nominal 8 ms membrane (SC.3); it was 25.0 Hz at the ESTIMATED 10 ms.
+    assert b.floors["enbw_hz"] == pytest.approx(31.25)
     m = _mwir(netd_mk=25.0)
     bm = anchor_noise(m, tophat_mwir_lut)
     assert bm.kind == "photon"

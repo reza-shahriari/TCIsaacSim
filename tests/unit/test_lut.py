@@ -122,11 +122,35 @@ def test_output_dtype_and_shapes(boson_lut: BandLUT) -> None:
         boson_lut.lookup(300.0, "watts")  # type: ignore[arg-type]
 
 
-def test_build_is_fast_enough(boson_response) -> None:  # type: ignore[no-untyped-def]
+def test_build_cost_is_linear_in_the_temperature_grid(boson_response) -> None:  # type: ignore[no-untyped-def]
+    """The property worth guarding is the *scaling*, and a wall clock cannot measure it.
+
+    This asserted `elapsed < 2.0` and failed on a workstation under load while passing in
+    isolation -- which says nothing about the LUT and everything about what else was running. The
+    defect it exists to catch is an accidental O(n^2) in the build (a per-temperature re-integration
+    of the response, say), and that shows up as a *ratio*: quadrupling the grid must roughly
+    quadruple the cost, not sixteen-fold it. Both halves are slowed equally by load, so the load
+    cancels.
+
+    The bound is 8x rather than 4x because the small build carries the fixed per-call overhead that
+    the large one amortises, and because `_BUILD_CHUNK` means the two do not take the same number
+    of passes. Quadratic growth would read 16x.
+    """
+    quarter = max(LUT_N // 4, 64)
+
     t = time.perf_counter()
-    BandLUT.build(boson_response)
-    elapsed = time.perf_counter() - t
-    assert elapsed < 2.0, f"LUT build took {elapsed:.2f} s (budget 2 s for the session fixture)"
+    BandLUT.build(boson_response, n=quarter)
+    small = time.perf_counter() - t
+
+    t = time.perf_counter()
+    BandLUT.build(boson_response, n=LUT_N)
+    large = time.perf_counter() - t
+
+    assert small > 0.0
+    assert large / small < 8.0, (
+        f"the full {LUT_N}-point build cost {large / small:.1f}x the {quarter}-point one "
+        f"({large:.3f} s vs {small:.3f} s); linear would be ~4x and quadratic ~16x"
+    )
 
 
 def test_constructor_rejects_non_float32_tables() -> None:

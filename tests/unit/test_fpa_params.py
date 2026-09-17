@@ -45,8 +45,8 @@ def test_boson_known_answers() -> None:
     assert p.active_area_m2 == pytest.approx(1.296e-10, rel=1e-12)
     assert p.frame_dt_s == pytest.approx(16.6667e-3, rel=1e-5)
     assert p.dn_max == 65535 and p.shape == (512, 640)
-    assert p.thermal_time_constant_s == pytest.approx(10e-3)
-    assert p.c_th_j_per_k == pytest.approx(10e-3 * 1e-7)
+    assert p.thermal_time_constant_s == pytest.approx(8e-3)  # [R24]: nominally 8 msec (SC.3)
+    assert p.c_th_j_per_k == pytest.approx(8e-3 * 1e-7)
     assert (p.absorptance, p.g_th_w_per_k, p.bias_current_a, p.resistance_ohm) == (
         0.8,
         1e-7,

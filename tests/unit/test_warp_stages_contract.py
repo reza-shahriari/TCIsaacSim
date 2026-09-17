@@ -274,7 +274,7 @@ def test_bolometer_terms_are_the_oracle_transfer_and_alpha(tophat_lwir_lut: Band
     expected = alpha_for(config.fpa.frame_dt_s, config.fpa.thermal_time_constant_s)
     assert terms.alpha == pytest.approx(expected, rel=1e-15)
     # the §9.2 number the kernel actually applies -- not the "0.6 frames" of spec issue S8
-    assert terms.alpha == pytest.approx(0.811, abs=0.002)
+    assert terms.alpha == pytest.approx(0.875, abs=0.002)  # 8 ms at 60 Hz (SC.3, was 0.811)
     assert terms.dn_max == config.fpa.dn_max
 
 
