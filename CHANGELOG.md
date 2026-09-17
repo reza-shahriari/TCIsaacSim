@@ -13,6 +13,28 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **Every photon camera this project has rendered was anchored to a NETD it could not use**
+  (`SC.1`). ADR 0025's M11.6 addendum says a photon FPA's noise should be built from its electron
+  datasheet — quantum efficiency, well, integration time, read noise, dark current — with NETD
+  demoted to a cross-check, and `irsim.noise.electron.electron_budget` implemented exactly that.
+  Nothing in `src/` ever called it. `PipelineConfig.from_sensor` now selects it whenever a photon
+  FPA authors `read_noise_e`, via a `noise_handle` of `auto` / `netd` / `electrons`; a bolometer
+  keeps the anchor, which is right for it, and is refused `electrons` rather than handed a
+  meaningless budget.
+- Two measurements the change moves, taken through the pipeline rather than the module, so the
+  cold shield's background is in the shot term as it is in a render. The **MWIR InSb** rendered at
+  σ **533.3 e⁻** against the 350 e⁻ its own config authors — **1.52×**, a Gaussian the solver was
+  free to invent because any value reaching 20 mK would do. The **SWIR InGaAs** rendered with
+  dark = 0 against the **199.7 e⁻** per integration its own Arrhenius block implies — a term
+  *larger than its 120 e⁻ read noise*, simply absent, and one that is an offset as well as a
+  Poisson term. Neither is visible in an image; both are the kind of error that makes a sensor
+  trade study come out confidently wrong.
+- NETD stops being a tautology for photon cameras. Anchored, the predicted NETD equalled the
+  datasheet claim to 1e-9 — it was solved for, so it carried no information. Built from electrons
+  the InSb predicts **19.47 mK against a 20 mK claim**: a number the datasheet could have
+  contradicted. `tests/unit/test_electron_budget_wiring.py` (11 cases) drives the selection site
+  rather than the physics, because the defect was never in the physics — it was that the physics
+  had no caller — and includes the failing direction: a 10 mK claim on the same camera raises.
 - **The multi-band sweep filmed three of the project's eight scene configs; it now films seven, and
   the eighth says why it does not** (`IG.13`, second half). Five scenes — including the whole aerial
   point-target lane, the one ranked first — had only ever been seen in the single band their own

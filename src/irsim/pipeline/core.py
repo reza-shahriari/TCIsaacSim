@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,6 +30,7 @@ from irsim.detector.photon import PhotonDetector
 from irsim.detector.response import Detector
 from irsim.isp.radiometric import RadiometricCalibration
 from irsim.materials.table import MaterialTable
+from irsim.noise.electron import electron_budget
 from irsim.noise.stage import NoiseStage
 from irsim.optics.psf import optical_psf
 from irsim.radiometry.lut import BandLUT, Quantity
@@ -104,14 +105,18 @@ class PipelineConfig:
         tau_override: float | None = None,
         sky: SkyModel | None = None,
         flat_field_enabled: bool = False,
+        noise_handle: Literal["auto", "netd", "electrons"] = "auto",
     ) -> PipelineConfig:
         """Assemble from a validated sensor config; the LUT is given or loaded from ``lut_dir``.
 
         The calibrated transfer (ADR 0021) is built for bolometer cameras with the housing at
         ``t_housing_cal_k`` (default: ``optics.housing_temp_k`` if fixed, else 300 K). The
-        detector's noise is anchored to ``noise.netd_mk_at_300k`` (ADR 0025) and the correlated
-        3-D stage seeded with ``sensor_seed`` (ADR 0022); ``noise_enabled=False`` runs the ideal
-        chain (the ablation switch of ME.8). The optical PSF (diffraction at the band-
+        detector's noise budget is built from whichever handle its datasheet actually offers
+        (``noise_handle``, below) and the correlated 3-D stage seeded with ``sensor_seed``
+        (ADR 0022); ``noise_enabled=False`` runs the ideal chain (the ablation switch of ME.8).
+        ``noise_handle='netd'`` forces the ADR 0025 anchor for a photon FPA too, which is the
+        ablation the M11.6 addendum argues against but does not forbid.
+        The optical PSF (diffraction at the band-
         representative wavelength -- ``reference_wavelength_um``, else
         ``mtf.reference_wavelength_um``, else the band centre -- times the aberration Gaussian) is
         built at the supersampled pitch (ADR 0059); ``psf_enabled=False`` skips it. Stage 2
@@ -173,7 +178,26 @@ class PipelineConfig:
                 sensor.sensor.optics.f_number,
                 eta_cs,
             )
-        budget = anchor_noise(sensor.sensor, lut, background_electrons=background)
+        # §9.4 / §10.1: which handle sets the magnitude of the noise (ADR 0025 and its M11.6
+        # addendum). A bolometer's datasheet quotes NETD and nothing else usable, so it is solved
+        # for. A photon FPA's quotes the thing the noise is *made of* -- quantum efficiency, well,
+        # integration time, read noise in electrons, dark current -- so those are used directly
+        # and NETD becomes the cross-check. "auto" picks the second whenever the config carries
+        # the electron numbers, which is what SC.1 wires up: until now every photon camera in this
+        # repository was anchored, which overstated the MWIR InSb's read noise by 1.52x (533 e-
+        # against its datasheet 350) and rendered the SWIR InGaAs with dark = 0 against its own
+        # config's 200 e- per integration.
+        authored = isinstance(fpa, PhotonParams) and fpa.read_noise_e is not None
+        use_electrons = {"auto": authored, "electrons": True, "netd": False}[noise_handle]
+        if use_electrons:
+            if not isinstance(fpa, PhotonParams):
+                raise ValueError(
+                    "noise_handle='electrons' is for a photon FPA; a bolometer has no electron "
+                    "datasheet to build from and keeps the ADR 0025 NETD anchor"
+                )
+            budget = electron_budget(sensor.sensor, lut, background_electrons=background)
+        else:
+            budget = anchor_noise(sensor.sensor, lut, background_electrons=background)
         detector: Detector
         if isinstance(fpa, BolometerParams):
             calibration = RadiometricCalibration.from_scene_range(
