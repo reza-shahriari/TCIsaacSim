@@ -132,27 +132,27 @@ off a rendered frame.
 
 `GT.1` is phase A, size M, and unblocks 2 other step(s).
 
-#### Then, in order — 92 open steps
+#### Then, in order — 90 open steps
 
 | # | step | lane | phase | size | unblocks | waiting on |
 |---|---|---|---|---|---|---|
 | 1 | **`GT.1`** | GT | A | M | 2 | ready |
 | 2 | **`IG.13`** | IG | A | M | 2 | ready |
 | 3 | **`SC.1`** | SC | A | M | 2 | ready |
-| 4 | **`AT.2`** | AT | A | S | 1 | ready |
-| 5 | **`SC.3`** | SC | A | M | 1 | ready |
-| 6 | **`AT.3`** | AT | A | S | — | `AT.2` |
-| 7 | **`AT.5`** | AT | A | S | — | ready |
-| 8 | **`IG.6`** | IG | A | S | — | ready |
-| 9 | **`SC.2`** | SC | A | S | — | `SC.1` |
-| 10 | **`AT.4`** | AT | A | M | — | ready |
-| 11 | **`GT.2`** | GT | A | M | — | `SC.1` |
-| 12 | **`IG.2`** | IG | A | M | — | ready |
-| 13 | **`SC.4`** | SC | A | M | — | ready |
-| 14 | **`WM.1`** | WM | B | M | 10 | ready |
-| 15 | **`WM.2`** | WM | B | M | 9 | `WM.1` |
+| 4 | **`SC.3`** | SC | A | M | 1 | ready |
+| 5 | **`AT.5`** | AT | A | S | — | ready |
+| 6 | **`IG.6`** | IG | A | S | — | ready |
+| 7 | **`SC.2`** | SC | A | S | — | `SC.1` |
+| 8 | **`AT.4`** | AT | A | M | — | ready |
+| 9 | **`GT.2`** | GT | A | M | — | `SC.1` |
+| 10 | **`IG.2`** | IG | A | M | — | ready |
+| 11 | **`SC.4`** | SC | A | M | — | ready |
+| 12 | **`WM.1`** | WM | B | M | 10 | ready |
+| 13 | **`WM.2`** | WM | B | M | 9 | `WM.1` |
+| 14 | **`WM.3`** | WM | B | M | 8 | `WM.2` |
+| 15 | **`PT.9`** | PT | A | M | 3 | `WM.3` |
 
-…and 77 more — `python scripts/next_step.py --queue 40`.
+…and 75 more — `python scripts/next_step.py --queue 40`.
 
 <!-- next:end -->
 
@@ -387,8 +387,8 @@ Leaving ADR 0087 standing as written will cost another session a week, so WM.5 i
 | id | what | verification (red today → green after) | deps | size | phase |
 |---|---|---|---|---|---|
 | AT.1 | ✅ **done (CPU).** Elevation broadcasts through `column_length`/`transmittance`; `path_radiance_plane` interpolates a per-elevation cumulative table, uniform in `w = 1-e^-u` and in sin θ with **θ = 0 as node zero**. `elevation_rad` is an optional, precision-critical G-buffer plane. | **Measured.** 5 km: τ 0.5995→0.7230, L_path 18.27→11.60. LUT within **2.4 mK** over 0.05–90°, 200 m–20 km; horizon join <0.1 mK (a clamp left 209 mK); isothermal exact to 2e-14. 22 cases. **Warp twin not updated — needs a GPU to verify.** | — | L | A |
-| AT.2 | **Thread the camera's R(λ) into `LayeredAtmosphere`.** `Scene.from_config` never passes the fourth `responses` parameter, so every band's spectral-class weighting uses a nominal top-hat and the model silently describes a different camera. | Measured on the shipped InSb MWIR response: the `h2o_wing` class weight goes 0.0238 → 0.1303, a **5.5×** change, and MWIR sky apparent temperature at 15° is off by **0.65 K — thirteen NETDs**. Test asserts the weights match the response and that no path builds the model without one. | — | S | A |
-| AT.3 | **NIR spectral-class coverage.** `BAND_CLASSES['nir']` spans 0.70–1.05 µm; `data/spectra/responses/nir_si.csv` reaches 1.10 µm, so supplying the real response raises. SWIR and MWIR have the same edge shortfalls and pass only because the response is under the 1e-6 threshold there. | `class_weights('nir', nir_si)` returns rather than raising, and a test walks `configs/sensors/*.yaml` asserting every response is inside its band's class support. Latent only because of AT.2, so the two must land together. | AT.2 | S | A |
+| AT.2 | ✅ **done.** `Scene.from_config`/`from_file` take `responses=` and pass them to `LayeredAtmosphere`; `load_band_response_for_config` sits beside the LUT loader so both come from one config field. All six drivers pass it; a model built without one warns. | **Measured.** MWIR `h2o_wing` 0.0238 → 0.1303, **×5.46**. LWIR moves <5e-4, which is why it hid — the band rendered most is the one the top-hat suits. 18 cases with AT.3. | — | S | A |
+| AT.3 | ✅ **done.** NIR `window` reaches 1.10 µm (where SWIR's first class begins), SWIR spans 0.80–1.80, MWIR `h2o_wing` reaches 6.0 — the 6.3 µm bend's onset, not a window. | **Measured.** NIR carried **0.188 %** of its Planck-weighted band outside every class and raised; SWIR and MWIR carried **0.000 %** and passed on luck. The guard walks `configs/sensors/*.yaml`, so a new camera cannot add a short band. Reverting NIR to 1.05 turns 3 red. | AT.2 | S | A |
 | AT.4 | **Band-scalability guard covers the atmosphere and materials.** The AST guard exempts `irsim.atmosphere` and `irsim.materials`; `BAND_CLASSES`, `WEIGHT_T_REF_K` and `ATMOSPHERE_BAND_KEYS` hard-code band names and micron edges, so a fifth band is a code change in the atmosphere. | A fifth band added to a sensor YAML classifies, tabulates and renders with no edit under `src/`. If the carve-out is kept, it is recorded with its reason and the exemption list becomes a tested constant rather than an omission. | — | M | A |
 | AT.5 | **Guard the grey `Atmosphere`.** `Scene.from_config` builds both models unconditionally; `scene.atmosphere` is the primary attribute while every render script passes `scene.layered`, and `pipeline/atmosphere.py:87` branches between them. A caller taking the primary attribute gets a materially different τ and L_path from the sky model standing beside it. | A `Scene` carrying a sky model refuses to hand out the grey one, or marks it L1-only in a way a test asserts. Not a feature today; a divergence waiting to be stepped on. | — | S | A |
 | AT.6 | **Spec issue S40: the Level B (a, p) table.** Twelve of sixteen Level B materials carry ESTIMATED (a, p); the four fitted use `paint_proxy.csv`, whose header says "PROXY: PMMA, not paint", giving a = 0.75 against §4.2's 0.15–0.35. Oblique surfaces are most of a maritime or urban frame. | Either a measured pigmented-paint n/k table in the fit, or the four painted materials' `a` moved inside §4.2's range against a public angular measurement. S40 closes, or is restated with what remains unexplained. | RP.7 | M | C |

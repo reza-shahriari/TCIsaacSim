@@ -36,6 +36,7 @@ from irsim.config.scene import (
     load_scene_config,
 )
 from irsim.radiometry.lut import BandLUT, Quantity
+from irsim.radiometry.spectral_response import SpectralResponse
 from irsim.thermal.aerial import (
     AERIAL_HEAT_SOURCES,
     RECOVERY_FACTOR_TURBULENT,
@@ -201,6 +202,7 @@ class Scene:
         quantity: Quantity = "lb",
         weather_override: WeatherSeries | None = None,
         skylights: Mapping[str, Any] | None = None,
+        responses: Mapping[str, SpectralResponse] | None = None,
     ) -> Scene:
         """``weather_override`` replaces the file the scene names, for *variant* scenes.
 
@@ -224,7 +226,11 @@ class Scene:
         sky_models: dict[str, SkyModel] = {}
         if spec.environment_preset is not None:
             environment = load_environment_preset(spec.environment_preset)
-            layered = LayeredAtmosphere(preset, weather, luts)
+            # The camera's own R(λ) decides how much of each band falls in each spectral class
+            # (AT.2). Without it `class_weights` falls back to a nominal top-hat and the model
+            # describes a different camera: measured on the shipped InSb response, the MWIR
+            # `h2o_wing` weight goes 0.0238 -> 0.1303, a **5.5x** change, silently.
+            layered = LayeredAtmosphere(preset, weather, luts, responses)
             for band, lut in (luts or {}).items():
                 # Scattered sunlight (M11.10, ADR 0086) is supplied by the caller, because
                 # integrating it needs the *sensor's* R(λ) and this module does not take sensor
@@ -270,9 +276,15 @@ class Scene:
         data_dir: str | os.PathLike[str] | None = None,
         quantity: Quantity = "lb",
         skylights: Mapping[str, Any] | None = None,
+        responses: Mapping[str, SpectralResponse] | None = None,
     ) -> Scene:
         return cls.from_config(
-            load_scene_config(path), luts, data_dir, quantity, skylights=skylights
+            load_scene_config(path),
+            luts,
+            data_dir,
+            quantity,
+            skylights=skylights,
+            responses=responses,
         )
 
     # -- time helpers ---------------------------------------------------------------------

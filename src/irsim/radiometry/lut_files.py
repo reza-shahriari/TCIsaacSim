@@ -35,6 +35,7 @@ from irsim.config.loader import config_hash as compute_config_hash
 from irsim.config.loader import file_sha256, resolve_data_dir
 from irsim.config.sensor import SensorConfig
 from irsim.radiometry.lut import QUANTITIES, BandLUT
+from irsim.radiometry.spectral_response import SpectralResponse, load_spectral_response
 
 __all__ = [
     "LUT_SCHEMA_VERSION",
@@ -45,6 +46,7 @@ __all__ = [
     "load_band_lut",
     "build_band_lut_for_config",
     "load_band_lut_for_config",
+    "load_band_response_for_config",
 ]
 
 LUT_SCHEMA_VERSION = 1
@@ -173,6 +175,19 @@ def _band_block(config: SensorConfig) -> dict[str, Any]:
 def _spectral_path(config: SensorConfig, data_dir: str | os.PathLike[str] | None) -> pathlib.Path:
     p = pathlib.Path(config.sensor.band.spectral_response)
     return p if p.is_absolute() else resolve_data_dir(data_dir) / p
+
+
+def load_band_response_for_config(
+    config: SensorConfig, data_dir: str | os.PathLike[str] | None = None
+) -> SpectralResponse:
+    """The camera's own R(λ), from the same path the LUT was built against (AT.2).
+
+    It lives beside :func:`load_band_lut_for_config` because the two must describe one camera. The
+    layered atmosphere needs the response to split a band into spectral classes, and without it
+    ``class_weights`` falls back to a nominal top-hat: measured on the shipped InSb response, the
+    MWIR ``h2o_wing`` class weight goes 0.0238 to 0.1303, a **5.5x** change, with nothing said.
+    """
+    return load_spectral_response(_spectral_path(config, data_dir))
 
 
 def build_band_lut_for_config(

@@ -13,6 +13,29 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-16
 
 #### Added
+- **The camera's own R(λ) reaches the atmosphere, and every band's classes cover it** (`AT.2`,
+  `AT.3` — they land together because the first exposes the second). `Scene.from_config` built
+  `LayeredAtmosphere(preset, weather, luts)` and never passed the fourth `responses` argument, so
+  `class_weights` fell back to a **nominal top-hat** for every band and the model described a
+  different camera than the one being simulated, silently.
+- **Measured on the shipped InSb MWIR response: the `h2o_wing` class weight goes 0.0238 → 0.1303, a
+  5.5× change** in how much of the band is treated as a water wing. LWIR moves by under 5e-4 —
+  which is exactly why this stayed invisible, because the Boson's response happens to sit close to
+  its nominal top-hat and LWIR is the band the project renders most.
+- Supplying the real NIR response used to **raise**: `BAND_CLASSES['nir']` stopped at 1.05 µm while
+  `nir_si.csv` reaches 1.10, putting **0.188 %** of the Planck-weighted band outside every class.
+  SWIR (short at both ends) and MWIR (short by 0.4 µm) had the same shortfall and passed only
+  because their responses carry **0.000 %** out there — luck, not coverage. NIR's `window` now ends
+  at 1.10, where SWIR's own first class begins; SWIR's spans 0.80–1.80; MWIR's `h2o_wing` reaches
+  6.0 µm, which is the right class because 5.6–6.0 approaches the 6.3 µm water bend rather than
+  opening into a window.
+- `load_band_response_for_config` sits beside `load_band_lut_for_config` so the two are loaded from
+  the same field of the same config and cannot describe different cameras. All six render drivers
+  pass it. A `LayeredAtmosphere` built without one now **warns**, naming the measured consequence —
+  the failure mode was that the output looks like an output either way.
+- Eighteen cases. The guard `AT.3` asks for walks `configs/sensors/*.yaml` rather than a
+  hand-written list, so adding a camera cannot quietly add a band whose classes stop short of its
+  detector's tail. Negative control: reverting NIR's edge to 1.05 turns three red.
 - **Every pixel takes its own slant path** (`AT.1`). `pipeline/atmosphere.py` passed elevation
   **0.0 unconditionally**, so every *resolved* pixel was given surface-density extinction and
   surface-temperature emission over its whole slant range — while the *unresolved* point-target path

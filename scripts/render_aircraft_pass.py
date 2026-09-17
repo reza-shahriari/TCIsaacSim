@@ -113,7 +113,10 @@ def main() -> int:
     from irsim.materials.mapping import MaterialResolver, load_mapping_rules
     from irsim.materials.table import MaterialTable
     from irsim.pipeline.core import PipelineConfig
-    from irsim.radiometry.lut_files import load_band_lut_for_config
+    from irsim.radiometry.lut_files import (
+        load_band_lut_for_config,
+        load_band_response_for_config,
+    )
     from irsim.scene import Scene
     from irsim_eval.video import (
         encode_mp4,
@@ -152,6 +155,9 @@ def main() -> int:
     # hides it.
     quantity = sensor.sensor.quantity
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
+    # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is
+    # loaded beside the LUT because the two must describe one camera (AT.2).
+    response = load_band_response_for_config(sensor, REPO / "data")
     # Scattered sunlight in the sky (M11.10, ADR 0086). `None` for an emissive band, so an LWIR
     # render is bit-identical to what it was; in a reflective band, without it the sky renders
     # black and the sunlit target sits on nothing, which is backwards.
@@ -159,6 +165,7 @@ def main() -> int:
     scene = Scene.from_file(
         args.scene,
         {spec.band.band_id: lut},
+        responses={spec.band.band_id: response},
         quantity=quantity,
         skylights={spec.band.band_id: skylight},
     )
@@ -317,6 +324,7 @@ def main() -> int:
     probe = Scene.from_file(
         args.scene,
         {spec.band.band_id: lut},
+        responses={spec.band.band_id: response},
         quantity=quantity,
         skylights={spec.band.band_id: skylight},
     )

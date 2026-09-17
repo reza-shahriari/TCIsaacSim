@@ -7,9 +7,10 @@ behind it. Contrast therefore jumped at the resolved/unresolved handoff for no p
 the error grows with elevation exactly where phase 1's subject lives: a target against the sky.
 
 The tests that carry weight are the three at the end. `test_the_defect_it_fixes_is_this_big`
-records the size of the error as a number rather than a claim; `test_contrast_does_not_jump_across_the_handoff`
-is the acceptance criterion; and `test_the_lut_reproduces_the_exact_quadrature` is what lets the LUT
-be trusted at all, since a table that is smooth and wrong looks exactly like a table that is right.
+records the size of the error as a number rather than a claim;
+`test_contrast_does_not_jump_across_the_handoff` is the acceptance criterion; and
+`test_the_lut_reproduces_the_exact_quadrature` is what lets the LUT be trusted at all, since a
+table that is smooth and wrong looks exactly like a table that is right.
 
 docs/physics-model.md §7.4, §5.3; ADR 0071; roadmap AT.1.
 """
@@ -22,7 +23,7 @@ import pathlib
 import numpy as np
 import pytest
 
-from irsim.atmosphere.layered import ExponentialSum, LayeredAtmosphere, column_length
+from irsim.atmosphere.layered import LayeredAtmosphere, column_length
 from irsim.atmosphere.library import load_atmosphere_preset
 from irsim.pipeline.atmosphere import apply_layered_gbuffer
 from irsim.radiometry.lut import BandLUT
@@ -68,7 +69,7 @@ def test_a_horizontal_ray_keeps_the_flat_column() -> None:
 
 
 def test_an_upward_column_saturates_at_the_scale_height() -> None:
-    """H/sinθ is the whole point: a vertical ray leaves the atmosphere, a horizontal one does not."""
+    """H/sinθ is the point: a vertical ray leaves the atmosphere, a horizontal one does not."""
     assert float(column_length(np.inf, math.pi / 2, 2000.0)) == pytest.approx(2000.0)
     assert float(column_length(np.inf, math.radians(30.0), 2000.0)) == pytest.approx(4000.0)
     assert math.isinf(float(column_length(np.inf, 0.0, 2000.0)))
@@ -100,7 +101,7 @@ def test_the_lut_reproduces_the_exact_quadrature(
     el = math.radians(elevation_deg)
     ranges = np.array([200.0, 1000.0, 5000.0, 20000.0])
     got = atmosphere.path_radiance_plane("lwir", 0.0, ranges, np.full(ranges.shape, el))
-    for distance, value in zip(ranges, got):
+    for distance, value in zip(ranges, got, strict=True):
         exact = es.path_radiance(float(distance), el, lb_of_height)
         assert abs(value - exact) * 1000.0 / DL_DT_W_M2_SR_K < 5.0
 

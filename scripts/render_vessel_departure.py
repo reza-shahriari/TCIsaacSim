@@ -110,7 +110,10 @@ def main() -> int:
     from irsim.materials.nk import load_nk_table
     from irsim.materials.table import MaterialTable
     from irsim.pipeline.core import PipelineConfig
-    from irsim.radiometry.lut_files import load_band_lut_for_config
+    from irsim.radiometry.lut_files import (
+        load_band_lut_for_config,
+        load_band_response_for_config,
+    )
     from irsim.radiometry.spectral_response import load_spectral_response
     from irsim.scene import Scene
     from irsim_eval.video import (
@@ -131,7 +134,14 @@ def main() -> int:
     sensor = load_sensor_config(args.sensor)
     spec = sensor.sensor
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
-    scene = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is
+    # loaded beside the LUT because the two must describe one camera (AT.2).
+    response = load_band_response_for_config(sensor, REPO / "data")
+    scene = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        responses={spec.band.band_id: response},
+    )
 
     environment = scene.environment
     if environment is None or environment.ground.mode != "sea":
@@ -241,7 +251,11 @@ def main() -> int:
     # eight bits is 256 levels and a sea-and-sky scene spans a hundred kelvin, so spanning ambient
     # would leave the whole vessel in a few codes. Here it matters more than usual, because the
     # funnel climbs 150 K during the film and a span picked off the first frame would clip it.
-    probe = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    probe = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        responses={spec.band.band_id: response},
+    )
     try:
         node_samples = [probe.advance_targets(float(t), 0.0) for t in np.linspace(0.0, span_s, 64)]
     except ValueError as exc:

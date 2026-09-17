@@ -118,7 +118,10 @@ def main() -> int:
     from irsim.materials.mapping import MaterialResolver, load_mapping_rules
     from irsim.materials.table import MaterialTable
     from irsim.pipeline.core import PipelineConfig
-    from irsim.radiometry.lut_files import load_band_lut_for_config
+    from irsim.radiometry.lut_files import (
+        load_band_lut_for_config,
+        load_band_response_for_config,
+    )
     from irsim.scene import Scene
     from irsim_eval.video import encode_mp4, ffmpeg_available, overlay_readout
     from irsim_isaac.car_demo import CameraSetup, build_car_demo, describe
@@ -134,7 +137,14 @@ def main() -> int:
     sensor = load_sensor_config(args.sensor)
     spec = sensor.sensor
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
-    scene = Scene.from_file(args.scene, {spec.band.band_id: lut})
+    # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is
+    # loaded beside the LUT because the two must describe one camera (AT.2).
+    response = load_band_response_for_config(sensor, REPO / "data")
+    scene = Scene.from_file(
+        args.scene,
+        {spec.band.band_id: lut},
+        responses={spec.band.band_id: response},
+    )
 
     # The fields are sized from the camera's own frustum, so the road patch cannot end up smaller
     # than the frame -- which would make the MP.3 overlay raise half an hour into a Kit session.
