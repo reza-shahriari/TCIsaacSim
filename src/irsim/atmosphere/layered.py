@@ -30,6 +30,7 @@ docs/physics-model.md §7.1 [R13], §7.4, §5.3, Appendix A #2
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
@@ -96,18 +97,18 @@ BAND_CLASSES: dict[str, tuple[SpectralClass, ...]] = {
     "mwir": (
         SpectralClass("h2o_2p7", ((2.55, 2.95),), "water", 0.05, opaque=True),
         SpectralClass("co2_4p3", ((4.17, 4.45),), "air", 0.5, opaque=True),
-        SpectralClass("h2o_wing", ((2.95, 3.35), (5.0, 5.6)), "water", 8.0),
+        SpectralClass("h2o_wing", ((2.95, 3.35), (5.0, 6.0)), "water", 8.0),
         SpectralClass("co2_n2o", ((4.45, 4.6), (4.85, 5.0)), "air", 2.0e-3),
         SpectralClass("window", ((2.0, 2.55), (3.35, 4.17), (4.6, 4.85)), "water", 0.3),
     ),
     "swir": (
         SpectralClass("h2o_1p4", ((1.33, 1.48),), "water", 0.05, opaque=True),
         SpectralClass("h2o_1p1", ((1.10, 1.17),), "water", 10.0),
-        SpectralClass("window", ((0.85, 1.10), (1.17, 1.33), (1.48, 1.75)), "water", 0.5),
+        SpectralClass("window", ((0.80, 1.10), (1.17, 1.33), (1.48, 1.80)), "water", 0.5),
     ),
     "nir": (
         SpectralClass("h2o_0p94", ((0.90, 0.98),), "water", 10.0),
-        SpectralClass("window", ((0.7, 0.90), (0.98, 1.05)), "water", 0.5),
+        SpectralClass("window", ((0.7, 0.90), (0.98, 1.10)), "water", 0.5),
     ),
     "visible": (SpectralClass("window", ((0.35, 0.80),), "water", 1.0),),
 }
@@ -470,9 +471,13 @@ class LayeredAtmosphere:
         self._responses = dict(responses or {})
         self._weights: dict[str, NDArray[np.float64]] = {}
         #: AT.1's per-elevation cumulative tables, keyed by (band, quantity, exponential sum).
-        #: Keyed on the sum's identity rather than on `t_s`, so it turns over exactly when the
-        #: thermal tick does and not once per frame.
-        self._slant_cache: dict[tuple[str, str, int], tuple[Any, Any, float, int]] = {}
+        #: Keyed on the extinction arrays and the surface air temperature, so it turns over
+        #: exactly when the weather does and not once per frame.
+        self._slant_cache: dict[tuple[Any, ...], tuple[Any, Any, float, int]] = {}
+
+    #: How many slant tables to keep. A render walks one weather sample at a time, so a handful
+    #: covers the reuse within a frame and across neighbouring frames without growing all day.
+    _SLANT_CACHE_MAX = 8
 
     @property
     def preset(self) -> AtmospherePreset:
@@ -484,7 +489,22 @@ class LayeredAtmosphere:
 
     def weights(self, band: str) -> NDArray[np.float64]:
         if band not in self._weights:
-            self._weights[band] = class_weights(band, self._responses.get(band))
+            response = self._responses.get(band)
+            if response is None:
+                # Loud, because the consequence is invisible in the output (AT.2). Without the
+                # camera's R(λ) the band is split by a nominal top-hat, and on the shipped InSb
+                # response that moves the MWIR `h2o_wing` weight from 0.0238 to 0.1303 -- a 5.5x
+                # change in how much of the band is treated as a water wing -- while every frame
+                # still looks exactly like a frame.
+                warnings.warn(
+                    f"LayeredAtmosphere has no spectral response for band {band!r}, so its "
+                    "spectral-class weights come from a nominal top-hat rather than from the "
+                    "camera. Pass responses= (irsim.radiometry.lut_files."
+                    "load_band_response_for_config) -- measured on the shipped InSb MWIR "
+                    "response, this is a 5.5x error in the h2o_wing class weight.",
+                    stacklevel=2,
+                )
+            self._weights[band] = class_weights(band, response)
         return self._weights[band]
 
     # -- the per-band exponential sum at time t ---------------------------------------
@@ -569,7 +589,21 @@ class LayeredAtmosphere:
         the stage; rebuilding it per tick is what the rest of the thermal path already does.
         """
         es = self.exponential_sum(band, t_s)
-        key = (band, quantity, id(es))
+        # Keyed on the *content* the table depends on, never on object identity. An earlier draft
+        # used `id(es)`, which is wrong twice over: `exponential_sum` builds a fresh object on every
+        # call so the cache never hit, and CPython reuses the ids of dead objects, so it could have
+        # returned a table built for different weather. The extinction arrays and the surface air
+        # temperature are what the table is a function of; equal values mean an identical table.
+        key = (
+            band,
+            str(quantity),
+            es.weights.tobytes(),
+            es.gamma_0.tobytes(),
+            es.scale_heights_m.tobytes(),
+            float(es.gamma_aerosol),
+            float(es.aerosol_scale_height_m),
+            float(self._weather.at(t_s).t_air_k),
+        )
         cached = self._slant_cache.get(key)
         if cached is not None:
             return cached
@@ -593,6 +627,10 @@ class LayeredAtmosphere:
         # search: w = 1 - exp(-od), index = w / step.
         w_step = float(w_grid[1] - w_grid[0])
         out = (sin_nodes, stacked, w_step, n)
+        # Bounded: a time-lapse render walks the weather and would otherwise grow one table per
+        # frame. Oldest first, because a render moves forward through the day.
+        if len(self._slant_cache) >= self._SLANT_CACHE_MAX:
+            self._slant_cache.pop(next(iter(self._slant_cache)))
         self._slant_cache[key] = out
         return out
 
