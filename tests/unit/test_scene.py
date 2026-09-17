@@ -40,7 +40,12 @@ def test_weather_loaded_once_and_shared(
     monkeypatch.setattr(scene_mod, "load_weather_csv", counting)
     scene = Scene.from_file(SCENE_YAML, {"lwir": tophat_lwir_lut})
     assert len(calls) == 1 and calls[0].name == "clear_midlat_summer_48h.csv"
-    assert scene.atmosphere.weather is scene.weather
+    # `grey_atmosphere`, not `atmosphere`: this scene names an environment preset, so it
+    # carries a layered model too and AT.5's guard refuses the primary-looking name. The
+    # invariant under test is the one-weather rule, which both models are subject to.
+    assert scene.grey_atmosphere.weather is scene.weather
+    assert scene.layered is not None and scene.layered.weather is scene.weather
+    assert scene.transfer_atmosphere is scene.layered
     for name, solver in scene.targets.items():
         w = getattr(solver, "weather", None)
         assert w is None or w is scene.weather, name
@@ -58,7 +63,7 @@ def test_path_radiance_and_convection_see_the_same_t_air(tophat_lwir_lut: BandLU
     assert isinstance(airframe, NewtonCoolingSolver)
     for h in range(0, 44):
         t_rel = h * 3600.0
-        t_air_path = scene.atmosphere.state(scene.t0_s + t_rel).t_air_k
+        t_air_path = scene.grey_atmosphere.state(scene.t0_s + t_rel).t_air_k
         t_air_conv = airframe.ambient_at(scene.t0_s + t_rel)
         assert abs(t_air_path - t_air_conv) < 1e-9
         assert abs(t_air_path - scene.weather_at(t_rel).t_air_k) < 1e-9
@@ -77,7 +82,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
         Scene(
             spec=scene.spec,
             weather=scene.weather,
-            atmosphere=Atmosphere(load_atmosphere_preset("haze"), other),
+            grey_atmosphere=Atmosphere(load_atmosphere_preset("haze"), other),
             targets=scene.targets,
             t0_s=scene.t0_s,
         )
@@ -85,7 +90,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
         Scene(
             spec=scene.spec,
             weather=scene.weather,
-            atmosphere=scene.atmosphere,
+            grey_atmosphere=scene.grey_atmosphere,
             targets={"x": NewtonCoolingSolver(300.0, 10.0, other)},
             t0_s=scene.t0_s,
         )
@@ -93,7 +98,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
         Scene(
             spec=scene.spec,
             weather=scene.weather,
-            atmosphere=scene.atmosphere,
+            grey_atmosphere=scene.grey_atmosphere,
             targets=scene.targets,
             t0_s=scene.t0_s,
             extra_consumers={"sky": type("Sky", (), {"weather": other})()},
@@ -102,7 +107,7 @@ def test_two_weather_objects_cannot_coexist(tophat_lwir_lut: BandLUT) -> None:
         Scene(
             spec=scene.spec,
             weather=scene.weather,
-            atmosphere=scene.atmosphere,
+            grey_atmosphere=scene.grey_atmosphere,
             targets={},
             t0_s=-1.0,
         )

@@ -26,6 +26,7 @@ from irsim.atmosphere.layered import LayeredAtmosphere
 from irsim.atmosphere.library import load_atmosphere_preset
 from irsim.atmosphere.model import Atmosphere
 from irsim.atmosphere.sky import SkyModel
+from irsim.config.atmosphere import AtmospherePreset
 from irsim.config.environment import EnvironmentSpec, load_environment_preset
 from irsim.config.loader import resolve_data_dir
 from irsim.config.scene import (
@@ -139,7 +140,11 @@ def build_target(spec: TargetSpec, weather: WeatherSeries, t0_s: float) -> Tempe
 class Scene:
     spec: SceneSpec
     weather: WeatherSeries
-    atmosphere: Atmosphere
+    #: The grey L1 model (§8.5). **Reach it through :attr:`atmosphere` or, for radiative
+    #: transfer, through :attr:`transfer_atmosphere` -- not by this name.** It is spelled out
+    #: here because the one-weather guard and `consumers` need the object itself; AT.5 explains
+    #: why reading it directly is a mistake once a layered model stands beside it.
+    grey_atmosphere: Atmosphere
     targets: Mapping[str, TemperatureSolver]
     t0_s: float
     layered: LayeredAtmosphere | None = None  # MS.1 model on the same weather
@@ -173,8 +178,54 @@ class Scene:
             raise ValueError("scene start is outside the weather series")
 
     @property
+    def atmosphere(self) -> Atmosphere:
+        """The grey L1 model -- and a hard error once a layered model exists beside it (AT.5).
+
+        docs/physics-model.md §8.5 (grey) vs §8.6 (layered exponential sum); ADR 0033.
+
+        ``from_config`` builds **both** models whenever the scene names an environment preset,
+        which every scene shipped in this repository does. They do not agree: the grey one takes a
+        single band-averaged optical depth, the layered one sums the exponential-sum terms along
+        the real slant path. Measured on the shipped aerial scene at 5 km and 20 degrees
+        elevation: **tau 0.057 against 0.590**, path radiance 45.1 against 18.7 W/m^2/sr. That is
+        the k-distribution rather than a bug in either -- exp(-mean tau) is not the mean of
+        exp(-tau) across a band whose lines vary by orders of magnitude, which is what §8.6 exists
+        to fix -- but it means the grey model is L1 only, and an attribute that reads as *the*
+        scene atmosphere must not be the one handing it out.
+
+        Nothing in the repository was taking the wrong one when this guard was written; both
+        current readers want :attr:`atmosphere_preset`, which is the same object for both models.
+        The point is that the next caller would have had no way to know, since the primary-looking
+        name held the fallback while every render path used the other one.
+        """
+        if self.layered is not None:
+            raise AttributeError(
+                "this scene carries a layered atmosphere, so `scene.atmosphere` (the grey L1 "
+                "model) is not the one it renders with and the two disagree materially. Use "
+                "`scene.transfer_atmosphere` for radiative transfer, `scene.atmosphere_preset` "
+                "for the preset, or `scene.grey_atmosphere` if you deliberately want L1 "
+                "(docs/physics-model.md §8.5 vs §8.6; roadmap AT.5)"
+            )
+        return self.grey_atmosphere
+
+    @property
+    def transfer_atmosphere(self) -> Atmosphere | LayeredAtmosphere:
+        """The model stage 2 must run: the layered one where it exists, else the grey fallback."""
+        return self.grey_atmosphere if self.layered is None else self.layered
+
+    @property
+    def atmosphere_preset(self) -> AtmospherePreset:
+        """The preset both models were built from -- one object, so it cannot disagree.
+
+        This is what a caller almost always wants off a scene: the band coefficients, the aerosol
+        term, the scale heights. Reading it through the grey model happened to work and made the
+        grey model look load-bearing.
+        """
+        return self.grey_atmosphere.preset
+
+    @property
     def consumers(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"atmosphere": self.atmosphere}
+        out: dict[str, Any] = {"atmosphere": self.grey_atmosphere}
         if self.layered is not None:
             out["layered"] = self.layered
         out.update({f"sky:{k}": v for k, v in self.sky_models.items()})
@@ -256,7 +307,7 @@ class Scene:
         return cls(
             spec=spec,
             weather=weather,
-            atmosphere=atmosphere,
+            grey_atmosphere=atmosphere,
             targets=targets,
             t0_s=t0_s,
             layered=layered,

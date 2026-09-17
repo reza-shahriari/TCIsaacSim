@@ -87,7 +87,7 @@ def test_a_name_that_is_both_kinds_is_refused_rather_than_resolved(facet_scene) 
     clashing = type(facet_scene)(
         spec=facet_scene.spec,
         weather=facet_scene.weather,
-        atmosphere=facet_scene.atmosphere,
+        grey_atmosphere=facet_scene.grey_atmosphere,
         targets=targets,
         t0_s=facet_scene.t0_s,
         layered=facet_scene.layered,

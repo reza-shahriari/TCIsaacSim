@@ -131,7 +131,7 @@ class SceneIllumination:
         )
         if solar is None and night is None:
             return None
-        preset = scene.atmosphere.preset
+        preset = scene.atmosphere_preset
         band_id = band.band_id
 
         def tau(zenith_rad: float) -> float:

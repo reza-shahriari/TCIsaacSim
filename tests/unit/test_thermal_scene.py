@@ -70,7 +70,7 @@ def test_one_weather_object_reaches_every_consumer(scene: Scene) -> None:
     """CLAUDE.md #6, including the new one. The forcing model carries `.weather` precisely so the
     `Scene`'s existing guard can see it — a forcing model quietly holding a second series is the
     failure that guard is for."""
-    assert scene.thermal.forcing_at.weather is scene.atmosphere.weather
+    assert scene.thermal.forcing_at.weather is scene.grey_atmosphere.weather
     assert scene.thermal.forcing_at.weather is scene.weather
     assert "thermal" in scene.consumers
 

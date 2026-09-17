@@ -337,7 +337,7 @@ def test_scene_refuses_a_housing_node_on_a_different_weather() -> None:
         return Scene(
             spec=_MinimalSceneSpec(),
             weather=scene_weather,
-            atmosphere=_NoWeather(),
+            grey_atmosphere=_NoWeather(),
             targets={},
             t0_s=0.0,
             extra_consumers={"housing": housing},

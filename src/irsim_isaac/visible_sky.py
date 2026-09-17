@@ -505,7 +505,7 @@ def dome_spec_from_scene(
     when = scene.spec.start_utc + timedelta(seconds=float(t_rel_s))
     sun = sun_position_utc(site.latitude_deg, site.longitude_deg, when)
     weather = scene.weather_at(t_rel_s)
-    rayleigh = scene.atmosphere.preset.bands["visible"].gamma0_per_m
+    rayleigh = scene.atmosphere_preset.bands["visible"].gamma0_per_m
     spec = DomeSpec(
         sun_elevation_deg=float(sun.elevation_deg),
         sun_azimuth_deg=float(sun.azimuth_deg),

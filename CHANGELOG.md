@@ -13,6 +13,23 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **A scene with a layered atmosphere no longer hands out the grey one** (`AT.5`).
+  `Scene.from_config` builds both models whenever a scene names an environment preset — which
+  **all eight shipped scenes do** — so the attribute a reader would take for the scene's
+  atmosphere held the L1 fallback while every render script passed `scene.layered`. The field is
+  now `grey_atmosphere`; `Scene.atmosphere` is a property that raises once a layered model exists,
+  and the message names all three ways out: `transfer_atmosphere` for radiative transfer (the
+  layered one where it exists), `atmosphere_preset` for the preset, `grey_atmosphere` for a
+  deliberate L1. Both live readers wanted the preset, which is one object and cannot disagree —
+  nothing was taking the wrong model, and the next caller would have had no way to tell.
+- The gap is larger than the step assumed and larger than `AT.1`'s, which compared the layered
+  model against itself on a horizontal path. Grey against layered, on the aerial scene at 5 km and
+  20° elevation: **τ 0.057 against 0.590** and path radiance **45.1 against 18.7 W/m²/sr**. That is
+  the k-distribution rather than a defect in either — exp(−τ̄) is not the mean of exp(−τ) across a
+  band whose lines vary by orders of magnitude, which is what §8.6's exponential sum exists to fix
+  — but it is why the grey model is L1 only. `tests/unit/test_atmosphere_handout.py` (8 cases)
+  measures it rather than quoting it, and checks that the grey model stays a registered consumer:
+  refused is not removed, and CLAUDE.md #6's one-weather guard must keep seeing it.
 - **Three committed Boson values disagreed with FLIR's own datasheet** (`SC.3`, ADR 0091). [R24],
   Doc. # 102-2013-40 Release 340, is free, public and EAR99 — the only external anchor a project
   with no camera has for its reference core. `ffc_interval_s` was **180 s**, which matches no
