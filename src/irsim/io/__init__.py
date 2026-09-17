@@ -8,6 +8,7 @@ resulting picture looks (roadmap M10.10a).
 from irsim.io.dataset import (
     PLANE_UNITS,
     FrameRecord,
+    FrameWriter,
     read_float_plane,
     write_float_plane,
     write_frame,
@@ -25,5 +26,6 @@ __all__ = [
     "write_float_plane",
     "read_float_plane",
     "FrameRecord",
+    "FrameWriter",
     "PLANE_UNITS",
 ]

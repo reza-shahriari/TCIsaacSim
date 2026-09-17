@@ -66,6 +66,16 @@ parser.add_argument("--tilt-deg", type=float, default=-3.0, help="negative looks
 parser.add_argument("--heading-deg", type=float, default=120.0, help="compass bearing of the view")
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--rt-subframes", type=int, default=8)
+# IG.13: a driver that writes only 8-bit PNGs cannot support a radiometric claim (ADR 0068), and
+# for most of this project's life this one wrote nothing else. The float32 planes and their
+# sidecar are the *frame*; the video beside them is the look.
+parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
+parser.add_argument(
+    "--plane-stride",
+    type=int,
+    default=1,
+    help="write every Nth frame's float32 planes; 0 writes none, and makes no radiometric claim",
+)
 parser.add_argument("--rgb", action="store_true", help="also film the companion visible frame")
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--no-water", action="store_true", help="no water geometry (ADR 0078 ablation)")
@@ -102,7 +112,8 @@ def main() -> int:
     from pxr import Gf, UsdGeom
 
     from irsim.atmosphere.sea import SeaModel
-    from irsim.config.loader import load_sensor_config
+    from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.io.dataset import FrameWriter
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
     from irsim.materials.library import MaterialLibrary
@@ -303,7 +314,25 @@ def main() -> int:
         background_prim_paths=stage.water_paths,
     ).open(settle_frames=args.settle)
 
+    # IG.13: the float32 planes and their sidecar, bound once (ADR 0068). Every run-constant
+    # field lives here so the loop body cannot quietly disagree with itself frame to frame.
+    writer = FrameWriter(
+        directory=out_dir,
+        config_hash=config_hash(sensor),
+        band_hash=band_hash(sensor),
+        quantity=pipeline.quantity,
+        float_format=args.float_format,
+        start_utc=scene.weather.start_utc,
+        stride=args.plane_stride,
+        metadata={
+            "scene": pathlib.Path(args.scene).name,
+            "sensor": spec.name,
+            "camera_height_m": args.camera_height_m,
+            "interval_s": args.interval_s,
+        },
+    )
     history: list[dict[str, float]] = []
+    planes_written = 0
     t_render = time.time()
     for index in range(args.frames):
         t_rel = camera.t_rel_s
@@ -346,6 +375,25 @@ def main() -> int:
                 "t_app_max_k": round(float(t_app.max()), 3),
             }
         )
+
+        # The frame itself. `wants` is asked first so the companion RGB is not copied out of the
+        # renderer on a frame whose planes are not being kept.
+        if writer.wants(index):
+            extra = {}
+            if args.rgb and last is not None and last.rgb is not None:
+                extra["rgb"] = last.rgb
+            writer.write(
+                outputs,
+                frame_index=index,
+                t_s=camera.last_frame_t_s,
+                extra_planes=extra,
+                extra_metadata={
+                    "range_m": round(range_m, 3),
+                    "depression_deg": round(track.depression_deg(t_rel), 4),
+                    "node_temperatures_k": {k: round(float(v), 3) for k, v in temps.items()},
+                },
+            )
+            planes_written += 1
 
         scaled = (t_app - span_k[0]) / (span_k[1] - span_k[0])
         spanned = palette[quantise_display(scaled)]
@@ -422,6 +470,12 @@ def main() -> int:
         "sensor": spec.name,
         "resolution": [spec.fpa.width, spec.fpa.height],
         "ifov_mrad": round(ifov_mrad, 4),
+        "scene": pathlib.Path(args.scene).name,
+        "config_hash": config_hash(sensor),
+        "band_hash": band_hash(sensor),
+        "float_format": args.float_format,
+        "plane_stride": args.plane_stride,
+        "plane_frames": planes_written,
         "track": {
             "start_range_m": track.start_range_m,
             "end_range_m": round(track.range_m(span_s), 1),

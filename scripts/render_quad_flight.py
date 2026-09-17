@@ -47,6 +47,16 @@ parser.add_argument("--tilt-deg", type=float, default=15.0)
 parser.add_argument("--heading-deg", type=float, default=110.0)
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--rt-subframes", type=int, default=8)
+# IG.13: a driver that writes only 8-bit PNGs cannot support a radiometric claim (ADR 0068), and
+# for most of this project's life this one wrote nothing else. The float32 planes and their
+# sidecar are the *frame*; the video beside them is the look.
+parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
+parser.add_argument(
+    "--plane-stride",
+    type=int,
+    default=1,
+    help="write every Nth frame's float32 planes; 0 writes none, and makes no radiometric claim",
+)
 parser.add_argument("--rgb", action="store_true", help="also film the companion visible frame")
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--no-dome", action="store_true", help="untextured grey dome (ADR 0073)")
@@ -118,6 +128,7 @@ def main() -> int:
     from irsim.atmosphere.cloud import generate_sky_cloud
     from irsim.atmosphere.skylight import skylight_for_sensor
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.io.dataset import FrameWriter
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
     from irsim.materials.library import MaterialLibrary
@@ -384,7 +395,25 @@ def main() -> int:
             f"display: {palette_name} palette; the fixed span is taken from the first frame's ADC "
             "percentiles once it exists (this band has no apparent temperature to span)"
         )
+    # IG.13: the float32 planes and their sidecar, bound once (ADR 0068). Every run-constant
+    # field lives here so the loop body cannot quietly disagree with itself frame to frame.
+    writer = FrameWriter(
+        directory=out_dir,
+        config_hash=config_hash(sensor),
+        band_hash=band_hash(sensor),
+        quantity=pipeline.quantity,
+        float_format=args.float_format,
+        start_utc=scene.weather.start_utc,
+        stride=args.plane_stride,
+        metadata={
+            "scene": pathlib.Path(args.scene).name,
+            "sensor": spec.name,
+            "range_m": stage.range_m,
+            "interval_s": args.interval_s,
+        },
+    )
     history: list[dict[str, float]] = []
+    planes_written = 0
     t_render = time.time()
     for index in range(args.frames):
         t_rel = camera.t_rel_s
@@ -421,6 +450,24 @@ def main() -> int:
             record["dn16_min"] = float(dn.min())
             record["dn16_max"] = float(dn.max())
         history.append(record)
+
+        # The frame itself. `wants` is asked first so the companion RGB is not copied out of the
+        # renderer on a frame whose planes are not being kept.
+        if writer.wants(index):
+            extra = {}
+            if args.rgb and camera.last_frame is not None and camera.last_frame.rgb is not None:
+                extra["rgb"] = camera.last_frame.rgb
+            writer.write(
+                outputs,
+                frame_index=index,
+                t_s=camera.last_frame_t_s,
+                extra_planes=extra,
+                extra_metadata={
+                    "throttle": round(throttle, 4),
+                    "node_temperatures_k": {k: round(float(v), 3) for k, v in temps.items()},
+                },
+            )
+            planes_written += 1
 
         # Fixed span -> palette. `quantise_display` is the ISP's own rounding, so the mapping is
         # the one the display branch uses and not a second, subtly different one.
@@ -525,6 +572,9 @@ def main() -> int:
         "motor_peak_at_s": peak["t_rel_s"],
         "motor_swing_k": round(peak["motor_k"] - min(r["motor_k"] for r in history), 3),
         "display_span": {"kind": span.kind, "low": span.low, "high": span.high},
+        "float_format": args.float_format,
+        "plane_stride": args.plane_stride,
+        "plane_frames": planes_written,
         "palette": palette_name,
         "videos": videos,
         "history": history,

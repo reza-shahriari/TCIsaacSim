@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -48,6 +48,7 @@ __all__ = [
     "FloatFormat",
     "PLANE_UNITS",
     "FrameRecord",
+    "FrameWriter",
     "write_float_plane",
     "write_frame",
     "read_float_plane",
@@ -231,3 +232,79 @@ def write_frame(
     sidecar = out_dir / f"{stem}.json"
     sidecar.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
     return FrameRecord(directory=out_dir, sidecar=sidecar, files=files, metadata=metadata)
+
+
+@dataclass(frozen=True)
+class FrameWriter:
+    """Bind one run's invariants so a render driver's loop writes a frame in a single line.
+
+    docs/decisions/0068 (an 8-bit frame cannot carry a radiometric claim); roadmap IG.13.
+
+    :func:`write_frame` already does the work, but it takes nine keyword arguments of which
+    seven are constant for the whole run -- the sensor's config and band hashes, the radiometric
+    quantity, the container, the weather series' start, the per-run metadata. Spelling those out
+    at a call site inside a 500-line driver is how three of this project's six drivers ended up
+    writing 8-bit PNGs and nothing else: the frame loop was the easy part and the bookkeeping was
+    not. Binding them once turns the loop body into ``writer.write(outputs, frame_index=i, ...)``
+    and makes "does this driver write planes at all" a one-line question.
+
+    ``stride`` thins the written sequence without thinning the render. A 300-frame time-lapse at
+    640x512 is 786 MB of float32 radiance and apparent temperature, and 3.1 GB at the NIR array's
+    1280x1024 -- enough that a four-band sweep of two scenes fills a disk. ``stride=4`` writes
+    every fourth frame's planes; ``stride=0`` writes none, which is the only honest way to spell
+    "this run makes no radiometric claim". The value travels in every sidecar as ``plane_stride``
+    so a consumer reading ``frame_000025`` beside no ``frame_000024`` can tell a thinned sequence
+    from a failed one.
+    """
+
+    directory: pathlib.Path
+    config_hash: str | None = None
+    band_hash: str | None = None
+    quantity: str | None = None
+    float_format: FloatFormat = "npy"
+    start_utc: datetime | None = None
+    stride: int = 1
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.stride < 0:
+            raise ValueError(f"stride must be >= 0 (0 disables plane writing), got {self.stride}")
+        object.__setattr__(self, "directory", pathlib.Path(self.directory))
+
+    def wants(self, frame_index: int) -> bool:
+        """Whether this frame's planes are written, so a caller can skip preparing them."""
+        return self.stride > 0 and int(frame_index) % self.stride == 0
+
+    def write(
+        self,
+        outputs: Any,
+        *,
+        frame_index: int,
+        t_s: float | None = None,
+        name: str | None = None,
+        extra_planes: dict[str, Any] | None = None,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> FrameRecord | None:
+        """Write one frame, or return ``None`` if ``stride`` skips it.
+
+        Per-frame ``extra_metadata`` is layered over the run's own, so a driver can add what
+        changes (a throttle, a slant range) without restating what does not.
+        """
+        if not self.wants(frame_index):
+            return None
+        merged: dict[str, Any] = {**self.metadata, "plane_stride": int(self.stride)}
+        merged.update(extra_metadata or {})
+        return write_frame(
+            self.directory,
+            outputs,
+            name=name,
+            frame_index=frame_index,
+            t_s=t_s,
+            start_utc=self.start_utc,
+            config_hash=self.config_hash,
+            band_hash=self.band_hash,
+            quantity=self.quantity,
+            float_format=self.float_format,
+            extra_planes=extra_planes,
+            extra_metadata=merged,
+        )

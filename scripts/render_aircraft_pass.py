@@ -53,6 +53,16 @@ parser.add_argument("--tilt-deg", type=float, default=25.0)
 parser.add_argument("--heading-deg", type=float, default=110.0)
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--rt-subframes", type=int, default=8)
+# IG.13: a driver that writes only 8-bit PNGs cannot support a radiometric claim (ADR 0068), and
+# for most of this project's life this one wrote nothing else. The float32 planes and their
+# sidecar are the *frame*; the video beside them is the look.
+parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
+parser.add_argument(
+    "--plane-stride",
+    type=int,
+    default=1,
+    help="write every Nth frame's float32 planes; 0 writes none, and makes no radiometric claim",
+)
 parser.add_argument("--rgb", action="store_true", help="also film the companion visible frame")
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--no-dome", action="store_true", help="untextured grey dome (ADR 0073)")
@@ -107,6 +117,7 @@ def main() -> int:
     from irsim.atmosphere.cloud import generate_sky_cloud
     from irsim.atmosphere.skylight import skylight_for_sensor
     from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.io.dataset import FrameWriter
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
     from irsim.materials.library import MaterialLibrary
@@ -383,7 +394,25 @@ def main() -> int:
     capture_label = (
         f"{rate_hz:.0f} Hz capture" if rate_hz >= 1.0 else f"1 frame / {args.interval_s:g} s"
     )
+    # IG.13: the float32 planes and their sidecar, bound once (ADR 0068). Every run-constant
+    # field lives here so the loop body cannot quietly disagree with itself frame to frame.
+    writer = FrameWriter(
+        directory=out_dir,
+        config_hash=config_hash(sensor),
+        band_hash=band_hash(sensor),
+        quantity=pipeline.quantity,
+        float_format=args.float_format,
+        start_utc=scene.weather.start_utc,
+        stride=args.plane_stride,
+        metadata={
+            "scene": pathlib.Path(args.scene).name,
+            "sensor": spec.name,
+            "speed_m_s": args.speed_m_s,
+            "altitude_m": args.altitude_m,
+        },
+    )
     history: list[dict[str, float]] = []
+    planes_written = 0
     t_render = time.time()
     for index in range(args.frames):
         t_rel = camera.t_rel_s
@@ -431,6 +460,25 @@ def main() -> int:
                 ),
             }
         )
+
+        # The frame itself. `wants` is asked first so the companion RGB is not copied out of the
+        # renderer on a frame whose planes are not being kept.
+        if writer.wants(index):
+            extra = {}
+            if args.rgb and last is not None and last.rgb is not None:
+                extra["rgb"] = last.rgb
+            writer.write(
+                outputs,
+                frame_index=index,
+                t_s=camera.last_frame_t_s,
+                extra_planes=extra,
+                extra_metadata={
+                    "range_m": round(sample.range_m, 3),
+                    "aspect_deg": round(sample.aspect_deg, 3),
+                    "node_temperatures_k": {k: round(float(v), 3) for k, v in temps.items()},
+                },
+            )
+            planes_written += 1
 
         spanned = palette[quantise_display(span.scale(outputs))]
         caption_span = span.caption
@@ -534,6 +582,9 @@ def main() -> int:
         },
         "ifov_mrad": round(ifov_mrad, 4),
         "display_span": {"kind": span.kind, "low": span.low, "high": span.high},
+        "float_format": args.float_format,
+        "plane_stride": args.plane_stride,
+        "plane_frames": planes_written,
         "palette": palette_name,
         "nozzle_px_head_on": max((r["nozzle_px"] for r in head_on), default=0),
         "nozzle_px_tail_on": max((r["nozzle_px"] for r in tail_on), default=0),

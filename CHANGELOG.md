@@ -13,6 +13,31 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **Three of the six render drivers wrote no radiometric output at all, and now do** (`IG.13`,
+  first half). `render_quad_flight`, `render_aircraft_pass` and `render_vessel_departure` — the
+  whole aerial-flight and vessel-departure lanes — emitted 8-bit display PNGs and an mp4, nothing
+  else. ADR 0068 is explicit that an 8-bit stream cannot carry a radiometric claim: the AGC, the
+  palette and a 256-level quantisation have all been applied and none of them invert. Every frame
+  those three renders have ever produced is unusable for the measurements the simulator exists to
+  make. All three now write float32 radiance and apparent-temperature planes, the uint16 ADC frame
+  and a JSON sidecar carrying the config, band and ISP hashes, the scene time and its UTC, and each
+  plane's dtype, shape and unit.
+- **`irsim.io.FrameWriter`** — the binder that makes that cheap. `write_frame` takes nine keyword
+  arguments of which seven are constant for a whole run, and spelling them out inside a 500-line
+  driver is how three drivers came to skip it: the frame loop was the easy part and the bookkeeping
+  was not. Bound once, the loop body is `writer.write(outputs, frame_index=i, ...)` and "does this
+  driver write planes" is a one-line question. `stride` thins the written sequence without thinning
+  the render — a 300-frame LWIR time-lapse is 786 MB of float32 and 3.1 GB at the NIR array's
+  1280×1024 — and travels in every sidecar as `plane_stride`, so a `frame_000025` sitting beside no
+  `frame_000024` reads as a thinned sequence rather than a render that died. `--plane-stride 0`
+  writes none, which is the only honest way to spell "this run makes no radiometric claim".
+- `tests/unit/test_frame_writer.py` (20 cases). The round trip is bit-exact in float32; the sidecar
+  resolves a scene time to the right UTC on the weather axis; float16 is refused; per-frame
+  metadata layers over the run's; and a parametrised guard asks the exit bar of **each driver in
+  turn** — run against the previous commit it fails for exactly the three offenders and passes the
+  other three. Static, because the alternative is a render, but a driver that names neither writer
+  cannot be producing planes whatever else it does.
+
 - **A wall-clock assertion in the unit suite is replaced by a ratio.**
   `test_the_profile_lut_is_fast_enough_for_a_supersampled_frame` asserted `< 1.0 s` and failed twice
   on a workstation at load average 12 while passing in isolation — which tells a reader nothing
