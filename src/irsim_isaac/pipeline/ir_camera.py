@@ -435,6 +435,7 @@ class IrCamera:
             else float(frame_period_s)
         )
         self._t_rel_s = 0.0
+        self._last_frame_t_s: float | None = None
         self._reader: AovReader | None = None
         self._render_product: Any = None
         self._camera_position: NDArray[np.float64] | None = None
@@ -544,8 +545,23 @@ class IrCamera:
 
     @property
     def t_rel_s(self) -> float:
-        """Render time in seconds since the scene start."""
+        """Render time in seconds since the scene start -- the time of the *next* frame.
+
+        :meth:`get_outputs` advances this on the way out, so after a capture it names the frame
+        that has not happened yet. To label a frame that *has* been captured -- a sidecar, a
+        readout, a row in a summary -- read :attr:`last_frame_t_s` instead; on a time-lapse the
+        difference is a whole frame period and every label comes out one row late.
+        """
         return self._t_rel_s
+
+    @property
+    def last_frame_t_s(self) -> float | None:
+        """Absolute scene time of the most recent frame, or ``None`` before the first.
+
+        Absolute, i.e. on the weather series' axis (``scene.t0_s`` included), because that is
+        what the thermal solver, the atmosphere and the sidecar's UTC all key off.
+        """
+        return self._last_frame_t_s
 
     @property
     def last_frame(self) -> _Frame | None:
@@ -906,6 +922,7 @@ class IrCamera:
         """
         planes = self.planes(step=step, rt_subframes=rt_subframes)
         self.state.t_s = self.scene.t0_s + self._t_rel_s
+        self._last_frame_t_s = self.state.t_s
         outputs = run_frame(
             planes, self.config, self.state, self.point_targets(), self.rotor_veils()
         )

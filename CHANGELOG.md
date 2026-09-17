@@ -44,6 +44,19 @@ working in one tree; two commits already exist whose whole subject is restoring 
   no reason or one pointing at a commit that never touched the file.
 
 #### Fixed
+- **Every frame `render_aerial_demo` and `render_maritime_demo` have written is stamped one frame
+  period late.** `IrCamera.get_outputs` advances its clock on the way out, so `t_rel_s` read on the
+  line below a capture names the frame that has not happened yet — and both drivers computed their
+  sidecar's `t_s` (and therefore its `utc`) as `scene.t0_s + camera.t_rel_s` right there.
+  `render_car_ignition` had already hit this and worked around it locally with a comment; the other
+  two had not. On a time-lapse driver a frame period is **six seconds** of weather, sun angle and
+  node temperature, and a dataset whose timestamps are one row out reads as a small calibration
+  error in whatever is fitted to it rather than as a bug. `IrCamera.last_frame_t_s` now carries the
+  absolute scene time of the frame that was actually captured, both drivers read it, and
+  `tests/unit/test_frame_clock.py` checks the stamp against the surface field's own clock — an
+  oracle reached through a different call path, so it fails when the stamp is the one being tested.
+  A companion lint refuses any render driver that does the arithmetic itself; it flags exactly the
+  two offenders on the previous commit and leaves `render_car_ignition` alone.
 - **The Warp ISP's host-readback justification was wrong, and is corrected.** `agc_lut_warp`'s
   docstring said "the last few scalars — the percentile positions, the occupied-bin span — are read
   back". That is not what happens: `counts.numpy()` pulls the **whole 2^bit_depth histogram**, plateau

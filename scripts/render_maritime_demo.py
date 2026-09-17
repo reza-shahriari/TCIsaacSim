@@ -382,7 +382,7 @@ def main() -> int:
             out_dir,
             outputs,
             frame_index=index,
-            t_s=scene.t0_s + camera.t_rel_s,
+            t_s=camera.last_frame_t_s,
             start_utc=scene.weather.start_utc,
             config_hash=config_hash(sensor),
             band_hash=band_hash(sensor),
