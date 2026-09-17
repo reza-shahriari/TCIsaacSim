@@ -303,6 +303,9 @@ def main() -> int:
         prim_to_target=stage.prim_to_target,
         resolutions=resolutions,
         camera_path=stage.camera_path,
+        # IG.6: the aircraft flies and the pedestal slews, so both halves of the relative motion
+        # are real. The camera is tracked unconditionally; this names the target.
+        moving_prim_paths=[stage.aircraft_path],
         capture_rgb=args.rgb,
         illumination=SceneIllumination.for_camera(
             sensor, scene, pipeline.quantity, heading_deg=args.heading_deg

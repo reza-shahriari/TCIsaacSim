@@ -303,6 +303,10 @@ def main() -> int:
         prim_to_target=stage.prim_to_target,
         resolutions=resolutions,
         camera_path=stage.camera_path,
+        # IG.6: the multirotor flies and its rotor discs are re-posed every frame from the
+        # throttle, so the tracker reads each rendered leaf's own transform -- for the articulated
+        # discs that is not the root's answer (ADR 0077, and `MotionTracker`'s class docstring).
+        moving_prim_paths=[stage.quad_path],
         capture_rgb=args.rgb,
         illumination=SceneIllumination.for_camera(
             sensor, scene, pipeline.quantity, heading_deg=args.heading_deg

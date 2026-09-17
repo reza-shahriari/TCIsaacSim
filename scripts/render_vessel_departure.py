@@ -325,6 +325,10 @@ def main() -> int:
         prim_to_target=stage.prim_to_target,
         resolutions=resolutions,
         camera_path=stage.camera_path,
+        # IG.6: the vessel steams away from a static camera, so all of the relative motion
+        # is the target's. At 6 m/s and 250 m it is well under a pixel a frame -- which is
+        # the honest answer for this scene, not a reason to leave the plane off.
+        moving_prim_paths=[vessel.root_path],
         capture_rgb=args.rgb,
         strict_materials=False,
         strict_thermal_nodes=False,

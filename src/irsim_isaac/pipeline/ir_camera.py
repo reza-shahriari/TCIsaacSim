@@ -68,7 +68,7 @@ all-device frame lands when M10.7b does.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from typing import Any
@@ -102,6 +102,7 @@ from irsim_isaac.pipeline.gbuffer_isaac import (
     UP_AXIS_VECTOR,
     AovReader,
     PositionFrame,
+    RawAovs,
     camera_pose,
     geometry_planes,
     orient_to_viewer,
@@ -116,6 +117,7 @@ from irsim_isaac.pipeline.material_ids import (
     overlay_unmapped,
     unmapped_mask,
 )
+from irsim_isaac.pipeline.motion_isaac import MotionTracker
 from irsim_isaac.pipeline.point_bridge import (
     PointwiseTemperature,
     SurfaceBinding,
@@ -361,6 +363,7 @@ class IrCamera:
         cloud_seed: int | None = None,
         sea: Any = None,
         background_prim_paths: Sequence[str] = (),
+        moving_prim_paths: Sequence[str] = (),
         rotor_mounts: Mapping[str, Sequence[RotorMount]] | None = None,
         illumination: SceneIllumination | None = None,
         surface_fields: Sequence[SurfaceBinding] = (),
@@ -396,6 +399,15 @@ class IrCamera:
         self.strict_patch_coverage = strict_patch_coverage
         self.device = device
         self.resolutions = list(resolutions)
+        # IG.6: the prims whose pose changes between frames, for the synthesised `motion_px`.
+        # The camera is tracked unconditionally beside them, because a camera that slews smears
+        # a static scene exactly as a moving target smears a static camera -- `render_aircraft_
+        # pass` does both at once. An empty list is still a live tracker, not a disabled one.
+        self.moving_prim_paths = list(dict.fromkeys(moving_prim_paths))
+        self._motion = MotionTracker([*self.moving_prim_paths], camera_path)
+        #: Replaces the tracker's USD lookup with any ``path -> 4x4``. Production leaves it
+        #: None and the tracker reads the stage; a test sets it and drives the wiring on a CPU.
+        self._motion_read: Callable[[str], Any] | None = None
         self.analytic_targets = list(analytic_targets)
         if self.analytic_targets and pipeline.sky is None:
             raise ValueError(
@@ -656,6 +668,16 @@ class IrCamera:
             geometry = replace(
                 geometry, sky_mask=np.asarray(geometry.sky_mask | unmapped, dtype=np.bool_)
             )
+        # IG.6: the synthesised `motion_px`, which is the only motion this build has. ADR 0014's
+        # addendum measured `motion_vectors` sitting at a ~6e-5 floor after a 180 px displacement,
+        # so `geometry_planes` never delivers one (IG.5's `UNVERIFIED_CHANNELS`) and M10.1b built
+        # the rigid-body synthesis instead -- which then had no caller but its own in-sim test, so
+        # ADR 0077's smear has never run on a rendered frame despite M9.8 and M10.1b both being
+        # ticked. Sampled once per `planes()` call, which is once per render; it goes in through
+        # `GeometryPlanes` rather than into the dict afterwards so the M0.6 contract validates it.
+        motion = self._motion_plane(aovs, instance_id, labels)
+        if motion is not None:
+            geometry = replace(geometry, motion_px=motion)
         planes = to_gbuffer(geometry, temperature_k=temperature, material_id=material_id).to_dict()
         # Each pixel's own ray elevation, so the atmosphere takes its slant path rather than the
         # horizontal one (AT.1). It has been computed a few lines above since M10.18 for the sky
@@ -676,6 +698,73 @@ class IrCamera:
             labels=labels,
         )
         return planes
+
+    def _motion_plane(
+        self, aovs: RawAovs, instance_id: NDArray[np.uint32], labels: Mapping[Any, Any] | None
+    ) -> NDArray[np.float32] | None:
+        """The per-pixel image-plane velocity for the frame just rendered, or ``None``.
+
+        docs/physics-model.md §8.3 (``mtf_motion``), §9.2; ADR 0077; roadmap M10.1b, IG.6.
+
+        Already px/frame in the G-buffer's own convention -- x across columns, y down rows -- on
+        the **supersampled** grid, because that is the grid stage 3 smears on before the box
+        filter, and ``self.optics.intrinsics`` is built at the same supersample factor.
+
+        ``None`` in exactly three cases: the first frame of a sequence, because motion is a
+        difference and a tracker that has seen one pose cannot report one; a camera that was never
+        opened, which has no stage to read poses from; and a ``position_frame`` other than
+        ``"camera"``, which the synthesis is not defined on.
+
+        There is no switch beyond that. A camera or a prim that moved did move, and the previous
+        behaviour -- every frame sharp regardless of scene velocity -- was not an ablation anyone
+        chose. Returning ``None`` rather than a zero plane keeps the G-buffer honest:
+        ``motion_px`` is optional in M0.6, and "no motion measured yet" is not the same statement
+        as "nothing moved".
+        """
+        # The renderer reports ids for *leaves*; a driver knows the assembly root its transform
+        # op is attached to. Resolving one to the other here -- off the frame's own label table --
+        # lets `MotionTracker` read each moving prim's own world transform. For a rigid child that
+        # is the same answer as the root's (the offset cancels; see its class docstring), but for
+        # an articulated one -- this project's rotor discs, re-posed every frame -- it is not.
+        if self._stage is None and self._motion_read is None:
+            # Never opened, so there is no stage to read poses off. `planes()` is driven this way
+            # by the engine-free tests, and inventing motion for them would be worse than none.
+            return None
+        if self.position_frame != "camera":
+            # `image_plane_motion` is defined on USD **camera-space** points (+Y up, -Z forward):
+            # it carries each one to world through the camera pose, so handing it world points
+            # would apply that transform twice. `Camera3dPositionSD` is camera space on this build
+            # (ADR 0014 addendum) and that is the default, so this only bites a caller who asked
+            # for the world frame -- and it should cost them the plane, not give them a wrong one.
+            return None
+        moving = self._moving_leaf_paths(labels)
+        self._motion.sample(self._stage, read=self._motion_read, paths=moving)
+        if not self._motion.ready:
+            return None
+        return self._motion.motion_px(
+            aovs.position,
+            instance_id,
+            labels,
+            self.optics.intrinsics,
+            self.sensor.sensor.optics.distortion,
+        )
+
+    def _moving_leaf_paths(self, labels: Mapping[Any, Any] | None) -> list[str]:
+        """The rendered prims that sit at or under a declared moving root.
+
+        Sorted so the set is stable frame to frame, which matters only for readability -- the
+        tracker keys by path, not by position.
+        """
+        roots = tuple(self.moving_prim_paths)
+        if not roots:
+            return []
+        return sorted(
+            {
+                path
+                for path in labels_to_paths(labels).values()
+                if any(path == root or path.startswith(root.rstrip("/") + "/") for root in roots)
+            }
+        )
 
     def _world_from_local(self) -> dict[str, NDArray[np.float64]]:
         """``{prim path: world-from-local 4x4}`` for every patch authored in a prim's frame (PT.5).

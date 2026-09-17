@@ -13,6 +13,30 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **`motion_px` reaches a rendered frame, so ADR 0077's smear runs for the first time** (`IG.6`).
+  M10.1b built the rigid-body synthesis and verified it in-sim to 0.1 px; its only caller was that
+  test. `IrCamera.planes()` never set the plane, so every frame this project has rendered was sharp
+  regardless of scene velocity — with M9.8 and M10.1b both ticked and the documentation asserting
+  otherwise. The same shape as ADR 0082's membrane-lag finding, one layer up: a mechanism that is
+  correct, tested, and unreachable.
+- The reason it survived is structural and worth naming. The arithmetic in `irsim.optics.motion` is
+  engine-free, but the only path to it ran through `MotionTracker.sample`, which read USD directly —
+  so the wiring could only be exercised by a renderer, which the fast suite does not have.
+  `sample` now takes an injectable `read` and a per-frame `paths` set, and
+  `tests/unit/test_motion_wired.py` (14 cases) drives the real `IrCamera.planes()` over synthetic
+  transforms on a CPU.
+- The plane is **refused rather than faked** in three cases, each tested: the first frame of a
+  sequence (motion is a difference, and one pose is not one), a camera that was never opened (no
+  stage, no poses), and a `position_frame` other than `"camera"` — the synthesis is defined on USD
+  camera-space points and would otherwise apply the camera pose twice. That last one was found by
+  this module's own first draft, which built its rig in the world frame and got a plane of silent
+  zeros because every point read as behind the lens.
+- §16's "lateral motion smears LWIR, not cooled MWIR" is now measured rather than asserted, and it
+  turns out to be a statement about the **duty cycle** rather than the band. A bolometer has no
+  shutter, so `smear_duty` is 1.0; the cooled InSb integrates 2 ms of a 16.7 ms frame, so it is
+  0.12. At the aircraft stage's 11 px/frame the bolometer's 10–90 edge width goes **0 → 8.8 px**
+  and the InSb's **0 → 1.1 px** — the 8.33× ratio, on the same scene at the same velocity. A photon
+  FPA run at full duty would smear identically; nothing about 8–12 µm versus 3–5 µm enters into it.
 - **A scene with a layered atmosphere no longer hands out the grey one** (`AT.5`).
   `Scene.from_config` builds both models whenever a scene names an environment preset — which
   **all eight shipped scenes do** — so the attribute a reader would take for the scene's
@@ -183,6 +207,15 @@ working in one tree; two commits already exist whose whole subject is restoring 
   `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
 
 #### Changed
+- **A premise this step started from was wrong, and the correction is recorded rather than quietly
+  dropped.** The worry was that a child offset from a rotating assembly needs its own transform
+  because its frame-to-frame delta is a *conjugation* of the root's. It is not: the displacement is
+  built as `inv(cur) @ prev`, and a constant local offset cancels exactly in the middle of that
+  product, so a rigid child of a banking airframe reports the same pixels either way — checked to
+  float precision at a 20° bank, where the conjugation argument predicted a 2 px gap. Reading each
+  rendered leaf still earns its place, but for a different reason: an **articulated** child, whose
+  local pose differs between the two samples, has nothing left to cancel. This project has one —
+  `render_quad_flight` re-poses the rotor discs every frame from the throttle.
 - **The corrected schedule and membrane move three things, all in the unexpected direction.** The
   membrane is *faster*, not slower — α at 60 Hz goes 0.811 → 0.876, so irsim had been modelling a
   laggier detector than FLIR ships. ENBW is 1/(4τ), so the temperature-fluctuation floor *rises*,
