@@ -66,26 +66,43 @@ sensor:
 
   noise:
     netd_mk_at_300k: 50.0                        # "professional" grade; 60 consumer, 40 industrial
-    ratios_3d:                                   # relative to sigma_TVH. **ESTIMATED, mostly.**
-      # [R24] Table 13 bounds exactly three of these seven, as acceptance-test limits at f/1.0
-      # lensless, high gain, 20 C camera, 30 C background, averager off, free-running:
-      #     grade         tvh       th (column)   tv (row)
-      #     industrial    < 40 mK   < 14 mK       < 14 mK
-      #     professional  < 50 mK   < 18 mK       < 18 mK
-      #     consumer      < 60 mK   < 21 mK       < 21 mK
-      # Every limit ratio is th/tvh = tv/tvh = 0.35, against the 0.05 configured below -- so this
-      # camera is modelled **7x more spatially uniform than FLIR guarantees**. That is compliant
-      # (2.5 mK against an 18 mK limit) and it is not a measurement: a ratio of two upper bounds
-      # is not the ratio of two typical values, so the limits cannot decide the number. `SC.2`
-      # substitutes ME.5's *measured* ratios, which is the only thing that can. vh, h, v and t
-      # are bounded by nothing published at all.
-      tvh: 1.00
-      vh:  0.30
-      h:   0.15
-      v:   0.08
-      tv:  0.05
-      th:  0.05
-      t:   0.02
+    ratios_3d:                                   # relative to sigma_TVH. **MEASURED, mostly (SC.2).**
+      # This is the camera the public Halmstad set was recorded with, so unlike the 640 it has a
+      # field measurement of its own: ME.5 decomposed 365 clips from that archive
+      # (docs/validation/reference-stats-2026-09-15). Five of the seven components come from it,
+      # as ratios to the measured sigma_TVH = 7.272 codes:
+      #
+      #     component   measured sigma   ratio    was    out by
+      #     sigma_VH    19.18            2.6375   0.30   8.8x
+      #     sigma_V      4.208           0.5787   0.08   7.2x
+      #     sigma_T      2.78            0.3823   0.02   19.1x
+      #     sigma_H      1.191           0.1638   0.15   1.1x   (the one that was already right)
+      #
+      # sigma_VH > sigma_TVH is not a typo: on a real core between flat-field events the fixed
+      # pattern is the larger term, which is the whole reason §11.2's shutter exists. Total noise
+      # over sigma_TVH therefore goes 1.06 -> 2.91, so this camera is now 2.7x noisier in total
+      # than the estimates it replaces -- the direction a guess never goes on its own.
+      #
+      # **Three caveats, because these are upper bounds and not a calibration.**
+      #   1. N = 28 of 365 clips. The other 337 are moving, or the codec has already removed the
+      #      sensor's noise entirely (306 sit at or below one code). ME.5's own report calls every
+      #      value "an upper bound on what the codec left, not a measurement of the camera".
+      #   2. A codec destroys high spatial frequency before low, and sigma_TVH is the highest-
+      #      frequency component of the seven -- it is the *denominator* here. So the bias runs one
+      #      way: these ratios are more likely too large than too small. Read them as a ceiling.
+      #   3. sigma_T clears its own floor on 43 % of the usable clips and sigma_H on 54 %, so `t`
+      #      and `h` are the two least supported numbers in the block.
+      #
+      # `tv` and `th` are **not in ME.5's table at all** and stay ESTIMATED. [R24] Table 13 bounds
+      # them from above -- < 18 mK against a < 50 mK sigma_TVH at the professional grade, a ratio
+      # of 0.35 -- and 0.05 is compliant with that, which is all a limit can say (ADR 0091).
+      tvh: 1.00                                  # the reference; exactly 1 by schema
+      vh:  2.64                                  # MEASURED (ME.5): 19.18 / 7.272
+      v:   0.58                                  # MEASURED (ME.5): 4.208 / 7.272
+      t:   0.38                                  # MEASURED (ME.5), floor cleared on 43 % of clips
+      h:   0.16                                  # MEASURED (ME.5), floor cleared on 54 % of clips
+      tv:  0.05                                  # ESTIMATED -- not in ME.5; [R24] bounds it < 0.35
+      th:  0.05                                  # ESTIMATED -- not in ME.5; [R24] bounds it < 0.35
     fpn_drift_tau_s: 120.0
     bad_pixel_fraction: 0.0015
     bad_pixel_cluster_lambda: 1.6

@@ -29,7 +29,7 @@ import numpy as np
 import pytest
 import yaml
 
-from irsim.config.sensor import SensorConfig, SensorSpec
+from irsim.config.sensor import RATIO_ORDER, SensorConfig, SensorSpec
 from irsim.detector import (
     BolometerParams,
     BolometerTransfer,
@@ -85,20 +85,69 @@ def test_the_membrane_is_the_published_nominal_and_not_a_range_midpoint(config) 
     assert config["sensor"]["fpa"]["thermal_time_constant_ms"] == 8.0
 
 
-@pytest.mark.parametrize("config", [BOSON, HALMSTAD], ids=["boson_640", "halmstad_320"])
-def test_the_ratios_say_that_they_are_estimated(config) -> None:  # type: ignore[no-untyped-def]
-    """Both file headers promise "Values marked ESTIMATED are literature/typical figures, not
-    measurements". Four of the seven ratios are bounded by nothing published at all and the other
-    three only from above, so the block is the least measured thing in either file and was the
-    only block with no marker."""
-    path = BOSON_YAML if config is BOSON else SENSORS / "halmstad_boson_320.yaml"
+def _ratios_block(path: pathlib.Path) -> tuple[str, str]:
+    """``(the `ratios_3d:` line, the whole block)`` of a sensor YAML."""
     lines = path.read_text(encoding="utf-8").splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip().startswith("ratios_3d:"))
     end = next(i for i, line in enumerate(lines[start:], start) if "fpn_drift_tau_s" in line)
-    block = "\n".join(lines[start:end])
-    assert "ESTIMATED" in lines[start], "the marker belongs on the block, where a reader lands"
+    return lines[start], "\n".join(lines[start:end])
+
+
+def test_the_640_carries_datasheet_limits_and_says_its_ratios_are_estimated() -> None:
+    """Open question 6's split, one half: the 640 has no field measurement of its own.
+
+    It is the camera the spec assumes and the datasheet describes, so what it can carry is
+    [R24]'s acceptance *limits* -- which bound three of seven components from above and settle
+    none of them. The file header promises "values marked ESTIMATED are literature/typical
+    figures, not measurements", and until SC.3 the least-measured block in the file was the only
+    one with no marker.
+    """
+    header, block = _ratios_block(BOSON_YAML)
+    assert "ESTIMATED" in header, "the marker belongs on the block, where a reader lands"
     assert "Table 13" in block, "the limits the ratios are and are not bounded by go with them"
-    assert "SC.2" in block, "and where the number that would replace them is coming from"
+    # It may *point at* the 320's measurement -- saying why this file does not get one is the
+    # useful thing to record. What it must not do is carry those values, which the paired test
+    # below checks on the numbers rather than on the prose.
+    assert "open\n      # question 6" in block or "open question 6" in block
+
+
+def test_the_320_carries_me_5s_measured_ratios_and_names_their_bounds() -> None:
+    """The other half: the 320 is the camera the public Halmstad set was recorded with.
+
+    So it has something the 640 does not -- a decomposition of 365 of its own clips (`SC.2`).
+    Five of the seven components come from it. The two that do not are marked, and the three
+    caveats travel with the numbers, because an upper bound presented as a calibration is worse
+    than an estimate that admits to being one.
+    """
+    header, block = _ratios_block(SENSORS / "halmstad_boson_320.yaml")
+    assert "MEASURED" in header
+    assert "ME.5" in block, "a measured number has to say which measurement"
+    assert "reference-stats-2026-09-15" in block, "and where to read it"
+    # The caveats, each of which changes how the number should be used.
+    assert "28 of 365" in block, "the sample size the ratios rest on"
+    assert "upper bound" in block, "ME.5's own framing of every value in that table"
+    assert "denominator" in block, "the codec biases the ratios one way; say which"
+    # And the two components ME.5 never reported stay marked.
+    for line in block.splitlines():
+        if line.strip().startswith(("tv:", "th:")):
+            assert "ESTIMATED" in line, line
+
+
+def test_the_two_cameras_never_share_a_ratios_block() -> None:
+    """Open question 6, stated as a check rather than as a plan.
+
+    Datasheet limits on the 640, field-measured ratios on the 320, never mixed in one block: a
+    file that claimed both would be describing a camera that does not exist, and the mixture
+    would be invisible in an image.
+    """
+    boson = SensorConfig.model_validate(BOSON).sensor.noise.ratios_3d
+    halmstad = SensorConfig.model_validate(HALMSTAD).sensor.noise.ratios_3d
+    assert boson.as_vector() != halmstad.as_vector()
+
+    measured = {"vh": 2.64, "v": 0.58, "t": 0.38, "h": 0.16}
+    for name, value in measured.items():
+        assert getattr(halmstad, name) == pytest.approx(value), name
+        assert getattr(boson, name) != pytest.approx(value), f"{name} leaked onto the 640"
 
 
 def test_the_configured_ratio_is_far_inside_the_limit_ratio_and_that_is_recorded() -> None:
@@ -215,3 +264,59 @@ def test_the_limit_check_has_teeth(sensor: SensorSpec, tophat_lwir_lut: BandLUT)
     measured = _components_mk(loud, tophat_lwir_lut)
     assert measured["th"] > TABLE_13_MK["professional"][1]
     assert measured["th"] == pytest.approx(25.0, rel=0.25)
+
+
+# --- SC.2: the substituted ratios drive the rendered noise --------------------------------------
+
+
+def test_the_measured_ratios_are_recovered_from_a_rendered_cube(tophat_lwir_lut: BandLUT) -> None:
+    """ME.5's ratios survive the round trip through the chain and the decomposition.
+
+    Worth checking rather than assuming, because `vh = 2.64` puts this camera somewhere nothing
+    in the repository had rendered: **the fixed pattern is larger than the temporal noise**. Every
+    previous config had vh < 1, so the estimator, the synthesiser and the variance closure had
+    only ever been exercised on the other side of that line. A real core between flat-field events
+    sits on this side, which is the whole reason §11.2's shutter exists.
+
+    Tolerances are the estimator's own sampling floors, as ADR 0023 requires -- a 64x64x200 cube
+    has 4096 samples for a VH term and 200 for a T term, so the two cannot be held to the same
+    number.
+    """
+    from irsim.detector import BolometerTransfer, MicrobolometerDetector
+    from irsim.noise import NoiseStage, Sigmas7, measure_from_uniform_scene
+    from irsim.validation import decompose_3d
+
+    dumped = copy.deepcopy(HALMSTAD)
+    dumped["sensor"]["fpa"].update(width=64, height=64)
+    sensor = SensorConfig.model_validate(dumped).sensor
+
+    params = fpa_params_from_config(SensorConfig(sensor=sensor))
+    assert isinstance(params, BolometerParams)
+    lo = float(_flux(sensor, tophat_lwir_lut, 233.15)[0, 0])
+    hi = float(_flux(sensor, tophat_lwir_lut, 473.15)[0, 0])
+    detector = MicrobolometerDetector(
+        params,
+        BolometerTransfer.from_power_range(lo, hi, 16),
+        anchor_noise(sensor, tophat_lwir_lut),
+    )
+    stage = NoiseStage.from_sensor(sensor, sensor_seed=20260917)
+
+    cube, sigma_tvh = measure_from_uniform_scene(
+        detector, stage, _flux(sensor, tophat_lwir_lut, 300.0), 200
+    )
+    decomposed = decompose_3d(cube)
+    recovered = dict(zip(RATIO_ORDER, decomposed.ratios(), strict=True))
+
+    assert recovered["tvh"] == pytest.approx(1.0, abs=1e-9)
+    assert decomposed.tvh / sigma_tvh == pytest.approx(1.0, rel=0.02)
+
+    # The fixed pattern really does come back larger than the temporal noise.
+    assert recovered["vh"] > 1.0
+    assert recovered["vh"] == pytest.approx(2.64, rel=0.05)
+    assert recovered["v"] == pytest.approx(0.58, rel=0.10)
+
+    # And the total: 2.91x sigma_TVH against the 1.06x the estimates gave, so this camera is
+    # 2.7x noisier in total than the one it replaces.
+    injected = Sigmas7.from_ratios(sigma_tvh, sensor.noise.sigma_ratios())
+    assert sensor.noise.total_over_tvh() == pytest.approx(2.912, rel=1e-3)
+    assert decomposed.total / injected.total == pytest.approx(1.0, rel=0.05)

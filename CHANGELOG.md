@@ -13,6 +13,32 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **`read_noise_e` reaches the rendered noise, and the mutation test that proves it** (`SC.2`).
+  `SC.1` reversed which of NETD and the electron datasheet is derived; this checks the reversal
+  arrived at the pixels rather than only at the budget object. The pre-`SC.1` behaviour is kept as
+  the negative control and is the sharper half: under the ADR 0025 anchor the solver picks whatever
+  Gaussian reproduces the datasheet NETD, so perturbing `read_noise_e` by 10 % — or **halving it** —
+  leaves the rendered frame **bit-identical**. A config field that cannot move the output is not a
+  parameter, it is a comment, and it had been one in every photon render this project has made.
+- The sensitivity is not 10 % out for 10 % in, and that is physics rather than a weak test. σ_total
+  is √(N_e + N_dark + N_bg + σ_read²), so what a read-noise change shows depends on where the camera
+  sits on that curve: the cooled InSb at a bright scene carries 4.9e5 signal electrons plus 3.3e5
+  from its own cold shield, so 10 % in gives **2.1 %** out; the NIR at 0.004 mean electrons is
+  read-limited and gives the **full 10 %**. Both are checked, against the quadrature prediction
+  rather than a stored number, and Monte Carlo on 400 rendered frames confirms the analytic result.
+- **`halmstad_boson_320.yaml` takes ME.5's measured 3-D ratios.** It is the camera the public
+  Halmstad set was recorded with, so unlike the 640 it has a field measurement of its own — 365
+  clips, decomposed in `reference-stats-2026-09-15`. Five of the seven components now come from it:
+  **vh 0.30 → 2.64** (8.8× out), **v 0.08 → 0.58** (7.2×), **t 0.02 → 0.38** (19.1×), and **h 0.15 →
+  0.16**, which was already right — worth saying, because the roadmap's "7–19× out" implied all four
+  were badly wrong and one was not. `tv` and `th` are not in ME.5's table and stay ESTIMATED.
+- σ_VH > σ_TVH is not a typo: between flat-field events a real core's fixed pattern is the larger
+  term, which is the reason §11.2's shutter exists. Total noise over σ_TVH goes **1.06 → 2.91**, so
+  this camera is 2.7× noisier in total than the estimates it replaces — the direction a guess never
+  goes on its own. It also puts the repository somewhere it had never rendered: every previous
+  config had vh < 1, so the synthesiser, the estimator and the variance closure had only been
+  exercised on the other side of that line. A new bench renders a cube and recovers vh = 2.64 within
+  the estimator's own sampling floors.
 - **`motion_px` reaches a rendered frame, so ADR 0077's smear runs for the first time** (`IG.6`).
   M10.1b built the rigid-body synthesis and verified it in-sim to 0.1 px; its only caller was that
   test. `IrCamera.planes()` never set the plane, so every frame this project has rendered was sharp
@@ -207,6 +233,19 @@ working in one tree; two commits already exist whose whole subject is restoring 
   `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
 
 #### Changed
+- **Open question 6 — which Boson is "the" reference — is answered and closed: both, with different
+  provenance.** The 640 carries [R24]'s Table 13 acceptance limits and says its ratios are
+  ESTIMATED; the 320 carries ME.5's field-measured ratios. `test_boson_datasheet.py` checks on the
+  *numbers* rather than the prose that neither file borrows the other's, which is the schema guard
+  the resolution asked for in the only form that can work — a validator cannot see where a number
+  came from.
+- Three caveats travel with the substituted ratios, in the config where they will be read. N is
+  **28 of 365 clips**; ME.5's own report calls every value in that table "an upper bound on what the
+  codec left, not a measurement of the camera"; and — the one worth adding — a codec destroys high
+  spatial frequency before low, and σ_TVH is the highest-frequency component of the seven and the
+  *denominator* of every ratio here. So the bias runs one way: these ratios are more likely too
+  large than too small. σ_T clears its floor on 43 % of clips and σ_H on 54 %, so `t` and `h` are the
+  two least supported numbers in the block.
 - **A premise this step started from was wrong, and the correction is recorded rather than quietly
   dropped.** The worry was that a child offset from a rotating assembly needs its own transform
   because its frame-to-frame delta is a *conjugation* of the root's. It is not: the displacement is
