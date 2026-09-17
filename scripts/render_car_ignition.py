@@ -62,6 +62,21 @@ parser.add_argument("--azimuth-deg", type=float, default=22.0)
 parser.add_argument("--ground-cell-m", type=float, default=0.30)
 parser.add_argument("--bonnet-cell-m", type=float, default=0.07)
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
+parser.add_argument(
+    "--integration-ms",
+    type=float,
+    default=None,
+    help="override a photon FPA's integration time, in ms. A camera has an exposure control and "
+    "these configs carry one default each; a daylight reflective-band scene can saturate a "
+    "low-light exposure by a hundred times. Changes the config hash, as it should -- it is a "
+    "different camera",
+)
+parser.add_argument(
+    "--rt-subframes",
+    type=int,
+    default=8,
+    help="path-traced subframes accumulated per capture; the multi-band sweep sets this",
+)
 parser.add_argument("--settle", type=int, default=16)
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument("--no-flat-field", action="store_true")
@@ -110,7 +125,12 @@ def main() -> int:
     import numpy as np
     import omni.usd
 
-    from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.config.loader import (
+        band_hash,
+        config_hash,
+        load_sensor_config,
+        with_integration_time_ms,
+    )
     from irsim.io import write_frame
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
@@ -135,6 +155,12 @@ def main() -> int:
     frames_dir.mkdir(exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
+    if args.integration_ms is not None:
+        try:
+            sensor = with_integration_time_ms(sensor, args.integration_ms)
+        except ValueError as exc:
+            print(f"--integration-ms: {exc}", file=sys.stderr)
+            return 1
     spec = sensor.sensor
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
     # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is
@@ -244,7 +270,7 @@ def main() -> int:
         # afterwards `t_rel_s` is the *next* frame's time. On a time-lapse that is a whole frame
         # period, and the readout would label every row with the state of the row after it.
         t_abs = scene.t0_s + camera.t_rel_s
-        outputs = camera.get_outputs()
+        outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         row = describe(demo, scene, t_abs)
         rows.append(row)
         print(

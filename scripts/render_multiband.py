@@ -45,6 +45,35 @@ SCENES: dict[str, tuple[str, list[str], int]] = {
     "drone": ("render_quad_flight.py", [], 150),
     "airplane": ("render_aircraft_pass.py", [], 150),
     "ship": ("render_maritime_demo.py", [], 90),
+    # IG.13: the sweep covered three of the project's eight scene configs, so five of them had
+    # never been filmed in any band but the one their own driver defaults to -- including the
+    # whole aerial point-target lane, which is the one the owner ranked first.
+    "sky_target": ("render_aerial_demo.py", [], 90),
+    "vessel_departure": ("render_vessel_departure.py", [], 90),
+    # The two car scenes differ only in cloud cover, and that is the point of filming both: an
+    # overcast night sky radiates near air temperature and a clear one is 30 K colder, so the
+    # same bonnet reads a different contrast against it. Both are *night* scenes -- their SWIR
+    # and NIR frames are near-black by construction, which is the phenomenology and not a
+    # failure, since neither band has a source once the sun is down.
+    # 30 frames, not the driver's own 26: at 10 fps that is exactly the 3 s a clip needs to be
+    # watchable, and at the 60 s frame period the last capture lands at T+1740 s -- inside the
+    # 1800 s the scene's load schedules are authored over, which a 31st frame would leave.
+    "car_overcast": ("render_car_ignition.py", [], 30),
+    "car_clear": (
+        "render_car_ignition.py",
+        ["--scene", str(REPO / "configs/scenes/car_ignition_clear_night.yaml")],
+        30,
+    ),
+}
+
+#: Scene configs deliberately outside the sweep, with the reason. `test_render_multiband` checks
+#: this accounts for every file in `configs/scenes/` that `SCENES` does not name, so a new scene
+#: cannot be added and quietly left unfilmed.
+UNSWEPT_SCENES: dict[str, str] = {
+    "thermal_facet_scene.yaml": (
+        "the §6.13 facet bench: seven surfaces, no camera and no prims. It is driven by "
+        "scripts/validate_thermal_diurnal.py, which produces a diurnal curve, not a frame."
+    ),
 }
 
 #: band -> (sensor config, extra arguments). `--integration-ms` appears only where the camera's own

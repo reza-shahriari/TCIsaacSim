@@ -23,6 +23,7 @@ from irsim.config.loader import (
     dump_sensor_config,
     load_sensor_config,
     resolve_data_dir,
+    with_integration_time_ms,
 )
 from irsim.config.sensor import SensorConfig
 
@@ -215,3 +216,43 @@ def test_round_trip_load_dump_load(data_dir: pathlib.Path, tmp_path: pathlib.Pat
     )
     assert again == cfg
     assert config_hash(again) == config_hash(cfg)
+
+
+# --- the exposure override (IG.13) ------------------------------------------------------------
+
+
+SWIR_YAML = REPO / "configs" / "sensors" / "example_swir_ingaas_640.yaml"
+
+
+def test_overriding_the_integration_time_lands_and_moves_the_config_hash() -> None:
+    """Two exposures are two cameras, and the hash has to say so.
+
+    The multi-band sweep films one scene through four cameras, and the reflective bands need
+    their own exposure -- a daylight scene saturates a low-light one by around 120x. If the
+    override did not reach the hash, two renders that differ by a factor of a hundred in signal
+    would carry the same provenance, and the LUT and golden machinery keyed off that hash would
+    happily reuse one for the other.
+    """
+    base = load_sensor_config(SWIR_YAML)
+    exposed = with_integration_time_ms(base, 0.08)
+
+    assert exposed.sensor.fpa.integration_time_ms == pytest.approx(0.08)
+    assert base.sensor.fpa.integration_time_ms != pytest.approx(0.08), "the fixture is a no-op"
+    assert config_hash(exposed) != config_hash(base)
+
+    # It is the *sensor*, not the band: R(lambda) has not moved, so a band LUT stays valid.
+    assert band_hash(exposed) == band_hash(base)
+
+    # And the original is untouched -- a driver holds both while it prints its summary.
+    assert base.sensor.fpa.integration_time_ms != pytest.approx(0.08)
+
+
+def test_a_bolometer_is_refused_an_exposure_rather_than_given_a_meaningless_one() -> None:
+    """§8.2: a microbolometer's responsivity is thermal. There is no integration time to set.
+
+    Ignoring the flag would be worse than refusing it: the returned config would read as exposed,
+    hash as exposed, and behave exactly as it did before.
+    """
+    bolometer = load_sensor_config(BOSON_YAML)
+    with pytest.raises(ValueError, match="photon FPA"):
+        with_integration_time_ms(bolometer, 0.08)

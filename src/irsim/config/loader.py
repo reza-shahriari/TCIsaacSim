@@ -37,6 +37,7 @@ __all__ = [
     "resolve_data_dir",
     "load_sensor_config",
     "dump_sensor_config",
+    "with_integration_time_ms",
     "config_hash",
     "band_hash",
     "file_sha256",
@@ -106,6 +107,36 @@ def load_sensor_config(
 def dump_sensor_config(config: SensorConfig) -> str:
     """YAML text that :func:`load_sensor_config` reads back to an equal model."""
     return yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False)
+
+
+def with_integration_time_ms(config: SensorConfig, integration_ms: float) -> SensorConfig:
+    """A copy of ``config`` whose photon FPA integrates for ``integration_ms`` milliseconds.
+
+    docs/physics-model.md §8.1 (photon FPA), §12.2; ADR 0021.
+
+    A camera has an exposure control and these configs carry one default each, chosen for the
+    conditions the band is usually used in. A daylight reflective-band scene saturates a low-light
+    exposure by around 120x -- measured: a 0.3-albedo surface in full sun puts 1.17e6
+    photoelectrons into a NIR pixel in 16 ms against a 1e4 well -- so a sweep that films one scene
+    in four bands has to be able to set it.
+
+    It goes through the model rather than through the YAML so the change reaches
+    :func:`config_hash`, which is the point: two renders at two exposures are two cameras, and a
+    frame whose hash did not move would claim otherwise.
+
+    A bolometer is refused rather than silently ignored. Its responsivity is thermal and it has no
+    integration time to set (§8.2), so accepting the flag would hand back a config that reads as
+    exposed and is not -- the failure this project's hash discipline exists to make impossible.
+    """
+    dumped = config.model_dump(mode="json")
+    kind = dumped["sensor"]["fpa"]["type"]
+    if kind != "photon":
+        raise ValueError(
+            f"integration time applies to a photon FPA; this is a {kind}. A bolometer's "
+            "responsivity is thermal and it has no exposure to set (docs/physics-model.md §8.2)"
+        )
+    dumped["sensor"]["fpa"]["integration_time_ms"] = float(integration_ms)
+    return SensorConfig.model_validate(dumped)
 
 
 def file_sha256(path: str | os.PathLike[str]) -> str:

@@ -112,9 +112,19 @@ hot motor pod against sky -- through the whole camera model and writes the four 
 in physical units (M10.9a-ii, M10.19, M10.10a). There is no sky *geometry* and no ground plane: a
 ray that hits nothing takes `T_sky(θ)` at its own elevation or `T_ground` below the horizon
 (ADR 0060), because an emissive dome would push the sky through a float16 colour AOV. The lens is
-verified against the renderer to 0.2 px. Still open for a full M10.19: the ME.6 real-vs-synthetic
-comparison, and the τ(R)/R² SCR law, which needs MS.6's analytic injection rather than renderer
-geometry.
+verified against the renderer to 0.2 px. It also encodes a clip now (`IG.13`): it was the one
+render nobody could watch, and the video comes straight off the numbered display frames without a
+second PNG sequence. Still open for a full M10.19: the ME.6 real-vs-synthetic comparison, and the
+τ(R)/R² SCR law, which needs MS.6's analytic injection rather than renderer geometry.
+
+**One command, every scene, every band (`IG.13`).** `python.sh scripts/render_multiband.py` films
+**seven of the eight** scene configs in all four bands; it used to reach three, so five scenes --
+the whole aerial point-target lane among them -- had only ever been seen in the single band their
+own driver defaults to. The eighth, `thermal_facet_scene`, is declared unswept with its reason: it
+is the §6.13 facet bench, seven surfaces with no camera and no prims. Adding the rows found two
+gaps in the drivers themselves: `--rt-subframes` and `--integration-ms` are passed to every child
+process and were accepted by only three of the six, so a sweep over the new scenes would have
+failed twelve renders at once with the reason buried in a subprocess's stderr.
 
 **The companion visible frame has a real sky (ADR 0073).** `--rgb` used to write a flat grey void
 with six grey squares in it, which told a reader nothing about where the camera pointed or what

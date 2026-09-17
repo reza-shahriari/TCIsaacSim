@@ -71,6 +71,15 @@ parser.add_argument("--rt-subframes", type=int, default=8)
 # sidecar are the *frame*; the video beside them is the look.
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
 parser.add_argument(
+    "--integration-ms",
+    type=float,
+    default=None,
+    help="override a photon FPA's integration time, in ms. A camera has an exposure control and "
+    "these configs carry one default each; a daylight reflective-band scene can saturate a "
+    "low-light exposure by a hundred times. Changes the config hash, as it should -- it is a "
+    "different camera",
+)
+parser.add_argument(
     "--plane-stride",
     type=int,
     default=1,
@@ -112,7 +121,12 @@ def main() -> int:
     from pxr import Gf, UsdGeom
 
     from irsim.atmosphere.sea import SeaModel
-    from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.config.loader import (
+        band_hash,
+        config_hash,
+        load_sensor_config,
+        with_integration_time_ms,
+    )
     from irsim.io.dataset import FrameWriter
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
@@ -143,6 +157,12 @@ def main() -> int:
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
+    if args.integration_ms is not None:
+        try:
+            sensor = with_integration_time_ms(sensor, args.integration_ms)
+        except ValueError as exc:
+            print(f"--integration-ms: {exc}", file=sys.stderr)
+            return 1
     spec = sensor.sensor
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
     # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is

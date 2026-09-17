@@ -13,6 +13,30 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
+- **The multi-band sweep filmed three of the project's eight scene configs; it now films seven, and
+  the eighth says why it does not** (`IG.13`, second half). Five scenes — including the whole aerial
+  point-target lane, the one ranked first — had only ever been seen in the single band their own
+  driver defaults to, which is the opposite of what a driver whose purpose is the four-band
+  comparison is for. `render_multiband.SCENES` gains `sky_target`, `vessel_departure` and the two
+  car-ignition night scenes, and `UNSWEPT_SCENES` records `thermal_facet_scene` as the §6.13 facet
+  bench: seven surfaces, no camera, no prims, driven by `validate_thermal_diurnal.py` into a diurnal
+  curve rather than a frame. A test refuses any scene config that is neither swept nor listed.
+- **Two flags the sweep passes unconditionally were accepted by only three of the six drivers.**
+  `--rt-subframes` was missing from `render_aerial_demo` and `render_car_ignition`, and
+  `--integration-ms` from those two plus `render_vessel_departure` — so adding any of them to the
+  sweep would have made argparse reject the invocation and fail twelve renders at once, with the
+  reason visible only in a child process's stderr. Both are now on all six, and a test builds the
+  real command for every scene/band pair and checks each flag against the target parser.
+- **`irsim.config.loader.with_integration_time_ms`** replaces three byte-identical copies of the
+  exposure-override block and supplies the other three drivers. It goes through the model, so the
+  change reaches `config_hash` — two exposures are two cameras, and a daylight reflective-band scene
+  saturates a low-light exposure by around 120× — and it **refuses a bolometer** rather than
+  ignoring the flag, since §8.2's thermal responsivity has no integration time and a silently
+  unchanged config would still hash as exposed.
+- **`render_aerial_demo` encodes a video.** It wrote still frames only, which made it the one render
+  nobody could watch. `write_frame` already numbers the display frames zero-padded, so the clip
+  encodes straight off what is on disk: no second PNG sequence, and nothing deleted afterwards,
+  because in this driver the frames are the dataset.
 - **Three of the six render drivers wrote no radiometric output at all, and now do** (`IG.13`,
   first half). `render_quad_flight`, `render_aircraft_pass` and `render_vessel_departure` — the
   whole aerial-flight and vessel-departure lanes — emitted 8-bit display PNGs and an mp4, nothing
@@ -97,6 +121,9 @@ working in one tree; two commits already exist whose whole subject is restoring 
   `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
 
 #### Changed
+- `test_every_scene_is_long_enough_to_watch` measures a clip in **seconds**, not frames. The old
+  form read 90 frames as "three seconds" while silently assuming 30 fps, which the car driver has
+  never used — it plays at 10. Each count is now divided by that driver's own `--fps` default.
 - **Two deferrals from the same review, recorded with their reasons.** **MCT (HgCdTe)** was called
   "completely ignored"; it is narrower than that — `dark_current_a` takes `band_gap_ev` as an authored
   sensor field, so an MCT camera is configurable today and only the Hansen–Schmit E_g(x, T) relation

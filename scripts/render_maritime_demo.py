@@ -110,7 +110,12 @@ def main() -> int:
 
     from irsim.atmosphere.sea import SeaModel, slant_range_m
     from irsim.atmosphere.skylight import skylight_for_sensor
-    from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.config.loader import (
+        band_hash,
+        config_hash,
+        load_sensor_config,
+        with_integration_time_ms,
+    )
     from irsim.io import write_frame
     from irsim.io.png import write_png
     from irsim.isp.palette import palette_table, quantise_display
@@ -141,14 +146,11 @@ def main() -> int:
 
     sensor = load_sensor_config(args.sensor)
     if args.integration_ms is not None:
-        from irsim.config.sensor import SensorConfig
-
-        dumped = sensor.model_dump(mode="json")
-        if dumped["sensor"]["fpa"]["type"] != "photon":
-            print("--integration-ms applies to a photon FPA; this is a bolometer", file=sys.stderr)
+        try:
+            sensor = with_integration_time_ms(sensor, args.integration_ms)
+        except ValueError as exc:
+            print(f"--integration-ms: {exc}", file=sys.stderr)
             return 1
-        dumped["sensor"]["fpa"]["integration_time_ms"] = float(args.integration_ms)
-        sensor = SensorConfig.model_validate(dumped)
     spec = sensor.sensor
     # ADR 0021: a photon FPA runs the whole chain on the photon table, and the sky model, the
     # atmosphere and the target solvers inside the Scene have to be built in the same form. Asked

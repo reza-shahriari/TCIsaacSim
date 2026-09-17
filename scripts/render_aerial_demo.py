@@ -38,7 +38,23 @@ parser.add_argument("--scene", default=str(REPO / "configs/scenes/sky_target_cle
 parser.add_argument("--tilt-deg", type=float, default=8.0)
 parser.add_argument("--t0", type=float, default=0.0, help="scene time of the first frame, seconds")
 parser.add_argument("--float-format", default="npy", choices=("npy", "exr"))
+parser.add_argument(
+    "--integration-ms",
+    type=float,
+    default=None,
+    help="override a photon FPA's integration time, in ms. A camera has an exposure control and "
+    "these configs carry one default each; a daylight reflective-band scene can saturate a "
+    "low-light exposure by a hundred times. Changes the config hash, as it should -- it is a "
+    "different camera",
+)
 parser.add_argument("--settle", type=int, default=16)
+parser.add_argument(
+    "--rt-subframes",
+    type=int,
+    default=8,
+    help="path-traced subframes accumulated per capture; the multi-band sweep sets this",
+)
+parser.add_argument("--fps", type=float, default=30.0, help="playback rate of the encoded video")
 parser.add_argument("--no-chain", action="store_true", help="ideal camera: no M9 sensor chain")
 parser.add_argument(
     "--rgb",
@@ -84,7 +100,12 @@ boot_s = time.time() - t_boot
 def main() -> int:
     import numpy as np
 
-    from irsim.config.loader import band_hash, config_hash, load_sensor_config
+    from irsim.config.loader import (
+        band_hash,
+        config_hash,
+        load_sensor_config,
+        with_integration_time_ms,
+    )
     from irsim.io import write_frame
     from irsim.materials.library import MaterialLibrary
     from irsim.materials.mapping import MaterialResolver, load_mapping_rules
@@ -95,6 +116,7 @@ def main() -> int:
         load_band_response_for_config,
     )
     from irsim.scene import Scene
+    from irsim_eval.video import encode_mp4, ffmpeg_available
     from irsim_isaac.aerial_demo import analytic_targets, build_aerial_demo, describe
     from irsim_isaac.pipeline.ir_camera import IrCamera
     from irsim_isaac.pipeline.materials_usd import prim_records
@@ -104,6 +126,12 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     sensor = load_sensor_config(args.sensor)
+    if args.integration_ms is not None:
+        try:
+            sensor = with_integration_time_ms(sensor, args.integration_ms)
+        except ValueError as exc:
+            print(f"--integration-ms: {exc}", file=sys.stderr)
+            return 1
     spec = sensor.sensor
     lut = load_band_lut_for_config(sensor, REPO / "data" / "lut")
     # The camera's own R(lambda), for the layered atmosphere's spectral-class split. It is
@@ -197,7 +225,7 @@ def main() -> int:
     written = []
     t_render = time.time()
     for index in range(args.frames):
-        outputs = camera.get_outputs()
+        outputs = camera.get_outputs(rt_subframes=args.rt_subframes)
         # The companion visible frame, already box-filtered onto the IR pixel grid, so the pair is
         # registered by construction rather than by calibration. An `extra_plane`, not an output:
         # nothing in the radiometric chain reads it, and the sidecar's unit string says so.
@@ -235,10 +263,27 @@ def main() -> int:
     render_s = time.time() - t_render
     camera.close()
 
+    # The clip. The owner reviews a render by watching it, and this driver -- the aerial lane's
+    # own -- produced still frames only. `write_frame` already numbers the display frames
+    # zero-padded, so the sequence encodes straight off what is on disk: no second PNG written and
+    # nothing deleted afterwards, because here the frames *are* the dataset.
+    videos: dict[str, str] = {}
+    if ffmpeg_available():
+        for tag, pattern in (("ir", "frame_*_display8.png"), ("rgb", "frame_*_rgb.png")):
+            if not any(out_dir.glob(pattern)):
+                continue  # no RGB was captured, so there is nothing to encode
+            videos[tag] = str(
+                encode_mp4(str(out_dir / pattern), out_dir / f"aerial_demo_{tag}.mp4", fps=args.fps)
+            )
+    else:
+        print("ffmpeg not found: the frames are on disk, unencoded", file=sys.stderr)
+
     summary = {
         "boot_s": round(boot_s, 2),
         "render_s": round(render_s, 2),
         "frames": len(written),
+        "fps": args.fps,
+        "videos": videos,
         "sensor": spec.name,
         "resolution": [spec.fpa.width, spec.fpa.height],
         "supersample": spec.optics.supersample_factor,
