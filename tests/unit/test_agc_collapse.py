@@ -10,6 +10,7 @@ import pathlib
 from typing import Any
 
 import numpy as np
+import pytest
 import yaml
 
 from irsim.config.sensor import SensorConfig
@@ -17,6 +18,10 @@ from irsim.materials import MaterialTable
 from irsim.pipeline import PipelineConfig, PipelineState, run_frame
 from irsim.radiometry.encoding import encode_temperature
 from irsim.radiometry.lut import BandLUT
+
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON = yaml.safe_load((REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml").read_text())

@@ -27,6 +27,10 @@ from irsim.pipeline.core import PipelineConfig, PipelineState
 from irsim.pipeline.flat_field import calibrate_flat_field, uniform_signal_dn
 from irsim.pipeline.frame import run_frame
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON_YAML = REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml"
 

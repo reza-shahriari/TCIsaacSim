@@ -41,6 +41,10 @@ from irsim.thermal.two_node import (
     contact_resistance,
 )
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DATA = REPO / "data"
 H_MAX = 30.0

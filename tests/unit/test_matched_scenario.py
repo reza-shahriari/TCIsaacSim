@@ -24,6 +24,10 @@ from irsim.validation.scenario import (
     target_pixels,
 )
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HALMSTAD = REPO / "configs" / "sensors" / "halmstad_boson_320.yaml"
 SCRIPT = REPO / "scripts" / "generate_matched_scenario.py"

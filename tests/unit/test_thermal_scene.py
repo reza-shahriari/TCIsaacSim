@@ -162,6 +162,7 @@ def test_the_site_agrees_with_the_weather_file_about_where_noon_is(scene: Scene)
     assert abs(beam_peak_hour - dni_peak_hour) < 5.0, (beam_peak_hour, dni_peak_hour)
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_a_mismatched_site_shifts_the_peak_by_most_of_a_day() -> None:
     """The counter-test: the same weather file at a Californian site, which does not raise."""
     raw = _raw()
@@ -217,6 +218,7 @@ def test_the_query_is_const_and_named(scene: Scene) -> None:
         scene.surface_temperature_k("bonnet", scene.t0_s)
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_the_scene_is_deterministic() -> None:
     a, b = Scene.from_file(SCENE_PATH), Scene.from_file(SCENE_PATH)
     a.thermal.advance_to(a.t0_s + 3600.0)

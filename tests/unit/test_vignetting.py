@@ -55,6 +55,7 @@ def test_monotone_in_radius() -> None:
     assert float(field.ravel()[order][-1]) < float(field.ravel()[order][0])
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_supersampled_field_box_averages_to_native() -> None:
     native = cos4_field(W, H, PITCH, F).astype(np.float64)
     ss = cos4_field(W, H, PITCH, F, supersample=4).astype(np.float64)

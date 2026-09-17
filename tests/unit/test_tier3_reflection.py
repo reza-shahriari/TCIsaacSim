@@ -38,6 +38,10 @@ from irsim.radiometry.spectral_response import load_spectral_response
 from irsim.scene import Scene
 from irsim.thermal.scene_forcing import sky_view_for_tilt
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DATA = REPO / "data"
 SCENE_PATH = REPO / "configs" / "scenes" / "thermal_facet_scene.yaml"

@@ -160,6 +160,7 @@ def test_alpha_is_the_square_of_the_authored_roughness() -> None:
         roughness_to_alpha(1.5)
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_the_ndf_is_normalised() -> None:
     """∫ D cos θ_h dω_h = 1 by construction; checked by quadrature, not asserted."""
     for alpha in (0.05, 0.2, 0.6):

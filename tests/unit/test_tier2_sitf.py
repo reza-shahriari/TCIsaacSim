@@ -19,6 +19,10 @@ from irsim.pipeline import PipelineConfig
 from irsim.radiometry.lut import BandLUT
 from irsim.validation import sitf
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 BOSON_YAML = REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml"
 MEASURED_SITF = DEFAULT_DATA_DIR / "validation" / "sitf" / "flir_boson_640_lwir.csv"

@@ -39,6 +39,7 @@ def test_lookup_vs_quadrature_under_5mK(boson_lut: BandLUT, boson_response) -> N
     assert worst < 0.1, f"{worst:.3f} mK: expected ~0.03 mK from linear interpolation at 0.05 K"
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_float32_cast_costs_under_0p1mK(tophat_lwir_lut: BandLUT) -> None:
     """The float32 path vs float64 interpolation of float64 closed-form values on the same grid.
 

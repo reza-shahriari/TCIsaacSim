@@ -49,6 +49,10 @@ from irsim.thermal.weather import WeatherSample, WeatherSeries
 from irsim.validation.aerial_scene import SceneTarget
 from irsim.validation.maritime_scene import build_maritime_gbuffer
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 RESPONSE = REPO / "data" / "spectra" / "responses" / "boson_vox.csv"
 SST_K = 290.0

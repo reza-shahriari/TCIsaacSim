@@ -225,6 +225,7 @@ def test_level_a_takes_its_magnitude_from_the_authored_band_value(library, boson
 # ---------------------------------------------------------------------------------------------
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_baked_level_b_reproduces_level_a_on_the_sphere_fixture(
     gbuffer_sphere: dict[str, np.ndarray], boson
 ) -> None:  # type: ignore[no-untyped-def]

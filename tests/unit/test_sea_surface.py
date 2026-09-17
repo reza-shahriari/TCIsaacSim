@@ -40,6 +40,10 @@ from irsim.radiometry.lut import BandLUT
 from irsim.radiometry.spectral_response import load_spectral_response
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 BOSON_RESPONSE = "data/spectra/responses/boson_vox.csv"
 SST_K = 290.0
 T_AIR_K = 291.0
@@ -363,15 +367,33 @@ def test_the_profile_lut_matches_the_exact_evaluation(rig) -> None:
     assert np.max(np.abs(lut - exact)) < 0.02  # 20 mK against a 50 mK NETD
 
 
-def test_the_profile_lut_is_fast_enough_for_a_supersampled_frame(rig) -> None:
-    """A frame's worth of angles in well under a second, which the exact path cannot do."""
+def test_the_profile_lut_is_far_cheaper_than_the_exact_path(rig) -> None:
+    """The LUT exists to answer a frame's worth of angles; the exact path cannot.
+
+    Stated as a **ratio against the exact path on the same machine**, not as a wall-clock bound.
+    An absolute bound is a test of the machine as much as of the code: this assertion was
+    `< 1.0 s` and failed twice on a workstation at load average 12 while passing in isolation,
+    which tells a reader nothing about the LUT. A ratio cancels the load, because both halves are
+    slowed by the same amount.
+    """
     import time
 
     _, sea = _sea(rig)
-    angles = np.geomspace(sea.horizon_rad, 0.5 * np.pi, 2_000_000)
     sea.profile(0.0)  # build once, as a render would during settling
 
+    # The exact path is far too slow for a frame, so it is timed on a sample and scaled.
+    sample = np.geomspace(sea.horizon_rad, 0.5 * np.pi, 200)
+    start = time.perf_counter()
+    sea.apparent_temperature_exact_k(0.0, sample)
+    per_angle_exact = (time.perf_counter() - start) / sample.size
+
+    angles = np.geomspace(sea.horizon_rad, 0.5 * np.pi, 2_000_000)
     start = time.perf_counter()
     out = sea.apparent_temperature_k(0.0, angles)
-    assert time.perf_counter() - start < 1.0
+    per_angle_lut = (time.perf_counter() - start) / angles.size
+
     assert out.shape == angles.shape
+    # Measured at about 470x per angle on a loaded workstation. The bound is set well below that
+    # rather than at it: the ratio still moves with cache behaviour, and a threshold sitting on the
+    # measurement is the same fragility as the wall-clock bound this replaced, one level up.
+    assert per_angle_exact / per_angle_lut > 100.0

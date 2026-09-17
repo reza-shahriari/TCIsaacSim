@@ -9,13 +9,21 @@ PYTHON ?= python
 CI_PYTHON ?= python3.10
 CI_VENV ?= .venv-ci
 
-.PHONY: install test test-all lint fmt typecheck check ci luts golden-update clean next stage
+.PHONY: install test test-slow test-all lint fmt typecheck check ci luts golden-update clean next stage
 
 install:
 	$(PYTHON) -m pip install -e ".[dev]"
 
+# The fast tier: unit tests only. `slow` marks the validation benches (Tier 2/3/4 phenomenology),
+# the end-to-end frame benches and the file-regeneration checks, plus any single test over a
+# second. This is the developer loop; it is NOT the commit gate -- `make check` runs both tiers,
+# so nothing escapes review by being slow (GT.1).
 test:
-	$(PYTHON) -m pytest tests/unit tests/golden -q --durations=10
+	$(PYTHON) -m pytest tests/unit tests/golden -q -m "not slow" --durations=15
+
+# The other half. Same suite, same machine, run by `make check` and by CI.
+test-slow:
+	$(PYTHON) -m pytest tests/unit tests/golden -q -m "slow" --durations=15
 
 test-all:
 	$(PYTHON) -m pytest tests -q -m ""
@@ -47,7 +55,7 @@ stage:
 	scripts/stage_own_hunk.sh stage $(FILES)
 	scripts/stage_own_hunk.sh check $(FILES)
 
-check: lint typecheck test
+check: lint typecheck test test-slow
 	@$(PYTHON) scripts/next_step.py --check
 	@echo "OK — safe to commit"
 

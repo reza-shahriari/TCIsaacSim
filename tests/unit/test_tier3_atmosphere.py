@@ -30,6 +30,10 @@ from irsim.atmosphere.model import Atmosphere
 from irsim.radiometry.lut import BandLUT
 from irsim.thermal import WeatherSample, WeatherSeries
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 BANDS_SHORT_TO_LONG = ("visible", "nir", "swir", "mwir", "lwir")
 T_AIR = 288.15
 

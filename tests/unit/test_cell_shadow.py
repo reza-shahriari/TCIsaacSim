@@ -142,6 +142,7 @@ def test_every_cell_holds_its_own_equilibrium_to_a_millikelvin() -> None:
     assert np.max(np.abs(temperature - expected)) < 1e-3
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_a_per_surface_shaded_bool_gives_one_temperature() -> None:
     """The negative control: the representation PT.1 replaces, on the same wall.
 

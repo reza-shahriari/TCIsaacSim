@@ -19,6 +19,10 @@ import sys
 
 import pytest
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 SUBPACKAGES = [
     "irsim",
     "irsim.atmosphere",

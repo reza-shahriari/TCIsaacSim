@@ -28,6 +28,10 @@ from irsim.scene import Scene
 from irsim.thermal.solar import sun_position_utc
 from irsim.thermal.weather import WEATHER_FIELDS, WeatherSeries
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCENE_PATH = REPO / "configs" / "scenes" / "thermal_facet_scene.yaml"
 #: The scene's own site. Solar noon lands near 10:00 UTC, so local = UTC + 2 (M6.12).

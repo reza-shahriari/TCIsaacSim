@@ -53,7 +53,11 @@ addopts = "-m 'not isaac and not gpu'"
 markers = [
     "isaac: requires a running Isaac Sim environment",
     "gpu: requires CUDA",
-    "slow: takes more than a second",
+    # GT.1: not "slow" as a vague label but "not in the 30-second developer loop". Applied at
+    # module level to the validation benches (Tier 2/3/4 phenomenology), the end-to-end frame
+    # benches and the file-regeneration checks, and per test to anything else over a second.
+    # `make test` skips these; `make test-slow` and `make check` run them.
+    "slow: a validation bench, an end-to-end frame, or a test over a second",
 ]
 
 [tool.ruff]

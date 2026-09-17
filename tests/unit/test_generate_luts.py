@@ -16,6 +16,10 @@ import yaml
 from irsim.radiometry.lut_files import load_band_lut_for_config
 from irsim.radiometry.planck import band_radiance_tophat
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "generate_luts.py"
 BOSON_YAML = REPO / "configs" / "sensors" / "flir_boson_640_lwir.yaml"

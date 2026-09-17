@@ -25,6 +25,10 @@ from irsim.validation.compare import (
 )
 from irsim_eval.discriminator import FEATURE_NAMES, gap_score, patch_features
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "validation_report.py"
 RNG = np.random.default_rng(20260915)

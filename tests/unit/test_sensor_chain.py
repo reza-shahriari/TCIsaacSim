@@ -142,6 +142,7 @@ def _spatial_std(config: PipelineConfig, state: PipelineState, n_frames: int = 1
         (0.00176, True),  # tuned so the residual and the 3-D spatial term are the same size
     ],
 )
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_the_spatial_noise_budget_is_two_mechanisms_not_four(
     tophat_lwir_lut: BandLUT, drift_k_per_s: float, comparable: bool
 ) -> None:

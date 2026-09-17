@@ -25,6 +25,10 @@ from irsim.pipeline import PipelineConfig, PipelineState, run_frame
 from irsim.radiometry.lut import BandLUT
 from irsim.validation.aerial_scene import SceneTarget, build_aerial_gbuffer
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 BORESIGHT_DEG = 20.0
 
 

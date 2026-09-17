@@ -30,6 +30,10 @@ from irsim.validation import (
 from irsim_eval.transcode import h264_round_trip
 from irsim_eval.video import ffmpeg_available
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 BOSON_RATIOS = (0.02, 0.08, 0.15, 0.05, 0.05, 0.30, 1.0)
 needs_ffmpeg = pytest.mark.skipif(not ffmpeg_available(), reason="ffmpeg is not installed")
 

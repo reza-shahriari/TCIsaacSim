@@ -157,6 +157,7 @@ def test_horizontal_200m_anchor_matches_the_grey_preset(name: str) -> None:
         assert abs(float(class_weights(band).sum()) - 1.0) < 1e-12
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_r13_sky_anchors_and_elevation_shape(tmp_path: pathlib.Path) -> None:
     """R13 (Sensors 21:7067, Tucson, clear, low humidity): FLIR T1020 (7.5-14 um) sky at
     -40 C by 15 deg elevation; the TELOPS M1k (2.2-5.5 um) sky far warmer. Thermal-only, so the

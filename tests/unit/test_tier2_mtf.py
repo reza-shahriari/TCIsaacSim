@@ -24,6 +24,10 @@ from irsim.validation import (
     slant_edge_mtf,
 )
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 LAMBDA_UM, F, PITCH_UM, K = 10.5, 1.0, 12.0, 4
 
 

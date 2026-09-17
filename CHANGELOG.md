@@ -12,6 +12,37 @@ working in one tree; two commits already exist whose whole subject is restoring 
 
 ### 2026-09-17
 
+#### Added
+- **A wall-clock assertion in the unit suite is replaced by a ratio.**
+  `test_the_profile_lut_is_fast_enough_for_a_supersampled_frame` asserted `< 1.0 s` and failed twice
+  on a workstation at load average 12 while passing in isolation — which tells a reader nothing
+  about the LUT. It now times the exact path on a sample and compares **per-angle cost**, so the
+  load cancels: both halves are slowed by the same amount. Measured at about **470×**, with the
+  bound set at 100 rather than at the measurement, because a threshold sitting on its own
+  measurement is the same fragility one level up.
+- **The `slow` marker R11 promised, and the two-tier gate** (`GT.1`). The marker was declared in
+  `pyproject.toml` and applied to **nothing**, and the Makefile had no way to filter on it. It now
+  means something stated: a validation bench (Tier 2/3/4 phenomenology), an end-to-end frame bench,
+  or a file-regeneration check — applied at module level to 23 files — plus any single test over a
+  second, applied to 10 more. 245 of 2,979 tests.
+- `make test` runs the fast tier, `make test-slow` the rest, both printing the top 15 durations.
+  **`make check` runs both**, so the commit gate stays complete and nothing escapes review by being
+  slow — the marker is a developer-loop split, not a coverage reduction.
+- **The 30-second budget in CLAUDE.md is not reachable, and is now open question 11 rather than a
+  number quietly moved.** Measured over 2,979 tests: **154 s of the 170 s is in test bodies**, not
+  fixtures — setup is only 15 s, so the obvious optimisation (17 modules each building their own
+  `BandLUT`) is worth ~15 s at most. The tier as marked leaves the fast half at roughly **65 s of
+  test time**. Reaching 30 s would mean marking every test over 0.2 s, 173 of them, which redefines
+  `slow` to mean five times what it says. The step is ticked for what landed and the number is
+  recorded as the owner's call.
+- **The band-kernel guard keeps covering a file it used to exclude.** `AT.2` added
+  `load_band_response_for_config` to `radiometry/lut_files.py`, which the M11.1 guard holds
+  unchanged since M1.11 — correctly, since "bands are data, not code". The addition names no band
+  and branches on none, so instead of excluding the file the way `spectral_response.py` was
+  excluded, the guard gained **per-file baselines**: it now measures that file from the commit that
+  legitimately moved it, so the **next** change still fails. A second test refuses an override with
+  no reason or one pointing at a commit that never touched the file.
+
 #### Fixed
 - **The Warp ISP's host-readback justification was wrong, and is corrected.** `agc_lut_warp`'s
   docstring said "the last few scalars — the percentile positions, the occupied-bin span — are read

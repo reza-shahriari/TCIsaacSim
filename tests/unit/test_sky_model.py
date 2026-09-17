@@ -43,6 +43,7 @@ def _sky(lwir, cloud: float = 0.0, preset: str = "us_standard_clear", rh: float 
     return SkyModel(atm, load_environment_preset("clear_dry"), "lwir", lut)
 
 
+@pytest.mark.slow  # GT.1: over a second on its own
 def test_overcast_limit_and_cloud_blend(lwir) -> None:  # type: ignore[no-untyped-def]
     """RH = 1: the cloud base (LCL) is at the surface, so thick overcast reads T_air exactly."""
     _, lut = lwir

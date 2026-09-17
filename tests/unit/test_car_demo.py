@@ -32,6 +32,10 @@ from irsim_isaac.car_demo import (
     describe,
 )
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCENE_YAML = REPO / "configs/scenes/car_ignition_overcast_night.yaml"
 CLEAR_YAML = REPO / "configs/scenes/car_ignition_clear_night.yaml"

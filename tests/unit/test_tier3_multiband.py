@@ -49,6 +49,10 @@ from irsim.pipeline.specular import specular_glint_radiance, specular_reflected_
 from irsim.radiometry.lut_files import load_band_lut_for_config
 from irsim.thermal.weather import WeatherSample, WeatherSeries
 
+# GT.1: this whole module is the slow tier -- a validation bench or an end-to-end frame rather
+# than a unit test. `make test` skips it; `make test-slow` and `make check` run it.
+pytestmark = pytest.mark.slow
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 DATA = REPO / "data"
 UP = np.array([0.0, 0.0, 1.0])
@@ -462,6 +466,22 @@ BAND_KERNEL_MODULES = (
     "__init__.py",
 )
 
+#: Modules whose band kernel legitimately moved, with the commit that moved it and why. The guard
+#: then measures from *that* commit, so the file stays covered against the **next** change -- which
+#: is what an exclusion gives up. `constants.py` and `spectral_response.py` keep their own
+#: treatment below for historical reasons; new exceptions belong here.
+BASELINE_OVERRIDES: dict[str, tuple[str, str]] = {
+    "lut_files.py": (
+        "877a1ce",
+        "AT.2 added `load_band_response_for_config`, a band-agnostic sibling of "
+        "`load_band_lut_for_config`. It names no band and branches on none: it reads the response "
+        "path a sensor config already declares. It exists because the layered atmosphere needs the "
+        "camera's R(lambda) to split a band into spectral classes, and without it every band was "
+        "split by a nominal top-hat -- measured as a 5.5x error in the MWIR h2o_wing weight. "
+        "Adding a band still needs no edit to this file, which is the property the guard is for.",
+    ),
+}
+
 
 def _git(*args: str) -> str:
     return subprocess.run(
@@ -479,8 +499,24 @@ def test_the_band_kernel_has_not_changed_since_there_was_one_band(module: str) -
     if not (REPO / ".git").exists():
         pytest.skip("not a git checkout")
     path = f"src/irsim/radiometry/{module}"
-    log = _git("log", "--oneline", f"{M1_11_COMMIT}..HEAD", "--", path).strip()
-    assert log == "", f"{path} changed after M1.11:\n{log}"
+    baseline, _ = BASELINE_OVERRIDES.get(module, (M1_11_COMMIT, ""))
+    log = _git("log", "--oneline", f"{baseline}..HEAD", "--", path).strip()
+    since = "M1.11" if baseline == M1_11_COMMIT else f"its recorded baseline {baseline}"
+    assert log == "", f"{path} changed after {since}:\n{log}"
+
+
+def test_every_baseline_override_is_justified_and_real() -> None:
+    """An override with no reason, or one pointing at a commit that never touched the file, is a
+    silently widened guard -- the failure mode the exclusions below were already written against."""
+    if not (REPO / ".git").exists():
+        pytest.skip("not a git checkout")
+    for module, (commit, reason) in BASELINE_OVERRIDES.items():
+        assert module in BAND_KERNEL_MODULES, f"{module} is not a guarded module"
+        assert len(reason) > 80, f"{module}'s override needs a reason, not a note"
+        touched = _git(
+            "log", "--oneline", f"{commit}~1..{commit}", "--", f"src/irsim/radiometry/{module}"
+        ).strip()
+        assert touched, f"{commit} does not touch {module}; the override is stale"
 
 
 def test_the_two_excluded_modules_are_excluded_for_a_stated_reason() -> None:
