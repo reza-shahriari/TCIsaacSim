@@ -13,196 +13,24 @@ working in one tree; two commits already exist whose whole subject is restoring 
 ### 2026-09-17
 
 #### Added
-- **`read_noise_e` reaches the rendered noise, and the mutation test that proves it** (`SC.2`).
-  `SC.1` reversed which of NETD and the electron datasheet is derived; this checks the reversal
-  arrived at the pixels rather than only at the budget object. The pre-`SC.1` behaviour is kept as
-  the negative control and is the sharper half: under the ADR 0025 anchor the solver picks whatever
-  Gaussian reproduces the datasheet NETD, so perturbing `read_noise_e` by 10 % — or **halving it** —
-  leaves the rendered frame **bit-identical**. A config field that cannot move the output is not a
-  parameter, it is a comment, and it had been one in every photon render this project has made.
-- The sensitivity is not 10 % out for 10 % in, and that is physics rather than a weak test. σ_total
-  is √(N_e + N_dark + N_bg + σ_read²), so what a read-noise change shows depends on where the camera
-  sits on that curve: the cooled InSb at a bright scene carries 4.9e5 signal electrons plus 3.3e5
-  from its own cold shield, so 10 % in gives **2.1 %** out; the NIR at 0.004 mean electrons is
-  read-limited and gives the **full 10 %**. Both are checked, against the quadrature prediction
-  rather than a stored number, and Monte Carlo on 400 rendered frames confirms the analytic result.
-- **`halmstad_boson_320.yaml` takes ME.5's measured 3-D ratios.** It is the camera the public
-  Halmstad set was recorded with, so unlike the 640 it has a field measurement of its own — 365
-  clips, decomposed in `reference-stats-2026-09-15`. Five of the seven components now come from it:
-  **vh 0.30 → 2.64** (8.8× out), **v 0.08 → 0.58** (7.2×), **t 0.02 → 0.38** (19.1×), and **h 0.15 →
-  0.16**, which was already right — worth saying, because the roadmap's "7–19× out" implied all four
-  were badly wrong and one was not. `tv` and `th` are not in ME.5's table and stay ESTIMATED.
-- σ_VH > σ_TVH is not a typo: between flat-field events a real core's fixed pattern is the larger
-  term, which is the reason §11.2's shutter exists. Total noise over σ_TVH goes **1.06 → 2.91**, so
-  this camera is 2.7× noisier in total than the estimates it replaces — the direction a guess never
-  goes on its own. It also puts the repository somewhere it had never rendered: every previous
-  config had vh < 1, so the synthesiser, the estimator and the variance closure had only been
-  exercised on the other side of that line. A new bench renders a cube and recovers vh = 2.64 within
-  the estimator's own sampling floors.
-- **`motion_px` reaches a rendered frame, so ADR 0077's smear runs for the first time** (`IG.6`).
-  M10.1b built the rigid-body synthesis and verified it in-sim to 0.1 px; its only caller was that
-  test. `IrCamera.planes()` never set the plane, so every frame this project has rendered was sharp
-  regardless of scene velocity — with M9.8 and M10.1b both ticked and the documentation asserting
-  otherwise. The same shape as ADR 0082's membrane-lag finding, one layer up: a mechanism that is
-  correct, tested, and unreachable.
-- The reason it survived is structural and worth naming. The arithmetic in `irsim.optics.motion` is
-  engine-free, but the only path to it ran through `MotionTracker.sample`, which read USD directly —
-  so the wiring could only be exercised by a renderer, which the fast suite does not have.
-  `sample` now takes an injectable `read` and a per-frame `paths` set, and
-  `tests/unit/test_motion_wired.py` (14 cases) drives the real `IrCamera.planes()` over synthetic
-  transforms on a CPU.
-- The plane is **refused rather than faked** in three cases, each tested: the first frame of a
-  sequence (motion is a difference, and one pose is not one), a camera that was never opened (no
-  stage, no poses), and a `position_frame` other than `"camera"` — the synthesis is defined on USD
-  camera-space points and would otherwise apply the camera pose twice. That last one was found by
-  this module's own first draft, which built its rig in the world frame and got a plane of silent
-  zeros because every point read as behind the lens.
-- §16's "lateral motion smears LWIR, not cooled MWIR" is now measured rather than asserted, and it
-  turns out to be a statement about the **duty cycle** rather than the band. A bolometer has no
-  shutter, so `smear_duty` is 1.0; the cooled InSb integrates 2 ms of a 16.7 ms frame, so it is
-  0.12. At the aircraft stage's 11 px/frame the bolometer's 10–90 edge width goes **0 → 8.8 px**
-  and the InSb's **0 → 1.1 px** — the 8.33× ratio, on the same scene at the same velocity. A photon
-  FPA run at full duty would smear identically; nothing about 8–12 µm versus 3–5 µm enters into it.
-- **A scene with a layered atmosphere no longer hands out the grey one** (`AT.5`).
-  `Scene.from_config` builds both models whenever a scene names an environment preset — which
-  **all eight shipped scenes do** — so the attribute a reader would take for the scene's
-  atmosphere held the L1 fallback while every render script passed `scene.layered`. The field is
-  now `grey_atmosphere`; `Scene.atmosphere` is a property that raises once a layered model exists,
-  and the message names all three ways out: `transfer_atmosphere` for radiative transfer (the
-  layered one where it exists), `atmosphere_preset` for the preset, `grey_atmosphere` for a
-  deliberate L1. Both live readers wanted the preset, which is one object and cannot disagree —
-  nothing was taking the wrong model, and the next caller would have had no way to tell.
-- The gap is larger than the step assumed and larger than `AT.1`'s, which compared the layered
-  model against itself on a horizontal path. Grey against layered, on the aerial scene at 5 km and
-  20° elevation: **τ 0.057 against 0.590** and path radiance **45.1 against 18.7 W/m²/sr**. That is
-  the k-distribution rather than a defect in either — exp(−τ̄) is not the mean of exp(−τ) across a
-  band whose lines vary by orders of magnitude, which is what §8.6's exponential sum exists to fix
-  — but it is why the grey model is L1 only. `tests/unit/test_atmosphere_handout.py` (8 cases)
-  measures it rather than quoting it, and checks that the grey model stays a registered consumer:
-  refused is not removed, and CLAUDE.md #6's one-weather guard must keep seeing it.
-- **Three committed Boson values disagreed with FLIR's own datasheet** (`SC.3`, ADR 0091). [R24],
-  Doc. # 102-2013-40 Release 340, is free, public and EAR99 — the only external anchor a project
-  with no camera has for its reference core. `ffc_interval_s` was **180 s**, which matches no
-  published default; `thermal_time_constant_ms` was **10.0**, the midpoint of the generic VOx
-  8–12 ms range carried as ESTIMATED while the datasheet says "nominally 8 msec" outright; and the
-  `ratios_3d` blocks carried no provenance marker at all, in files whose headers promise one. All
-  three corrected in both Boson configs, with the citation beside each value.
-- **The datasheet contradicts itself about the FFC defaults, and which reading the configs take is
-  now recorded.** Section 5 says the factory default FFC Period is **300 s** and FFC Temp Delta
-  **1.0 °C**; Table 8 of the same document says 1200 s and 3.0 °C. ADR 0091 takes Section 5:
-  Table 8 carries its own staleness note, its pair matches the **2018** FFC/NUC application note
-  rather than this 2021 release, and Section 5 is internally consistent in a way Table 8 is not —
-  its start-up paragraph says an FFC occurs "every 1/3rd degree" against a default that "results
-  in an FFC event every 1 degree", true of 1.0 °C and false of 3.0 °C.
-- **`tests/unit/test_boson_datasheet.py`** (9 cases) reproduces Table 13's stated acceptance
-  conditions — lensless at f/1.0, high gain, 20 °C camera, 30 °C background, averager disabled —
-  and measures **tvh 48.5 mK, th 2.4 mK, tv 2.6 mK** against limits of < 50 / < 18 / < 18. The
-  camera is compliant and **seven times more spatially uniform than FLIR guarantees**: every grade
-  in Table 13 gives th/tvh = 0.35 against the configured 0.05. The ratios are left alone and
-  marked ESTIMATED rather than raised to 0.35, because Table 13 publishes **upper bounds** and the
-  ratio of two upper bounds is not the ratio of two typical values; `SC.2` substitutes ME.5's
-  measured ratios, which is the only thing that can settle it. The check has a failing direction:
-  at th/tvh = 0.5 the bench reads 25 mK and the camera is out of spec.
-- **Every photon camera this project has rendered was anchored to a NETD it could not use**
-  (`SC.1`). ADR 0025's M11.6 addendum says a photon FPA's noise should be built from its electron
-  datasheet — quantum efficiency, well, integration time, read noise, dark current — with NETD
-  demoted to a cross-check, and `irsim.noise.electron.electron_budget` implemented exactly that.
-  Nothing in `src/` ever called it. `PipelineConfig.from_sensor` now selects it whenever a photon
-  FPA authors `read_noise_e`, via a `noise_handle` of `auto` / `netd` / `electrons`; a bolometer
-  keeps the anchor, which is right for it, and is refused `electrons` rather than handed a
-  meaningless budget.
-- Two measurements the change moves, taken through the pipeline rather than the module, so the
-  cold shield's background is in the shot term as it is in a render. The **MWIR InSb** rendered at
-  σ **533.3 e⁻** against the 350 e⁻ its own config authors — **1.52×**, a Gaussian the solver was
-  free to invent because any value reaching 20 mK would do. The **SWIR InGaAs** rendered with
-  dark = 0 against the **199.7 e⁻** per integration its own Arrhenius block implies — a term
-  *larger than its 120 e⁻ read noise*, simply absent, and one that is an offset as well as a
-  Poisson term. Neither is visible in an image; both are the kind of error that makes a sensor
-  trade study come out confidently wrong.
-- NETD stops being a tautology for photon cameras. Anchored, the predicted NETD equalled the
-  datasheet claim to 1e-9 — it was solved for, so it carried no information. Built from electrons
-  the InSb predicts **19.47 mK against a 20 mK claim**: a number the datasheet could have
-  contradicted. `tests/unit/test_electron_budget_wiring.py` (11 cases) drives the selection site
-  rather than the physics, because the defect was never in the physics — it was that the physics
-  had no caller — and includes the failing direction: a 10 mK claim on the same camera raises.
-- **The multi-band sweep filmed three of the project's eight scene configs; it now films seven, and
-  the eighth says why it does not** (`IG.13`, second half). Five scenes — including the whole aerial
-  point-target lane, the one ranked first — had only ever been seen in the single band their own
-  driver defaults to, which is the opposite of what a driver whose purpose is the four-band
-  comparison is for. `render_multiband.SCENES` gains `sky_target`, `vessel_departure` and the two
-  car-ignition night scenes, and `UNSWEPT_SCENES` records `thermal_facet_scene` as the §6.13 facet
-  bench: seven surfaces, no camera, no prims, driven by `validate_thermal_diurnal.py` into a diurnal
-  curve rather than a frame. A test refuses any scene config that is neither swept nor listed.
-- **Two flags the sweep passes unconditionally were accepted by only three of the six drivers.**
-  `--rt-subframes` was missing from `render_aerial_demo` and `render_car_ignition`, and
-  `--integration-ms` from those two plus `render_vessel_departure` — so adding any of them to the
-  sweep would have made argparse reject the invocation and fail twelve renders at once, with the
-  reason visible only in a child process's stderr. Both are now on all six, and a test builds the
-  real command for every scene/band pair and checks each flag against the target parser.
-- **`irsim.config.loader.with_integration_time_ms`** replaces three byte-identical copies of the
-  exposure-override block and supplies the other three drivers. It goes through the model, so the
-  change reaches `config_hash` — two exposures are two cameras, and a daylight reflective-band scene
-  saturates a low-light exposure by around 120× — and it **refuses a bolometer** rather than
-  ignoring the flag, since §8.2's thermal responsivity has no integration time and a silently
-  unchanged config would still hash as exposed.
-- **`render_aerial_demo` encodes a video.** It wrote still frames only, which made it the one render
-  nobody could watch. `write_frame` already numbers the display frames zero-padded, so the clip
-  encodes straight off what is on disk: no second PNG sequence, and nothing deleted afterwards,
-  because in this driver the frames are the dataset.
-- **Three of the six render drivers wrote no radiometric output at all, and now do** (`IG.13`,
-  first half). `render_quad_flight`, `render_aircraft_pass` and `render_vessel_departure` — the
-  whole aerial-flight and vessel-departure lanes — emitted 8-bit display PNGs and an mp4, nothing
-  else. ADR 0068 is explicit that an 8-bit stream cannot carry a radiometric claim: the AGC, the
-  palette and a 256-level quantisation have all been applied and none of them invert. Every frame
-  those three renders have ever produced is unusable for the measurements the simulator exists to
-  make. All three now write float32 radiance and apparent-temperature planes, the uint16 ADC frame
-  and a JSON sidecar carrying the config, band and ISP hashes, the scene time and its UTC, and each
-  plane's dtype, shape and unit.
-- **`irsim.io.FrameWriter`** — the binder that makes that cheap. `write_frame` takes nine keyword
-  arguments of which seven are constant for a whole run, and spelling them out inside a 500-line
-  driver is how three drivers came to skip it: the frame loop was the easy part and the bookkeeping
-  was not. Bound once, the loop body is `writer.write(outputs, frame_index=i, ...)` and "does this
-  driver write planes" is a one-line question. `stride` thins the written sequence without thinning
-  the render — a 300-frame LWIR time-lapse is 786 MB of float32 and 3.1 GB at the NIR array's
-  1280×1024 — and travels in every sidecar as `plane_stride`, so a `frame_000025` sitting beside no
-  `frame_000024` reads as a thinned sequence rather than a render that died. `--plane-stride 0`
-  writes none, which is the only honest way to spell "this run makes no radiometric claim".
-- `tests/unit/test_frame_writer.py` (20 cases). The round trip is bit-exact in float32; the sidecar
-  resolves a scene time to the right UTC on the weather axis; float16 is refused; per-frame
-  metadata layers over the run's; and a parametrised guard asks the exit bar of **each driver in
-  turn** — run against the previous commit it fails for exactly the three offenders and passes the
-  other three. Static, because the alternative is a render, but a driver that names neither writer
-  cannot be producing planes whatever else it does.
-
-- **A wall-clock assertion in the unit suite is replaced by a ratio.**
-  `test_the_profile_lut_is_fast_enough_for_a_supersampled_frame` asserted `< 1.0 s` and failed twice
-  on a workstation at load average 12 while passing in isolation — which tells a reader nothing
-  about the LUT. It now times the exact path on a sample and compares **per-angle cost**, so the
-  load cancels: both halves are slowed by the same amount. Measured at about **470×**, with the
-  bound set at 100 rather than at the measurement, because a threshold sitting on its own
-  measurement is the same fragility one level up.
-- **The `slow` marker R11 promised, and the two-tier gate** (`GT.1`). The marker was declared in
-  `pyproject.toml` and applied to **nothing**, and the Makefile had no way to filter on it. It now
-  means something stated: a validation bench (Tier 2/3/4 phenomenology), an end-to-end frame bench,
-  or a file-regeneration check — applied at module level to 23 files — plus any single test over a
-  second, applied to 10 more. 245 of 2,979 tests.
-- `make test` runs the fast tier, `make test-slow` the rest, both printing the top 15 durations.
-  **`make check` runs both**, so the commit gate stays complete and nothing escapes review by being
-  slow — the marker is a developer-loop split, not a coverage reduction.
-- **The 30-second budget in CLAUDE.md is not reachable, and is now open question 11 rather than a
-  number quietly moved.** Measured over 2,979 tests: **154 s of the 170 s is in test bodies**, not
-  fixtures — setup is only 15 s, so the obvious optimisation (17 modules each building their own
-  `BandLUT`) is worth ~15 s at most. The tier as marked leaves the fast half at roughly **65 s of
-  test time**. Reaching 30 s would mean marking every test over 0.2 s, 173 of them, which redefines
-  `slow` to mean five times what it says. The step is ticked for what landed and the number is
-  recorded as the owner's call.
-- **The band-kernel guard keeps covering a file it used to exclude.** `AT.2` added
-  `load_band_response_for_config` to `radiometry/lut_files.py`, which the M11.1 guard holds
-  unchanged since M1.11 — correctly, since "bands are data, not code". The addition names no band
-  and branches on none, so instead of excluding the file the way `spectral_response.py` was
-  excluded, the guard gained **per-file baselines**: it now measures that file from the commit that
-  legitimately moved it, so the **next** change still fails. A second test refuses an override with
-  no reason or one pointing at a commit that never touched the file.
+- **The band-scalability guard denies by default, and its carve-out is a tested constant** (`AT.4`,
+  ADR 0092). It scanned a positive list of six packages, so `atmosphere`, `materials`, `thermal`,
+  `io`, `validation`, `config` and `scene.py` were unguarded *by omission* — and four of them had
+  **zero** offences the whole time, so the carve-out naming `irsim.materials` rescued nothing. Now
+  every module under `src/irsim` is scanned (140 of 146 guarded) and `BAND_AWARE` maps a path to a
+  ceiling and a written reason, with tests that each entry exists, still has an offence, and has not
+  grown. A new module is guarded the day it is created.
+- The old shape could also switch itself off in silence: each test re-globbed its own package, so a
+  package renamed in the tuple walked a path that does not exist — no files, no offences, green — and
+  the one coverage assertion counted six packages' union against a floor of 30 when the six hold 72.
+  Both are closed by scanning from a single root and asserting per-package presence.
+- The forbidden name set widens to `BAND_KEYS`, so the guard can finally see the **fifth band the
+  codebase already contains**: `visible` had a class table, a weighting temperature, a mandatory key
+  in all seven presets and an `if band == "visible"` branch, and none of it tripped a guard whose
+  forbidden set stopped at the four `BandId` values.
+- `irsim.config.bands` gains `ANCHOR_BAND`, `ANCHOR_RANGE_UM`, `ANCHOR_REGIME`, `BAND_KEYS`,
+  `regime_for()` and `nominal_range_for()` — the atmosphere's reference band, named once instead of
+  spelled by hand in five places.
 
 #### Fixed
 - **Every frame `render_aerial_demo` and `render_maritime_demo` have written is stamped one frame
@@ -233,6 +61,15 @@ working in one tree; two commits already exist whose whole subject is restoring 
   `warp_stages.py:1862`, `:1891` and `:2120` before being recorded.
 
 #### Changed
+- **`WEIGHT_T_REF_K` is derived from the regime instead of keyed by band name** (`AT.4`). All five
+  shipped rows are reproduced exactly, and the step came within one line of a silent calibration
+  change: the table weighted MWIR at 300 K while `DEFAULT_REGIME["mwir"]` is `"mixed"`, so the rule a
+  reader reaches for first — "emissive keeps 300 K, everything else is solar" — gets four rows right
+  and moves **MWIR to 5800 K**, rescaling every MWIR class share, its anchor solve and τ_MWIR at
+  every range but the 200 m anchor. The rule that reproduces all five turns on *reflective*; a test
+  asserts the two rules still differ so it cannot stop guarding that drift.
+- `ATMOSPHERE_BAND_KEYS` now derives (`frozenset(BAND_KEYS)`); `VISIBLE_RANGE_UM` and the
+  `band == "visible"` branch — with its `cast(BandId, band)`, which lied about the type — are gone.
 - **Open question 6 — which Boson is "the" reference — is answered and closed: both, with different
   provenance.** The 640 carries [R24]'s Table 13 acceptance limits and says its ratios are
   ESTIMATED; the 320 carries ME.5's field-measured ratios. `test_boson_datasheet.py` checks on the
@@ -624,6 +461,205 @@ working in one tree; two commits already exist whose whole subject is restoring 
   the two it is. Closing S13 needs a soda-lime n/k source or a measured τ_mwir.
 
 #### Fixed
+- **Found, not fixed: SWIR's and NIR's spectral-class tables disagree about the same air** (`AT.10`).
+  NIR resolves the 0.94 µm water band at ×10; SWIR's window swallows 0.90–0.98 µm at ×0.5. Resolving
+  it in favour of the feature moves **16.9 %** of the shipped InGaAs band's Planck-weighted response
+  out of "clear window", and τ by −1.5 % at 1 km, **−6.4 % at 5 km** and +37.8 % at 20 km. The 200 m
+  anchor is exact by construction, which is exactly why no existing test caught it. Filed as `AT.10`
+  with the measurements rather than folded into a guard commit.
+- Measured while deciding it: the per-band multipliers are a **gauge**, not a physical disagreement —
+  multiplying every non-opaque multiplier in a band by 3 moves τ at 200 m / 1 / 5 / 20 km by at most
+  **3.2e-14** in all four bands, because the anchor solve absorbs any common factor. So "LWIR window
+  0.3 vs SWIR window 0.5" carries no information; only ratios within a band do.
+- **`read_noise_e` reaches the rendered noise, and the mutation test that proves it** (`SC.2`).
+  `SC.1` reversed which of NETD and the electron datasheet is derived; this checks the reversal
+  arrived at the pixels rather than only at the budget object. The pre-`SC.1` behaviour is kept as
+  the negative control and is the sharper half: under the ADR 0025 anchor the solver picks whatever
+  Gaussian reproduces the datasheet NETD, so perturbing `read_noise_e` by 10 % — or **halving it** —
+  leaves the rendered frame **bit-identical**. A config field that cannot move the output is not a
+  parameter, it is a comment, and it had been one in every photon render this project has made.
+- The sensitivity is not 10 % out for 10 % in, and that is physics rather than a weak test. σ_total
+  is √(N_e + N_dark + N_bg + σ_read²), so what a read-noise change shows depends on where the camera
+  sits on that curve: the cooled InSb at a bright scene carries 4.9e5 signal electrons plus 3.3e5
+  from its own cold shield, so 10 % in gives **2.1 %** out; the NIR at 0.004 mean electrons is
+  read-limited and gives the **full 10 %**. Both are checked, against the quadrature prediction
+  rather than a stored number, and Monte Carlo on 400 rendered frames confirms the analytic result.
+- **`halmstad_boson_320.yaml` takes ME.5's measured 3-D ratios.** It is the camera the public
+  Halmstad set was recorded with, so unlike the 640 it has a field measurement of its own — 365
+  clips, decomposed in `reference-stats-2026-09-15`. Five of the seven components now come from it:
+  **vh 0.30 → 2.64** (8.8× out), **v 0.08 → 0.58** (7.2×), **t 0.02 → 0.38** (19.1×), and **h 0.15 →
+  0.16**, which was already right — worth saying, because the roadmap's "7–19× out" implied all four
+  were badly wrong and one was not. `tv` and `th` are not in ME.5's table and stay ESTIMATED.
+- σ_VH > σ_TVH is not a typo: between flat-field events a real core's fixed pattern is the larger
+  term, which is the reason §11.2's shutter exists. Total noise over σ_TVH goes **1.06 → 2.91**, so
+  this camera is 2.7× noisier in total than the estimates it replaces — the direction a guess never
+  goes on its own. It also puts the repository somewhere it had never rendered: every previous
+  config had vh < 1, so the synthesiser, the estimator and the variance closure had only been
+  exercised on the other side of that line. A new bench renders a cube and recovers vh = 2.64 within
+  the estimator's own sampling floors.
+- **`motion_px` reaches a rendered frame, so ADR 0077's smear runs for the first time** (`IG.6`).
+  M10.1b built the rigid-body synthesis and verified it in-sim to 0.1 px; its only caller was that
+  test. `IrCamera.planes()` never set the plane, so every frame this project has rendered was sharp
+  regardless of scene velocity — with M9.8 and M10.1b both ticked and the documentation asserting
+  otherwise. The same shape as ADR 0082's membrane-lag finding, one layer up: a mechanism that is
+  correct, tested, and unreachable.
+- The reason it survived is structural and worth naming. The arithmetic in `irsim.optics.motion` is
+  engine-free, but the only path to it ran through `MotionTracker.sample`, which read USD directly —
+  so the wiring could only be exercised by a renderer, which the fast suite does not have.
+  `sample` now takes an injectable `read` and a per-frame `paths` set, and
+  `tests/unit/test_motion_wired.py` (14 cases) drives the real `IrCamera.planes()` over synthetic
+  transforms on a CPU.
+- The plane is **refused rather than faked** in three cases, each tested: the first frame of a
+  sequence (motion is a difference, and one pose is not one), a camera that was never opened (no
+  stage, no poses), and a `position_frame` other than `"camera"` — the synthesis is defined on USD
+  camera-space points and would otherwise apply the camera pose twice. That last one was found by
+  this module's own first draft, which built its rig in the world frame and got a plane of silent
+  zeros because every point read as behind the lens.
+- §16's "lateral motion smears LWIR, not cooled MWIR" is now measured rather than asserted, and it
+  turns out to be a statement about the **duty cycle** rather than the band. A bolometer has no
+  shutter, so `smear_duty` is 1.0; the cooled InSb integrates 2 ms of a 16.7 ms frame, so it is
+  0.12. At the aircraft stage's 11 px/frame the bolometer's 10–90 edge width goes **0 → 8.8 px**
+  and the InSb's **0 → 1.1 px** — the 8.33× ratio, on the same scene at the same velocity. A photon
+  FPA run at full duty would smear identically; nothing about 8–12 µm versus 3–5 µm enters into it.
+- **A scene with a layered atmosphere no longer hands out the grey one** (`AT.5`).
+  `Scene.from_config` builds both models whenever a scene names an environment preset — which
+  **all eight shipped scenes do** — so the attribute a reader would take for the scene's
+  atmosphere held the L1 fallback while every render script passed `scene.layered`. The field is
+  now `grey_atmosphere`; `Scene.atmosphere` is a property that raises once a layered model exists,
+  and the message names all three ways out: `transfer_atmosphere` for radiative transfer (the
+  layered one where it exists), `atmosphere_preset` for the preset, `grey_atmosphere` for a
+  deliberate L1. Both live readers wanted the preset, which is one object and cannot disagree —
+  nothing was taking the wrong model, and the next caller would have had no way to tell.
+- The gap is larger than the step assumed and larger than `AT.1`'s, which compared the layered
+  model against itself on a horizontal path. Grey against layered, on the aerial scene at 5 km and
+  20° elevation: **τ 0.057 against 0.590** and path radiance **45.1 against 18.7 W/m²/sr**. That is
+  the k-distribution rather than a defect in either — exp(−τ̄) is not the mean of exp(−τ) across a
+  band whose lines vary by orders of magnitude, which is what §8.6's exponential sum exists to fix
+  — but it is why the grey model is L1 only. `tests/unit/test_atmosphere_handout.py` (8 cases)
+  measures it rather than quoting it, and checks that the grey model stays a registered consumer:
+  refused is not removed, and CLAUDE.md #6's one-weather guard must keep seeing it.
+- **Three committed Boson values disagreed with FLIR's own datasheet** (`SC.3`, ADR 0091). [R24],
+  Doc. # 102-2013-40 Release 340, is free, public and EAR99 — the only external anchor a project
+  with no camera has for its reference core. `ffc_interval_s` was **180 s**, which matches no
+  published default; `thermal_time_constant_ms` was **10.0**, the midpoint of the generic VOx
+  8–12 ms range carried as ESTIMATED while the datasheet says "nominally 8 msec" outright; and the
+  `ratios_3d` blocks carried no provenance marker at all, in files whose headers promise one. All
+  three corrected in both Boson configs, with the citation beside each value.
+- **The datasheet contradicts itself about the FFC defaults, and which reading the configs take is
+  now recorded.** Section 5 says the factory default FFC Period is **300 s** and FFC Temp Delta
+  **1.0 °C**; Table 8 of the same document says 1200 s and 3.0 °C. ADR 0091 takes Section 5:
+  Table 8 carries its own staleness note, its pair matches the **2018** FFC/NUC application note
+  rather than this 2021 release, and Section 5 is internally consistent in a way Table 8 is not —
+  its start-up paragraph says an FFC occurs "every 1/3rd degree" against a default that "results
+  in an FFC event every 1 degree", true of 1.0 °C and false of 3.0 °C.
+- **`tests/unit/test_boson_datasheet.py`** (9 cases) reproduces Table 13's stated acceptance
+  conditions — lensless at f/1.0, high gain, 20 °C camera, 30 °C background, averager disabled —
+  and measures **tvh 48.5 mK, th 2.4 mK, tv 2.6 mK** against limits of < 50 / < 18 / < 18. The
+  camera is compliant and **seven times more spatially uniform than FLIR guarantees**: every grade
+  in Table 13 gives th/tvh = 0.35 against the configured 0.05. The ratios are left alone and
+  marked ESTIMATED rather than raised to 0.35, because Table 13 publishes **upper bounds** and the
+  ratio of two upper bounds is not the ratio of two typical values; `SC.2` substitutes ME.5's
+  measured ratios, which is the only thing that can settle it. The check has a failing direction:
+  at th/tvh = 0.5 the bench reads 25 mK and the camera is out of spec.
+- **Every photon camera this project has rendered was anchored to a NETD it could not use**
+  (`SC.1`). ADR 0025's M11.6 addendum says a photon FPA's noise should be built from its electron
+  datasheet — quantum efficiency, well, integration time, read noise, dark current — with NETD
+  demoted to a cross-check, and `irsim.noise.electron.electron_budget` implemented exactly that.
+  Nothing in `src/` ever called it. `PipelineConfig.from_sensor` now selects it whenever a photon
+  FPA authors `read_noise_e`, via a `noise_handle` of `auto` / `netd` / `electrons`; a bolometer
+  keeps the anchor, which is right for it, and is refused `electrons` rather than handed a
+  meaningless budget.
+- Two measurements the change moves, taken through the pipeline rather than the module, so the
+  cold shield's background is in the shot term as it is in a render. The **MWIR InSb** rendered at
+  σ **533.3 e⁻** against the 350 e⁻ its own config authors — **1.52×**, a Gaussian the solver was
+  free to invent because any value reaching 20 mK would do. The **SWIR InGaAs** rendered with
+  dark = 0 against the **199.7 e⁻** per integration its own Arrhenius block implies — a term
+  *larger than its 120 e⁻ read noise*, simply absent, and one that is an offset as well as a
+  Poisson term. Neither is visible in an image; both are the kind of error that makes a sensor
+  trade study come out confidently wrong.
+- NETD stops being a tautology for photon cameras. Anchored, the predicted NETD equalled the
+  datasheet claim to 1e-9 — it was solved for, so it carried no information. Built from electrons
+  the InSb predicts **19.47 mK against a 20 mK claim**: a number the datasheet could have
+  contradicted. `tests/unit/test_electron_budget_wiring.py` (11 cases) drives the selection site
+  rather than the physics, because the defect was never in the physics — it was that the physics
+  had no caller — and includes the failing direction: a 10 mK claim on the same camera raises.
+- **The multi-band sweep filmed three of the project's eight scene configs; it now films seven, and
+  the eighth says why it does not** (`IG.13`, second half). Five scenes — including the whole aerial
+  point-target lane, the one ranked first — had only ever been seen in the single band their own
+  driver defaults to, which is the opposite of what a driver whose purpose is the four-band
+  comparison is for. `render_multiband.SCENES` gains `sky_target`, `vessel_departure` and the two
+  car-ignition night scenes, and `UNSWEPT_SCENES` records `thermal_facet_scene` as the §6.13 facet
+  bench: seven surfaces, no camera, no prims, driven by `validate_thermal_diurnal.py` into a diurnal
+  curve rather than a frame. A test refuses any scene config that is neither swept nor listed.
+- **Two flags the sweep passes unconditionally were accepted by only three of the six drivers.**
+  `--rt-subframes` was missing from `render_aerial_demo` and `render_car_ignition`, and
+  `--integration-ms` from those two plus `render_vessel_departure` — so adding any of them to the
+  sweep would have made argparse reject the invocation and fail twelve renders at once, with the
+  reason visible only in a child process's stderr. Both are now on all six, and a test builds the
+  real command for every scene/band pair and checks each flag against the target parser.
+- **`irsim.config.loader.with_integration_time_ms`** replaces three byte-identical copies of the
+  exposure-override block and supplies the other three drivers. It goes through the model, so the
+  change reaches `config_hash` — two exposures are two cameras, and a daylight reflective-band scene
+  saturates a low-light exposure by around 120× — and it **refuses a bolometer** rather than
+  ignoring the flag, since §8.2's thermal responsivity has no integration time and a silently
+  unchanged config would still hash as exposed.
+- **`render_aerial_demo` encodes a video.** It wrote still frames only, which made it the one render
+  nobody could watch. `write_frame` already numbers the display frames zero-padded, so the clip
+  encodes straight off what is on disk: no second PNG sequence, and nothing deleted afterwards,
+  because in this driver the frames are the dataset.
+- **Three of the six render drivers wrote no radiometric output at all, and now do** (`IG.13`,
+  first half). `render_quad_flight`, `render_aircraft_pass` and `render_vessel_departure` — the
+  whole aerial-flight and vessel-departure lanes — emitted 8-bit display PNGs and an mp4, nothing
+  else. ADR 0068 is explicit that an 8-bit stream cannot carry a radiometric claim: the AGC, the
+  palette and a 256-level quantisation have all been applied and none of them invert. Every frame
+  those three renders have ever produced is unusable for the measurements the simulator exists to
+  make. All three now write float32 radiance and apparent-temperature planes, the uint16 ADC frame
+  and a JSON sidecar carrying the config, band and ISP hashes, the scene time and its UTC, and each
+  plane's dtype, shape and unit.
+- **`irsim.io.FrameWriter`** — the binder that makes that cheap. `write_frame` takes nine keyword
+  arguments of which seven are constant for a whole run, and spelling them out inside a 500-line
+  driver is how three drivers came to skip it: the frame loop was the easy part and the bookkeeping
+  was not. Bound once, the loop body is `writer.write(outputs, frame_index=i, ...)` and "does this
+  driver write planes" is a one-line question. `stride` thins the written sequence without thinning
+  the render — a 300-frame LWIR time-lapse is 786 MB of float32 and 3.1 GB at the NIR array's
+  1280×1024 — and travels in every sidecar as `plane_stride`, so a `frame_000025` sitting beside no
+  `frame_000024` reads as a thinned sequence rather than a render that died. `--plane-stride 0`
+  writes none, which is the only honest way to spell "this run makes no radiometric claim".
+- `tests/unit/test_frame_writer.py` (20 cases). The round trip is bit-exact in float32; the sidecar
+  resolves a scene time to the right UTC on the weather axis; float16 is refused; per-frame
+  metadata layers over the run's; and a parametrised guard asks the exit bar of **each driver in
+  turn** — run against the previous commit it fails for exactly the three offenders and passes the
+  other three. Static, because the alternative is a render, but a driver that names neither writer
+  cannot be producing planes whatever else it does.
+- **A wall-clock assertion in the unit suite is replaced by a ratio.**
+  `test_the_profile_lut_is_fast_enough_for_a_supersampled_frame` asserted `< 1.0 s` and failed twice
+  on a workstation at load average 12 while passing in isolation — which tells a reader nothing
+  about the LUT. It now times the exact path on a sample and compares **per-angle cost**, so the
+  load cancels: both halves are slowed by the same amount. Measured at about **470×**, with the
+  bound set at 100 rather than at the measurement, because a threshold sitting on its own
+  measurement is the same fragility one level up.
+- **The `slow` marker R11 promised, and the two-tier gate** (`GT.1`). The marker was declared in
+  `pyproject.toml` and applied to **nothing**, and the Makefile had no way to filter on it. It now
+  means something stated: a validation bench (Tier 2/3/4 phenomenology), an end-to-end frame bench,
+  or a file-regeneration check — applied at module level to 23 files — plus any single test over a
+  second, applied to 10 more. 245 of 2,979 tests.
+- `make test` runs the fast tier, `make test-slow` the rest, both printing the top 15 durations.
+  **`make check` runs both**, so the commit gate stays complete and nothing escapes review by being
+  slow — the marker is a developer-loop split, not a coverage reduction.
+- **The 30-second budget in CLAUDE.md is not reachable, and is now open question 11 rather than a
+  number quietly moved.** Measured over 2,979 tests: **154 s of the 170 s is in test bodies**, not
+  fixtures — setup is only 15 s, so the obvious optimisation (17 modules each building their own
+  `BandLUT`) is worth ~15 s at most. The tier as marked leaves the fast half at roughly **65 s of
+  test time**. Reaching 30 s would mean marking every test over 0.2 s, 173 of them, which redefines
+  `slow` to mean five times what it says. The step is ticked for what landed and the number is
+  recorded as the owner's call.
+- **The band-kernel guard keeps covering a file it used to exclude.** `AT.2` added
+  `load_band_response_for_config` to `radiometry/lut_files.py`, which the M11.1 guard holds
+  unchanged since M1.11 — correctly, since "bands are data, not code". The addition names no band
+  and branches on none, so instead of excluding the file the way `spectral_response.py` was
+  excluded, the guard gained **per-file baselines**: it now measures that file from the commit that
+  legitimately moved it, so the **next** change still fails. A second test refuses an override with
+  no reason or one pointing at a commit that never touched the file.
 - **CLAUDE.md's layout block describes the repository that exists** (`RP.8`). Two claims had drifted
   into fiction in the one document every session reads first and nobody re-checks. `src/irsim_isaac/spg/`
   was advertised as holding ".cu kernels, .cu.lua launch scripts, .usda shader defs"; it holds one

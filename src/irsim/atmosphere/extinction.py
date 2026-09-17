@@ -20,6 +20,7 @@ import math
 
 from irsim.atmosphere.humidity import absolute_humidity_g_m3, gamma_molecular
 from irsim.config.atmosphere import AtmosphereBandCoefficients, AtmospherePreset
+from irsim.config.bands import ANCHOR_BAND
 from irsim.radiometry.constants import KOSCHMIEDER
 
 __all__ = [
@@ -81,7 +82,7 @@ def extinction_per_band(
 ) -> dict[str, float]:
     """γ_B (m⁻¹) for every band of the preset at the given weather."""
     w = absolute_humidity_g_m3(t_air_k, rh_fraction)
-    vis = preset.bands["visible"]
+    vis = preset.bands[ANCHOR_BAND]
     gamma_mol_vis = gamma_molecular(w, vis.gamma0_per_m, vis.beta_per_m_per_g_m3)
     return {
         band: band_extinction(coeffs, w, visibility_m, gamma_mol_vis)

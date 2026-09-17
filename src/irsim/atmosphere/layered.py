@@ -33,7 +33,7 @@ import math
 import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,7 +42,8 @@ from scipy.optimize import brentq, least_squares
 from irsim.atmosphere.extinction import gamma_aerosol_visible
 from irsim.atmosphere.humidity import gamma_molecular
 from irsim.config.atmosphere import AtmospherePreset
-from irsim.config.bands import NOMINAL_RANGES_UM, BandId
+from irsim.config.bands import ANCHOR_BAND, nominal_range_for, regime_for
+from irsim.radiometry.band_average import T_REF_K
 from irsim.radiometry.band_integration import quadrature_grid, simpson
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.radiometry.planck import spectral_radiance
@@ -53,7 +54,8 @@ __all__ = [
     "ANCHOR_DISTANCE_M",
     "SpectralClass",
     "BAND_CLASSES",
-    "WEIGHT_T_REF_K",
+    "SOLAR_WEIGHT_T_K",
+    "weight_reference_temperature",
     "class_weights",
     "ExponentialSum",
     "column_length",
@@ -61,7 +63,6 @@ __all__ = [
     "fit_exponential_sum",
     "exponential_sum_from_piecewise",
     "T_SPACE_K",
-    "VISIBLE_RANGE_UM",
 ]
 
 ANCHOR_DISTANCE_M = 200.0  # the §7.2 table column the grey presets were fitted at
@@ -112,20 +113,29 @@ BAND_CLASSES: dict[str, tuple[SpectralClass, ...]] = {
     ),
     "visible": (SpectralClass("window", ((0.35, 0.80),), "water", 1.0),),
 }
-WEIGHT_T_REF_K: dict[str, float] = {
-    "lwir": 300.0,
-    "mwir": 300.0,
-    "swir": 5800.0,
-    "nir": 5800.0,
-    "visible": 5800.0,
-}
+#: Planck weighting temperature for a *reflective* band's spectral-class shares (§7.1): its in-band
+#: radiance is borrowed sunlight, so how much of the band each class carries is set by the solar
+#: spectrum rather than by the scene. ``irsim.radiometry.solar`` models the TOA spectrum itself at
+#: 5778 K; the 22 K disagreement moves the shipped SWIR and NIR class shares by 1.2e-3 relative
+#: (measured), which is below this fit's own uncertainty but is still two constants for one fact.
+SOLAR_WEIGHT_T_K = 5800.0
 
 
-VISIBLE_RANGE_UM = (0.4, 0.7)
+def weight_reference_temperature(band: str) -> float:
+    """The temperature ``class_weights`` weights a band's classes at, from the band's regime.
+
+    This was a five-row dict keyed by band name -- the second band registry AT.4 exists to remove --
+    and it had already drifted from the one it duplicated. It weighted MWIR at 300 K while
+    ``DEFAULT_REGIME["mwir"]`` is ``"mixed"``, so the obvious derivation ("emissive keeps 300 K")
+    would have moved MWIR to 5800 K and silently rescaled every MWIR class share, its anchor solve
+    and therefore tau_MWIR at every range but the 200 m anchor. The rule that reproduces all five
+    shipped rows exactly turns on *reflective*, not on emissive.
+    """
+    return SOLAR_WEIGHT_T_K if regime_for(band) == "reflective" else T_REF_K
 
 
 def _nominal_response(band: str) -> SpectralResponse:
-    lo, hi = VISIBLE_RANGE_UM if band == "visible" else NOMINAL_RANGES_UM[cast(BandId, band)]
+    lo, hi = nominal_range_for(band)
     return SpectralResponse(np.array([lo, hi]), np.array([1.0, 1.0]), f"<top-hat {band}>", "")
 
 
@@ -136,7 +146,7 @@ def class_weights(
     response must fall in some class (the class edges cover the nominal bands with margin)."""
     classes = BAND_CLASSES[band]
     resp = response if response is not None else _nominal_response(band)
-    t_ref = WEIGHT_T_REF_K[band] if t_ref_k is None else t_ref_k
+    t_ref = weight_reference_temperature(band) if t_ref_k is None else t_ref_k
     grid = quadrature_grid(resp)
     dl = float(grid[1] - grid[0])
     weight = resp.resampled(grid) * spectral_radiance(grid, np.asarray(t_ref, dtype=np.float64))
@@ -513,7 +523,7 @@ class LayeredAtmosphere:
         w_h2o = sample.absolute_humidity_g_m3
         coeffs = self._preset.bands[band]
         gamma_mol = gamma_molecular(w_h2o, coeffs.gamma0_per_m, coeffs.beta_per_m_per_g_m3)
-        vis = self._preset.bands["visible"]
+        vis = self._preset.bands[ANCHOR_BAND]
         gamma_mol_vis = gamma_molecular(w_h2o, vis.gamma0_per_m, vis.beta_per_m_per_g_m3)
         gamma_aer = coeffs.aerosol_ratio_to_visible * gamma_aerosol_visible(
             sample.visibility_m, gamma_mol_vis

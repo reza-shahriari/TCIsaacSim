@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from irsim.config.bands import BAND_IDS
+from irsim.config.bands import ANCHOR_BAND, BAND_KEYS
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -38,7 +38,7 @@ __all__ = [
 ]
 
 SCHEMA_VERSION = 2  # v2: solar-path stub (M8.8, ADR 0051)
-ATMOSPHERE_BAND_KEYS: frozenset[str] = frozenset({*BAND_IDS, "visible"})
+ATMOSPHERE_BAND_KEYS: frozenset[str] = frozenset(BAND_KEYS)
 # Names that describe weather, not an atmosphere type. Rejected at every nesting level.
 WEATHER_LIKE_KEYS: frozenset[str] = frozenset(
     {
@@ -141,8 +141,10 @@ class AtmospherePreset(_Frozen):
                 f"bands must be exactly {sorted(ATMOSPHERE_BAND_KEYS)}: "
                 f"missing {sorted(missing)}, unknown {sorted(unknown)}"
             )
-        if bands["visible"].aerosol_ratio_to_visible != 1.0:
-            raise ValueError("visible.aerosol_ratio_to_visible must be 1.0 (Koschmieder anchor)")
+        if bands[ANCHOR_BAND].aerosol_ratio_to_visible != 1.0:
+            raise ValueError(
+                f"{ANCHOR_BAND}.aerosol_ratio_to_visible must be 1.0 (Koschmieder anchor)"
+            )
         return bands
 
 

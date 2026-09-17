@@ -28,6 +28,7 @@ from irsim.atmosphere.extinction import (
 )
 from irsim.atmosphere.humidity import gamma_molecular
 from irsim.config.atmosphere import AtmospherePreset
+from irsim.config.bands import ANCHOR_BAND
 from irsim.radiometry.lut import BandLUT, Quantity
 from irsim.thermal.weather import WeatherSeries
 
@@ -93,7 +94,7 @@ class Atmosphere:
     def state(self, t_s: float) -> AtmosphereState:
         sample = self._weather.at(t_s)
         w = sample.absolute_humidity_g_m3
-        vis = self._preset.bands["visible"]
+        vis = self._preset.bands[ANCHOR_BAND]
         gamma_mol_vis = gamma_molecular(w, vis.gamma0_per_m, vis.beta_per_m_per_g_m3)
         gammas = {
             band: band_extinction(coeffs, w, sample.visibility_m, gamma_mol_vis)

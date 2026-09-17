@@ -20,22 +20,30 @@ docs/physics-model.md §12.1, §12.2, §5.2
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from typing import Final, Literal, get_args
 
 __all__ = [
     "BandId",
     "BAND_IDS",
+    "Regime",
     "NOMINAL_RANGES_UM",
     "DEFAULT_REGIME",
     "DEFAULT_DETECTOR_MODEL",
     "MIN_OVERLAP_FRACTION",
+    "ANCHOR_BAND",
+    "ANCHOR_RANGE_UM",
+    "ANCHOR_REGIME",
+    "BAND_KEYS",
     "band_id_for",
     "overlap_fraction",
     "enabled_illumination_terms",
+    "regime_for",
+    "nominal_range_for",
 ]
 
 BandId = Literal["nir", "swir", "mwir", "lwir"]
 BAND_IDS: tuple[BandId, ...] = get_args(BandId)
+Regime = Literal["emissive", "reflective", "mixed"]
 
 # §12.1 "Range (µm)" row.
 NOMINAL_RANGES_UM: dict[BandId, tuple[float, float]] = {
@@ -45,7 +53,7 @@ NOMINAL_RANGES_UM: dict[BandId, tuple[float, float]] = {
     "lwir": (7.5, 13.5),
 }
 # §12.1 "Illumination needed" / "Self-emission" rows -> §12.2 regime.
-DEFAULT_REGIME: dict[BandId, Literal["emissive", "reflective", "mixed"]] = {
+DEFAULT_REGIME: dict[BandId, Regime] = {
     "nir": "reflective",
     "swir": "reflective",
     "mwir": "mixed",
@@ -61,6 +69,29 @@ DEFAULT_DETECTOR_MODEL: dict[BandId, Literal["photon", "bolometer"]] = {
 
 # A configured band must overlap some nominal band by at least this fraction of its own width.
 MIN_OVERLAP_FRACTION = 0.5
+
+# --- the atmosphere's reference band -----------------------------------------------------------
+# Meteorological optical range is *defined* photopically (§7.2): visibility is the distance at which
+# a black target against the horizon falls to 2 % contrast in the eye's band, which is why every
+# atmosphere preset states its aerosol extinction as `aerosol_ratio_to_visible` and why the
+# Koschmieder formula needs one band's extinction before it can give any other band's.
+#
+# It is a *reference* key, not a camera band, and the distinction is load-bearing: no ``BandId``
+# names it, ``band_id_for`` cannot produce it (0.4-0.7 um overlaps no nominal range by 50 %, so the
+# classifier raises), ``enabled_illumination_terms`` rejects its regime question, and no sensor YAML
+# may declare it. But the atmosphere needs it spelled -- in ``ATMOSPHERE_BAND_KEYS``, in the preset
+# validator, in the grey extinction model and twice in the layered one. Naming it here is what keeps
+# those five in agreement; spelled by hand they were five independent copies of one convention.
+ANCHOR_BAND: Final[str] = "visible"
+#: The anchor's own limits. Deliberately narrower than its spectral-class span in
+#: ``irsim.atmosphere.layered`` (0.35-0.80 um), which carries margin the way every band's does.
+ANCHOR_RANGE_UM: Final[tuple[float, float]] = (0.4, 0.7)
+#: Borrowed sunlight, like the two short bands -- which is what sets its Planck weighting (§7.1).
+ANCHOR_REGIME: Final[Regime] = "reflective"
+
+#: Every band key the physics may be asked about: the four cameras plus the anchor. An atmosphere
+#: preset must carry a coefficient row for each, so this is what its schema validates against.
+BAND_KEYS: tuple[str, ...] = (*BAND_IDS, ANCHOR_BAND)
 
 IlluminationTerm = Literal["self_emission", "solar", "night"]
 
@@ -96,9 +127,7 @@ def band_id_for(lambda_min_um: float, lambda_max_um: float) -> BandId:
     return best
 
 
-def enabled_illumination_terms(
-    regime: Literal["emissive", "reflective", "mixed"],
-) -> frozenset[IlluminationTerm]:
+def enabled_illumination_terms(regime: Regime) -> frozenset[IlluminationTerm]:
     """§5.2: which illumination paths a kernel evaluates for a given regime.
 
     ``self_emission`` is ε·B(T); ``solar`` is reflected sun (and glint); ``night`` is the
@@ -112,3 +141,36 @@ def enabled_illumination_terms(
     if regime == "mixed":
         return frozenset({"self_emission", "solar", "night"})
     raise ValueError(f"unknown regime {regime!r}")
+
+
+def regime_for(band: str) -> Regime:
+    """The illumination regime of any band key, the anchor included.
+
+    ``DEFAULT_REGIME`` answers this for the four camera bands; the anchor is not in it, and the
+    caller that needs it most (the layered atmosphere's Planck weighting) has no way to ask
+    otherwise. Going through one function is what stops a second regime table from growing --
+    ``irsim.atmosphere.layered`` kept one, keyed by band name, and it had already drifted.
+    """
+    if band == ANCHOR_BAND:
+        return ANCHOR_REGIME
+    if band not in DEFAULT_REGIME:
+        raise ValueError(
+            f"no regime for band {band!r}; known keys are {BAND_KEYS}. Add the band to "
+            "irsim.config.bands if it is real."
+        )
+    return DEFAULT_REGIME[band]
+
+
+def nominal_range_for(band: str) -> tuple[float, float]:
+    """The (lambda_min, lambda_max) of any band key, the anchor included.
+
+    The fallback a consumer uses when it has no measured spectral response to integrate against.
+    """
+    if band == ANCHOR_BAND:
+        return ANCHOR_RANGE_UM
+    if band not in NOMINAL_RANGES_UM:
+        raise ValueError(
+            f"no nominal range for band {band!r}; known keys are {BAND_KEYS}. Add the band to "
+            "irsim.config.bands if it is real."
+        )
+    return NOMINAL_RANGES_UM[band]
